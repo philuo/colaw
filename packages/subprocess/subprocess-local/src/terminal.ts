@@ -3,7 +3,8 @@
 import { Buffer } from 'node:buffer'
 import { constants } from 'node:os'
 import { PassThrough } from 'node:stream'
-import type { IDisposable, IPty } from 'node-pty'
+// Bun compatibility: use Bun.Terminal adapter types instead of node-pty
+import type { IDisposable, IPty } from './bun-pty-adapter.ts'
 import type {
   SubprocessOutcome,
   SubprocessTerminalForeground,

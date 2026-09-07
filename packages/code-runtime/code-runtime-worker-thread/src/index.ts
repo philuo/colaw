@@ -7,7 +7,7 @@
  */
 
 import { Worker } from 'node:worker_threads'
-import { stripTypeScriptTypes } from 'node:module'
+import * as nodeModule from 'node:module'
 import type { Readable } from 'node:stream'
 import { fileURLToPath } from 'node:url'
 import { Context } from '@deepseek-ai/cordis'
@@ -71,6 +71,25 @@ const MIN_OUTPUT_BYTES = 4
  * namespace list must be usable against every backend regardless of language.
  */
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/**
+ * TypeScript type-stripping with Bun compatibility.
+ * Node.js 22.6+ provides `node:module.stripTypeScriptTypes` (position-preserving).
+ * Bun does not implement this export, so we fall back to `Bun.Transpiler`.
+ * The fallback is NOT position-preserving, but dsh only uses the stripped body
+ * after slicing off a known prefix/suffix — the body length may change but the
+ * prefix/suffix strings are preserved verbatim by Bun.Transpiler, so slicing
+ * by the original prefix/suffix lengths still extracts the correct function body.
+ */
+const stripTypeScriptTypes: (code: string) => string =
+  typeof (nodeModule as unknown as { stripTypeScriptTypes?: (code: string) => string }).stripTypeScriptTypes === 'function'
+    ? (nodeModule as unknown as { stripTypeScriptTypes: (code: string) => string }).stripTypeScriptTypes.bind(nodeModule)
+    : (code: string): string => {
+      // Bun fallback: use Bun.Transpiler to strip TypeScript types
+      const bunGlobal = globalThis as unknown as { Bun?: { Transpiler: new (options: { loader: string }) => { transformSync: (code: string) => string } } }
+      const transpiler = new bunGlobal.Bun!.Transpiler({ loader: 'ts' })
+      return transpiler.transformSync(code)
+    }
 
 /**
  * The shell a program is wrapped in for the type-strip, matching the

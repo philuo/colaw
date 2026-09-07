@@ -31,7 +31,10 @@
 import { mkdir, open, stat } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
-import { flock } from 'fs-ext'
+// Bun compatibility: replace fs-ext native module with Bun.FFI flock
+// fs-ext's async callbacks can cause segfaults in Bun; Bun.FFI is pure JS and safe.
+// @ts-expect-error - bun:ffi types are not available in this tsconfig
+import { dlopen } from 'bun:ffi'
 import { SessionAlreadyOwnedError } from '@deepseek-ai/dsh-session-persistence'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import { acquireLockHandleWin32, releaseLockHandleWin32 } from './win32.ts'
@@ -44,13 +47,44 @@ type HeldLock =
   | { readonly kind: 'posix'; readonly handle: FileHandle }
   | { readonly kind: 'win32'; readonly handle: number }
 
-/** Promise face over fs-ext's callback flock, pinned to its string-flag overload. */
+// Bun.FFI flock implementation (replaces fs-ext)
+const LOCK_EX = 2
+const LOCK_NB = 4
+const LOCK_UN = 8
+
+let libcFloc: { flock: (fd: number, operation: number) => number } | null = null
+
+function getLibcFloc() {
+  if (libcFloc) return libcFloc
+  const libcPath = process.platform === 'darwin'
+    ? '/usr/lib/libSystem.B.dylib'
+    : 'libc.so.6'
+  const lib = dlopen(libcPath, {
+    flock: { args: ['i32', 'i32'], returns: 'i32' },
+  })
+  libcFloc = lib.symbols as unknown as { flock: (fd: number, operation: number) => number }
+  return libcFloc
+}
+
+/** Promise face over Bun.FFI flock, compatible with fs-ext's string-flag overload. */
 function flockAsync(fd: number, flags: 'exnb' | 'un'): Promise<void> {
   return new Promise((resolve, reject) => {
-    flock(fd, flags, (error) => {
-      if (error) reject(error)
-      else resolve()
-    })
+    try {
+      const libc = getLibcFloc()
+      const operation = flags === 'exnb' ? (LOCK_EX | LOCK_NB) : LOCK_UN
+      const result = libc.flock(fd, operation)
+      if (result !== 0) {
+        const errno = result
+        const code = errno === 11 ? 'EAGAIN' : `E${errno}`
+        const error = new Error(`flock failed: ${code}`)
+        ;(error as NodeJS.ErrnoException).code = code
+        reject(error)
+      } else {
+        resolve()
+      }
+    } catch (error) {
+      reject(error)
+    }
   })
 }
 
