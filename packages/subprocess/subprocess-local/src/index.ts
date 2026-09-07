@@ -12,11 +12,10 @@ import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
 import { delimiter, extname, isAbsolute, resolve } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
-// Bun compatibility: use Bun.Terminal adapter instead of node-pty
+// Bun compatibility: use unified PTY adapter (node-pty on Node.js, Bun.Terminal on Bun)
 // node-pty fails to start PTY shells in Bun ("PTY shell exited during startup")
-// Bun.Terminal is a native Bun API that provides equivalent PTY functionality
-import * as nodePty from './bun-pty-adapter.ts'
-import type { IPtyForkOptions } from './bun-pty-adapter.ts'
+import { getPtyModule } from './pty-adapter.ts'
+import type { IPtyForkOptions, IPty } from './pty-adapter.ts'
 import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
@@ -258,9 +257,9 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       options.cwd = scope.cwd
       options.env = scope.env
     }
-    let terminal: nodePty.IPty
+    let terminal: IPty
     try {
-      terminal = nodePty.spawn(
+      terminal = getPtyModule().spawn(
         scope?.command ?? file,
         scope?.args ?? [...spec.argv.slice(1)],
         options,
