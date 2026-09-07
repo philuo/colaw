@@ -17,6 +17,8 @@
 | 08 | [Bun 兼容性实证测试报告](./08-bun-compatibility-test-report.md) | **从怀疑开始的完整实证验证**：81 个测试用例（Terminal/YAML/Cordis/批量API/dsh包导入）、dsh 实际启动测试、fs-ext ABI 不匹配根因定位与修复验证、stripTypeScriptTypes 替代方案、最终结论与 electrobun 集成建议 |
 | 09 | [Bun 原生重构精确清单与可靠性验证](./09-bun-refactoring-plan.md) | **性能对比实证**（Bun启动快33.5倍/内存少6.7倍/YAML快3-25倍）、**19项鲁棒性测试**、**14个可重构模块精确清单**（到包名+替代方案+优先级+验证状态）、**!!js必要性分析**（29处使用全部可替代，不建议用正则）、**18项未完成验证**、**替换可靠性保障检查清单** |
 | 10 | [Electrobun + dsh 桌面 IDE 工程方案](./10-electrobun-dsh-ide-engineering-guide.md) | **Electrobun 2.0 架构深度解刨**（BrowserWindow/BrowserView/RPC/Tray/Menu/GlobalShortcut/Screen/Session/Updater/Utils/PATHS/Socket）、**dsh 扩展机制深度解刨**（Cordis插件/配置YAML+profiles+patches/工具系统/JSONL会话格式/LLM适配器/代码运行环境）、**IDE集成架构方案**（三层进程模型/dsh子进程管理器/JSON-RPC通信/终端管理器Bun.Terminal/渲染进程状态管理）、**功能模块工程细节**（聊天/编辑器Monaco/终端xterm/工具可视化/设置）、**工程落地清单**（项目结构/开发环境/测试策略/CI/跨平台/性能目标/风险缓解/4阶段里程碑） |
+| 11 | [官方测试全量结果记录](./11-official-test-results.md) | 官方测试全量结果：957文件，15728测试，99.1%通过，9失败逐条分析（全部与修改无关） |
+| 12 | [Electrobun Host 实现与验证报告](./12-electrobun-host-implementation.md) | **Electrobun + dsh 桌面端 Host 完整实现**：架构概览、项目结构、主进程实现、Bun 兼容性修复（fs-ext动态导入、client-modules webServer注入）、认证机制详解（process-token + signed cookie）、端到端验证结果（7项全部通过）、已知限制与后续工作、文件变更清单 |
 
 ## 快速回答
 
