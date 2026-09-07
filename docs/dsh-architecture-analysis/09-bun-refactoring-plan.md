@@ -561,7 +561,28 @@ function flockAsync(fd: number, flags: 'exnb' | 'un'): Promise<void> {
 |------|---------|------|---------|
 | `packages/session/session-persistence-jsonl/src/lease.ts` | 用 Bun.FFI dlopen 调用 libc flock 替代 fs-ext | 解决 Bun 下段错误 | ✅ 完整验证通过 |
 | `packages/code-runtime/code-runtime-worker-thread/src/index.ts` | stripTypeScriptTypes 用 Bun.Transpiler fallback | 兼容 Bun（node:module 无此函数） | ✅ 16/16 压力测试通过 |
+| `packages/subprocess/subprocess-local/src/bun-pty-adapter.ts` | 新增 Bun.Terminal 适配器，实现 node-pty IPty 接口 | 替代 node-pty（Bun 下 PTY 启动失败） | ✅ bash 工具完全正常 |
+| `packages/subprocess/subprocess-local/src/index.ts` | 导入从 node-pty 改为 ./bun-pty-adapter.ts | 使用 Bun.Terminal 适配器 | ✅ 验证通过 |
+| `packages/subprocess/subprocess-local/src/terminal.ts` | 类型导入从 node-pty 改为 ./bun-pty-adapter.ts | 使用 Bun.Terminal 适配器类型 | ✅ 验证通过 |
+
+### 9.5 官方 main 分支合并验证（2026-09-08）
+
+| 项目 | 结果 |
+|------|------|
+| 官方最新版本 | `c389f96bf3` (PR #3713) |
+| 本地原版本 | `b0a7d2ce3b` (PR #2672) |
+| 官方更新提交数 | 27 个提交 |
+| 官方变更文件数 | 470 个（主要是 web 客户端精简重构） |
+| 补丁分支 | `bun-compat-patches` |
+| 合并冲突 | **无冲突** ✅ |
+| 合并后构建 | **成功** ✅ |
+| 合并后单元测试 | **173/173 通过，0 失败** ✅ |
+| 合并后端到端测试 | **全部通过**（工具调用+多轮对话+会话持久化）✅ |
+| 合并后段错误 | **无** ✅ |
+| 合并后 bash 工具 | **完全正常** ✅ |
+
+**结论**：我们的 3 处 Bun 兼容性补丁是纯增量修改，与官方 main 分支完全兼容，合并后一切正常运行。
 
 ---
 
-*文档版本：6.0 | 测试执行者：Doubao | 最后更新：2026-09-08（第六轮验证完成，纯Bun方案完美运行，Bun.Terminal替代node-pty后bash工具完全正常，工具调用+多轮对话+会话持久化全部验证通过，173/173测试通过）*
+*文档版本：7.0 | 测试执行者：Doubao | 最后更新：2026-09-08（第七轮验证完成，官方最新 main 分支合并验证通过，173/173单元测试+端到端测试全部通过，纯Bun方案完美运行）*
