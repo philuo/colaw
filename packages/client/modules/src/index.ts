@@ -569,7 +569,13 @@ export class ClientModuleRegistry extends Service {
 
     const registerWebCarrier = (webCtx: Context): void => {
       webCtx.effect(
-        () => webCtx.webServer.register({ kind: 'prefix', path: '/plugins', handler: this.serveBundle }),
+        () => {
+          // Use get() instead of direct property access to avoid "cannot get
+          // property without inject" errors when the service is still settling.
+          const webServer = webCtx.get('webServer')
+          if (webServer === undefined) return () => {}
+          return webServer.register({ kind: 'prefix', path: '/plugins', handler: this.serveBundle })
+        },
         'client-modules: bundle route',
       )
     }

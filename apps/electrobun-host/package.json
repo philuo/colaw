@@ -1,0 +1,27 @@
+{
+  "name": "@deepseek-ai/dsh-electrobun-host",
+  "version": "0.1.0",
+  "description": "Electrobun (Bun runtime) desktop host for deepseek-harness",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "electrobun dev",
+    "build": "electrobun build",
+    "start": "electrobun start"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-api-gateway": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-client-modules": "workspace:*",
+    "@deepseek-ai/dsh-cmdline": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-launch-environment": "workspace:*",
+    "@deepseek-ai/dsh-web-frontend": "workspace:*",
+    "electrobun": "^2.0.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

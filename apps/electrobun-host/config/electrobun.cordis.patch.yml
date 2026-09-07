@@ -1,0 +1,20 @@
+# Electrobun (Bun runtime) desktop host overlay patch.
+# Applied on top of the web profile (base + web-app).
+# We keep dsh's own webserver running; Electrobun simply loads its URL in a window.
+# Only disable plugins that are not needed in the bundled desktop app.
+
+# ── Disable plugins not needed in the bundled Electrobun app ──
+
+# HMR is not needed in the packaged app.
+- id: hmr
+  disabled: true
+
+# open-in-app handles deep links; not needed for the bundled desktop app.
+- id: open-in-app
+  disabled: true
+
+# Don't print URL or open browser automatically; Electrobun owns the window.
+- id: web-startup
+  config:
+    printUrl: false
+    openBrowser: false

@@ -31,9 +31,10 @@
 import { mkdir, open, stat } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
-import * as fsExt from 'fs-ext'
 // Bun compatibility: use Bun.FFI flock in Bun, fs-ext in Node.js.
 // fs-ext's async callbacks can cause segfaults in Bun; Bun.FFI is pure JS and safe.
+// fs-ext is imported dynamically via ./fs-ext-adapter to avoid loading the native
+// module under Bun (which would fail with an ABI mismatch at module load time).
 const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined'
 type BunFfiFlockFn = { flock: (fd: number, operation: number) => number }
 
@@ -51,6 +52,20 @@ function getBunFfiFloc(): BunFfiFlockFn {
   })
   bunFfiFloc = lib.symbols as unknown as { flock: (fd: number, operation: number) => number }
   return bunFfiFloc
+}
+
+// Cached fs-ext module, loaded only under Node.js via dynamic import.
+let fsExtModule: typeof import('fs-ext') | null = null
+let fsExtLoadPromise: Promise<typeof import('fs-ext')> | null = null
+
+function loadFsExt(): Promise<typeof import('fs-ext')> {
+  if (fsExtModule) return Promise.resolve(fsExtModule)
+  if (fsExtLoadPromise) return fsExtLoadPromise
+  fsExtLoadPromise = import('./fs-ext-adapter.ts').then(mod => {
+    fsExtModule = mod.fsExt
+    return fsExtModule
+  })
+  return fsExtLoadPromise
 }
 
 import { SessionAlreadyOwnedError } from '@deepseek-ai/dsh-session-persistence'
@@ -89,11 +104,13 @@ function flockAsync(fd: number, flags: 'exnb' | 'un'): Promise<void> {
           resolve()
         }
       } else {
-        // Node.js: use fs-ext flock (ES module import for vitest mock compatibility)
-        fsExt.flock(fd, flags, (err: NodeJS.ErrnoException | null) => {
-          if (err) reject(err)
-          else resolve()
-        })
+        // Node.js: use fs-ext flock (dynamic import via fs-ext-adapter for vitest mock compatibility)
+        loadFsExt().then(fsExt => {
+          fsExt.flock(fd, flags, (err: NodeJS.ErrnoException | null) => {
+            if (err) reject(err)
+            else resolve()
+          })
+        }).catch(reject)
       }
     } catch (error) {
       reject(error)
