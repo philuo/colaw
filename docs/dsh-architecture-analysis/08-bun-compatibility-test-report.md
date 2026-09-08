@@ -17,7 +17,7 @@
 | Node.js 版本 | v22.23.2 (NODE_MODULE_VERSION=127) |
 | dsh 版本 | 0.1.3-alpha.2 |
 | dsh 构建状态 | `pnpm run build:lib` 已完成 |
-| 测试项目 | `/Users/fanchong/Desktop/workspace/colaw-test/bun-compat-tests/` |
+| 测试项目 | `/Users/fanchong/Desktop/workspace/colaw-test/dsh-workspace/bun-compat-tests/` |
 
 ### 1.2 方法论：从怀疑开始
 
