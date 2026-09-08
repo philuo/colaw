@@ -11,9 +11,8 @@
  * 7. JSON-RPC API initialize works with auth
  */
 
-import { createRequire } from "node:module";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PatchOptions } from "@deepseek-ai/cordis-plugin-include";
 import {
@@ -40,8 +39,12 @@ async function main() {
   writeFileSync(rootConfig, ROOT_CONFIG);
 
   const environment = loadLayeredEnv("dsh e2e");
-  const dshRoot = dirname(createRequire(join(projectDir, "package.json")).resolve("@deepseek-ai/dsh/package.json"));
-  const profile = loadProfile("dsh e2e", "web", join(dshRoot, "package.json"));
+  // Use dsh repo's apps/cli as install anchor so that bundle packages
+  // (dsh-base, dsh-web-app) can be resolved from its node_modules.
+  // The globally cached @deepseek-ai/dsh package has no node_modules.
+  const dshRepoRoot = fileURLToPath(new URL("../../../..", import.meta.url));
+  const cliPackageJson = join(dshRepoRoot, "apps", "cli", "package.json");
+  const profile = loadProfile("dsh e2e", "web", cliPackageJson);
 
   const patches: PatchOptions[] = [
     ...profile.layers.flatMap(layer => layer.patches),
