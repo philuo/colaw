@@ -21,16 +21,24 @@ interface ChokidarFixture {
   readonly readdirpFiles: readonly string[]
 }
 
+// The host runtime itself no longer depends on chokidar (settings/credentials/
+// skill-filesystem watch through the native fs.watch adapter), but user Skill
+// code inside the Worker sandbox may still import arbitrary third-party
+// packages. These fixtures therefore resolve the *real* installed chokidar from
+// packages that still carry each version: cordis-plugin-hmr holds chokidar 4
+// (ESM subpath layout) and this package's devDependencies hold chokidar 5
+// (flat layout). This keeps coverage of both module layouts without adding a
+// production dependency.
 const CHOKIDAR_FIXTURES: readonly ChokidarFixture[] = [
   {
-    label: 'Chokidar 4 from settings and credentials',
-    consumerManifest: 'packages/settings/settings-file/package.json',
+    label: 'Chokidar 4 from cordis-plugin-hmr',
+    consumerManifest: 'vendor/hmr/package.json',
     chokidarFiles: ['package.json', 'esm/package.json', 'esm/index.js', 'esm/handler.js'],
     readdirpFiles: ['package.json', 'esm/package.json', 'esm/index.js'],
   },
   {
-    label: 'Chokidar 5 from skill-filesystem',
-    consumerManifest: 'packages/skill/skill-filesystem/package.json',
+    label: 'Chokidar 5 from webworker-runtime devDependency',
+    consumerManifest: 'packages/experimental/webworker-runtime/package.json',
     chokidarFiles: ['package.json', 'index.js', 'handler.js'],
     readdirpFiles: ['package.json', 'index.js'],
   },

@@ -8,6 +8,8 @@ import { opendir, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
+export { watch, type Watcher, type WatchOptions, type WatchEvent } from './chokidar-adapter'
+
 /** Directory name for the default DeepSeek Harness home under the OS home. */
 export const DSH_HOME_DIR_NAME = '.dsh'
 

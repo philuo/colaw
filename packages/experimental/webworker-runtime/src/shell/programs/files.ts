@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/shell/programs/files
  */
 
-import picomatch from 'picomatch'
+import { createPicomatch } from '../../picomatch-adapter'
 import { basename, dirname, resolve } from '../../module-system/posix-path.ts'
 import { describeFailure, resolveIn } from '../fs-access.ts'
 import type { ShellFileSystem, ShellProgram, ShellStats } from '../types.ts'
@@ -66,7 +66,7 @@ const find: ShellProgram = async (argv, io, state, fs) => {
     }
     roots.push(word)
   }
-  const matches = namePattern === undefined ? undefined : picomatch(namePattern, { dot: true })
+  const matches = namePattern === undefined ? undefined : createPicomatch(namePattern, { dot: true })
   let status = 0
   const visit = async (path: string, display: string, depth: number): Promise<void> => {
     const stats = await fs.stat(path)

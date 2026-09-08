@@ -62,8 +62,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 
-vi.mock('chokidar', () => ({
-  default: {
+vi.mock('@deepseek-ai/dsh-home-paths', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@deepseek-ai/dsh-home-paths')>()
+  return {
+    ...actual,
     watch(path: unknown, options: Record<string, unknown>) {
       const emitter = new EventEmitter() as EventEmitter & { close(): Promise<void> }
       const control: FakeWatcherControl = { emitter, closeCalls: 0, options, path: String(path) }
@@ -86,8 +88,8 @@ vi.mock('chokidar', () => ({
       })
       return emitter
     },
-  },
-}))
+  }
+})
 
 const SkillFileSystem = await import('../src/index.ts')
 

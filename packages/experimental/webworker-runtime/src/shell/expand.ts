@@ -6,7 +6,7 @@
  * @module @deepseek-ai/dsh-experimental-webworker-runtime/src/shell/expand
  */
 
-import picomatch from 'picomatch'
+import { createPicomatch } from '../picomatch-adapter'
 import type { ArgumentSegment, ArithmeticExpression, ShellLine, ValueArgument } from './ast.ts'
 import { resolve } from '../module-system/posix-path.ts'
 import type { ShellFileSystem, ShellState } from './types.ts'
@@ -108,7 +108,7 @@ export async function expandGlob(pattern: string, cwd: string, fs: ShellFileSyst
         next.push({ path, display: `${entry.display}${segment}${last ? '' : '/'}` })
         continue
       }
-      const matches = picomatch(segment, { dot: segment.startsWith('.') })
+      const matches = createPicomatch(segment, { dot: segment.startsWith('.') })
       for (const child of await safeList(entry.path)) {
         if (!matches(child.name)) continue
         if (!last && !child.directory) continue

@@ -19,6 +19,7 @@
 | 10 | [Electrobun + dsh 桌面 IDE 工程方案](./10-electrobun-dsh-ide-engineering-guide.md) | **Electrobun 2.0 架构深度解刨**（BrowserWindow/BrowserView/RPC/Tray/Menu/GlobalShortcut/Screen/Session/Updater/Utils/PATHS/Socket）、**dsh 扩展机制深度解刨**（Cordis插件/配置YAML+profiles+patches/工具系统/JSONL会话格式/LLM适配器/代码运行环境）、**IDE集成架构方案**（三层进程模型/dsh子进程管理器/JSON-RPC通信/终端管理器Bun.Terminal/渲染进程状态管理）、**功能模块工程细节**（聊天/编辑器Monaco/终端xterm/工具可视化/设置）、**工程落地清单**（项目结构/开发环境/测试策略/CI/跨平台/性能目标/风险缓解/4阶段里程碑） |
 | 11 | [官方测试全量结果记录](./11-official-test-results.md) | 官方测试全量结果：957文件，15728测试，99.1%通过，9失败逐条分析（全部与修改无关） |
 | 12 | [Electrobun Host 实现与验证报告](./12-electrobun-host-implementation.md) | **Electrobun + dsh 桌面端 Host 完整实现**：架构概览、项目结构、主进程实现、Bun 兼容性修复（fs-ext动态导入、client-modules webServer注入）、认证机制详解（process-token + signed cookie）、端到端验证结果（7项全部通过）、已知限制与后续工作、文件变更清单 |
+| 13 | [Bun 内置替代「实测裁决」](./13-bun-builtin-replacement-verdict.md) | **以 Bun 1.4.2 实测+真实 API 使用面 grep 对 07 理论映射的最终纠偏**：已替代 6 项（fs-ext/node-pty/@noble/picomatch/chokidar/open）的证据与测试；open 被变量动态 import 隐藏的误判纠错与 macOS 原生命令零依赖重构；yaml/js-yaml/ws/undici/fflate/eventsource-parser/mdast/diff/anser/semver 逐个「为何保留」的 file:line 证据；CompressionStream 实测可用、Bun.Markdown 不存在等能力快照；死依赖搜索方法论清单 |
 
 ## 快速回答
 

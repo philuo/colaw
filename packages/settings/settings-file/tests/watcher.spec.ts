@@ -6,16 +6,19 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { FileSettingsProvider } from '../src/index.ts'
 
-// chokidar is the nondeterministic OS boundary: faking it lets these tests
-// drive the event pipeline (error events, races with unreadable files)
-// deterministically. Real end-to-end watching stays covered by local.spec.ts.
-vi.mock('chokidar', async () => {
+// fs.watch is the nondeterministic OS boundary: faking the watch adapter
+// lets these tests drive the event pipeline (error events, races with
+// unreadable files) deterministically. Real end-to-end watching stays
+// covered by local.spec.ts.
+vi.mock('@deepseek-ai/dsh-home-paths', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@deepseek-ai/dsh-home-paths')>()
   const { EventEmitter } = await import('node:events')
   class FakeWatcher extends EventEmitter {
     close = vi.fn(() => Promise.resolve())
   }
   const instances: Array<{ path: string; options: unknown; watcher: InstanceType<typeof FakeWatcher> }> = []
   return {
+    ...actual,
     watch: vi.fn((path: string, options: unknown) => {
       const watcher = new FakeWatcher()
       instances.push({ path, options, watcher })
@@ -25,7 +28,7 @@ vi.mock('chokidar', async () => {
   }
 })
 
-interface FakeChokidar {
+interface FakeHomePaths {
   __instances: Array<{
     path: string
     options: { awaitWriteFinish: { stabilityThreshold: number; pollInterval: number } }
@@ -33,9 +36,9 @@ interface FakeChokidar {
   }>
 }
 
-async function fakeInstances(): Promise<FakeChokidar['__instances']> {
-  const chokidar = await import('chokidar') as unknown as FakeChokidar
-  return chokidar.__instances
+async function fakeInstances(): Promise<FakeHomePaths['__instances']> {
+  const homePaths = await import('@deepseek-ai/dsh-home-paths') as unknown as FakeHomePaths
+  return homePaths.__instances
 }
 
 const ThemeSchema: z<{ theme: string }> = z.object({

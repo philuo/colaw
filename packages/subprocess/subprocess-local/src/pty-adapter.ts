@@ -9,6 +9,10 @@
 
 const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined'
 
+// Static import of node-pty-adapter allows vitest's vi.mock('node-pty') to intercept.
+// Under Bun, node-pty-adapter exports a stub (avoids native ABI mismatch).
+import { nodePty } from './node-pty-adapter'
+
 export interface IPtyForkOptions {
   name?: string
   cols?: number
@@ -49,9 +53,8 @@ export function getPtyModule(): IPtyModule {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     ptyModule = require('./bun-pty-adapter') as IPtyModule
   } else {
-    // Node.js: use node-pty
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ptyModule = require('node-pty') as IPtyModule
+    // Node.js: use node-pty (static import via node-pty-adapter for vitest mock compatibility)
+    ptyModule = nodePty as unknown as IPtyModule
   }
   return ptyModule
 }

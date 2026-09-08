@@ -3,6 +3,8 @@
 > 基于 Bun 1.4.x 原生 API 与 deepseek-harness v0.1.3-alpha.2 依赖的完整对照
 > 分析日期：2026-09-07
 
+> ⚠️ **时效说明（2026-09-08）**：本文是动手前的**理论映射**。经在 Bun 1.4.2 实测、grep dsh 真实 API 使用面后，若干结论已被修正——`js-yaml/yaml`（dsh 用 AST，Bun.YAML 无 AST）、`ws`（dsh 用服务端 upgrade，全局 WebSocket 仅客户端）、`sharp→Bun.Image`（能力不足，已决定保留 sharp）、`Bun.Markdown`（1.4.2 尚不存在）等**不能按本文乐观结论直接替换**；`CompressionStream` 则反过来在 1.4.2 已可用。**最终裁决与证据矩阵以 [13-bun-builtin-replacement-verdict.md](./13-bun-builtin-replacement-verdict.md) 为准。**
+
 ## 核心结论
 
 Bun 1.4.x 的原生 API 可以替代 dsh 中 **约 60% 的外部运行时依赖**，其中最关键的是：

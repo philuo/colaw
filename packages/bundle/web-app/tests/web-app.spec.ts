@@ -358,21 +358,20 @@ describe('web-app runtime glue', () => {
     await ctx.fiber.dispose()
   })
 
-  it('scrubs the helper environment and reports helper spawn or exit failures', async () => {
+  it('scrubs the native launcher environment and reports launcher spawn or exit failures', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'must-not-reach-browser')
     vi.stubEnv('DSH_HOME', '/must-not-reach-browser')
     const completed = launcher()
     vi.mocked(spawn).mockReturnValueOnce(completed)
     const completion = originalOpenBrowser('http://127.0.0.1:4567')
     const [command, args, options] = vi.mocked(spawn).mock.calls[0]!
-    expect(command).toBe(process.execPath)
-    expect(args).toEqual([
-      '--input-type=module',
-      '--eval', expect.stringContaining('await import('),
-      '--', 'http://127.0.0.1:4567',
-    ])
-    expect(args?.[2]).toContain("if (process.platform === 'win32')")
-    expect(args?.[2]).toContain('launcher.ref()')
+    // The native opener replaces the `open` npm package: macOS `open` / Linux `xdg-open`,
+    // invoked directly with the URL (no nested runtime `--eval` helper process).
+    const expectedNativeCommand = process.platform === 'darwin' ? 'open'
+      : process.platform === 'linux' ? 'xdg-open'
+        : process.execPath
+    expect(command).toBe(expectedNativeCommand)
+    expect(args).toEqual(['http://127.0.0.1:4567'])
     expect(options?.env).not.toHaveProperty('DEEPSEEK_API_KEY')
     expect(options?.env).not.toHaveProperty('DSH_HOME')
     expect(options?.env?.PATH).toBe(process.env.PATH)

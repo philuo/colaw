@@ -1,19 +1,47 @@
 /**
- * `node:crypto` for the worker: WebCrypto for randomness, `@noble/hashes` for the
- * synchronous digests Node's streaming Hash object provides (SubtleCrypto is
- * async, and every caller here hashes synchronously).
+ * `node:crypto` for the worker: WebCrypto for randomness, native crypto or
+ * `@noble/hashes` for the synchronous digests Node's streaming Hash object
+ * provides (SubtleCrypto is async, and every caller here hashes synchronously).
+ *
+ * Runtime detection: Bun has native node:crypto support; Node.js fallback
+ * uses @noble/hashes for synchronous digest computation.
  */
-import { sha1 } from '@noble/hashes/legacy.js'
-import { sha256, sha512 } from '@noble/hashes/sha2.js'
 import { randomUUID as mintUUID } from '@deepseek-ai/dsh-util-crypto'
 import { Buffer } from 'buffer'
 
+/** Detect Bun runtime. */
+const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined'
+
 type Hasher = (input: Uint8Array) => Uint8Array
 
-const HASHERS: Record<string, Hasher> = {
-  sha1,
-  sha256,
-  sha512,
+/**
+ * Create hasher functions using native node:crypto (Bun) or @noble/hashes (Node).
+ * Loaded lazily so the module stays importable in environments where neither
+ * is available (the createHash caller throws a clear error in that case).
+ */
+function loadHashers(): Record<string, Hasher> {
+  if (isBun) {
+    // Bun: use native node:crypto createHash
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const crypto = require('node:crypto') as typeof import('node:crypto')
+    return {
+      sha1: (input: Uint8Array) => new Uint8Array(crypto.createHash('sha1').update(input).digest()),
+      sha256: (input: Uint8Array) => new Uint8Array(crypto.createHash('sha256').update(input).digest()),
+      sha512: (input: Uint8Array) => new Uint8Array(crypto.createHash('sha512').update(input).digest()),
+    }
+  }
+  // Node.js: use @noble/hashes
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { sha1 } = require('@noble/hashes/legacy.js') as { sha1: Hasher }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { sha256, sha512 } = require('@noble/hashes/sha2.js') as { sha256: Hasher; sha512: Hasher }
+  return { sha1, sha256, sha512 }
+}
+
+let hashersCache: Record<string, Hasher> | undefined
+function getHashers(): Record<string, Hasher> {
+  if (hashersCache === undefined) hashersCache = loadHashers()
+  return hashersCache
 }
 
 const encoder = new TextEncoder()
@@ -37,7 +65,7 @@ export interface Hash {
  * @returns the streaming hash face.
  */
 export function createHash(algorithm: string): Hash {
-  const hasher = HASHERS[algorithm.toLowerCase().replace('-', '')]
+  const hasher = getHashers()[algorithm.toLowerCase().replace('-', '')]
   if (hasher === undefined) {
     throw new Error(`web-preview: node:crypto.createHash("${algorithm}") is not available in the worker host`)
   }

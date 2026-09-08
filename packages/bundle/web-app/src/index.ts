@@ -90,36 +90,20 @@ function launchedThroughSsh(ctx: Context): boolean {
   })
 }
 
-const BROWSER_OPENER_MODULE = import.meta.resolve('open')
-
-const BROWSER_OPENER_PROGRAM = `
-try {
-  const { default: open } = await import(${JSON.stringify(BROWSER_OPENER_MODULE)})
-  const launcher = await open(process.argv[1])
-  if (process.platform === 'win32') {
-    // open resolves at PowerShell spawn; keep it referenced until that launcher hands the URL to Windows.
-    const code = launcher.exitCode ?? await new Promise((resolve, reject) => {
-      function onError(error) {
-        launcher.off('close', onClose)
-        reject(error)
-      }
-      function onClose(code) {
-        launcher.off('error', onError)
-        resolve(code)
-      }
-      launcher.ref()
-      launcher.once('error', onError)
-      launcher.once('close', onClose)
-    })
-    if (code !== 0) throw new Error('browser operating-system launcher exited with code ' + String(code))
-  }
-  process.exitCode = 0
-} catch (error) {
-  // The parent turns this exit into the manual-URL warning.
-  console.error(error)
-  process.exitCode = 1
+/**
+ * Operating-system default-browser launchers, replacing the `open` npm package.
+ *
+ * dsh targets Bun on macOS arm64, where the system `open` command hands a URL
+ * to the default browser directly — neither a third-party package nor a nested
+ * `runtime --eval` helper process is needed. `xdg-open` is retained for Linux
+ * development checkouts at zero dependency cost. An unsupported platform is
+ * reported (the caller turns the failure into the manual-URL warning) rather
+ * than silently faked.
+ */
+const PLATFORM_BROWSER_OPENER: Record<string, { command: string; prefixArgs: readonly string[] }> = {
+  darwin: { command: 'open', prefixArgs: [] },
+  linux: { command: 'xdg-open', prefixArgs: [] },
 }
-`
 
 /**
  * Resolve one LAN-trust snapshot from the active server bind.
@@ -178,13 +162,17 @@ function resolveDistIndex(): string {
   }
 }
 
-/** Start the maintained platform opener without forwarding Harness credentials. */
+/**
+ * Start the OS default-browser launcher without forwarding Harness credentials.
+ * Uses the platform's native command (macOS `open`) directly, so no third-party
+ * package and no nested runtime helper process are involved.
+ */
 function spawnBrowserLauncher(url: string): ChildProcess {
-  return spawn(process.execPath, [
-    '--input-type=module',
-    '--eval', BROWSER_OPENER_PROGRAM,
-    '--', url,
-  ], {
+  const opener = PLATFORM_BROWSER_OPENER[process.platform]
+  if (opener === undefined) {
+    throw new Error(`web-app: no native browser opener registered for platform ${String(process.platform)}`)
+  }
+  return spawn(opener.command, [...opener.prefixArgs, url], {
     env: scrubbedParentEnv(),
     stdio: ['ignore', 'inherit', 'pipe'],
   })

@@ -14,12 +14,11 @@ import { unwatchFile, watchFile, type Stats } from 'node:fs'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
 import type { Context } from '@deepseek-ai/cordis'
-import chokidar from 'chokidar'
 import z from '@deepseek-ai/schemastery'
 import type Schema from '@deepseek-ai/schemastery'
 import { parse as parseYaml } from 'yaml'
 import type { FileSystem, FsDirEntry, FsTarget } from '@deepseek-ai/dsh-fs'
-import { canonicalizeWatchPath, resolveDshHome } from '@deepseek-ai/dsh-home-paths'
+import { canonicalizeWatchPath, resolveDshHome, watch as chokidarWatch } from '@deepseek-ai/dsh-home-paths'
 import {
   BUNDLED_SKILL_RANK,
   isSkillName,
@@ -485,7 +484,7 @@ class SkillWatchManager {
   }
 
   private async openRootWatcher(state: RootWatchState, mode: Extract<RootWatchMode, { kind: 'root' }>): Promise<WatchHandle> {
-    const watcher = chokidar.watch(mode.anchor, {
+    const watcher = chokidarWatch(mode.anchor, {
       // Chokidar owns late native fs.watch errors only for persistent watchers;
       // this provider's effect explicitly closes every handle at teardown.
       persistent: true,
