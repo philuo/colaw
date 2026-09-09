@@ -1,7 +1,7 @@
 /**
  * Cross-process write-ownership lock for one session's artifact directory,
  * held for the whole life of a write handle. The arbiter is the kernel:
- * POSIX takes a non-blocking `flock(2)` (through fs-ext) on `session.lock`
+ * POSIX takes a non-blocking `flock(2)` via native system support on `session.lock`
  * beside the log, and Windows holds a named kernel semaphore derived from
  * that path — never a file lock or handle, so readers, searches, and
  * directory removal proceed freely while the lock is held. Contention maps
@@ -22,7 +22,7 @@
  * unmaterialized session has no filesystem footprint. Release never removes
  * the POSIX lock file: every acquired lock belongs to a materialized or
  * materializing session, and the surviving file keeps the stable inode later
- * lockers verify against. The browser worker deployment stubs fs-ext to
+ * lockers verify against. The browser worker stubs the native flock entry to
  * immediate success: it is single-process, so the in-process write claim
  * already excludes every writer.
  * @module @deepseek-ai/dsh-session-persistence-jsonl/lease
@@ -31,13 +31,12 @@
 import { mkdir, open, stat } from 'node:fs/promises'
 import type { FileHandle } from 'node:fs/promises'
 import { join } from 'node:path'
-// Bun compatibility: use Bun.FFI flock in Bun, fs-ext in Node.js.
-// fs-ext's async callbacks can cause segfaults in Bun; Bun.FFI is pure JS and safe.
-// fs-ext is imported via ./fs-ext-adapter which uses runtime detection: under Bun it
-// exports a stub (avoiding native ABI mismatch), under Node.js it exports the real module.
-// Static import allows vitest's vi.mock('fs-ext') to intercept the import.
+// Bun compatibility: Bun.FFI flock under Bun, official prebuilt flock under Node.js.
+// Bun.FFI is pure JS and avoids fs-ext's async-callback segfaults under Bun; under
+// Node.js the official @deepseek-ai/node-addon-system/flock (prebuilt Node-API)
+// replaces fs-ext. Runtime dispatch keeps a single implementation for both runtimes.
 const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined'
-import { fsExt } from './fs-ext-adapter.ts'
+import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
 type BunFfiFlockFn = { flock: (fd: number, operation: number) => number }
 
 let bunFfiFloc: BunFfiFlockFn | null = null
@@ -71,17 +70,15 @@ type HeldLock =
 // Bun.FFI flock constants
 const LOCK_EX = 2
 const LOCK_NB = 4
-const LOCK_UN = 8
 
-/** Promise face over flock, compatible with fs-ext's string-flag overload. */
-function flockAsync(fd: number, flags: 'exnb' | 'un'): Promise<void> {
+/** Promise face over a non-blocking exclusive flock, dispatched by runtime. */
+function flockAsync(fd: number): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
       if (isBun) {
         // Bun: use Bun.FFI flock (pure JS, no segfault)
         const libc = getBunFfiFloc()
-        const operation = flags === 'exnb' ? (LOCK_EX | LOCK_NB) : LOCK_UN
-        const result = libc.flock(fd, operation)
+        const result = libc.flock(fd, LOCK_EX | LOCK_NB)
         if (result !== 0) {
           const errno = result
           const code = errno === 11 ? 'EAGAIN' : `E${errno}`
@@ -92,22 +89,15 @@ function flockAsync(fd: number, flags: 'exnb' | 'un'): Promise<void> {
           resolve()
         }
       } else {
-        // Node.js: use fs-ext flock (static import via fs-ext-adapter for vitest mock compatibility)
-        try {
-          fsExt.flock(fd, flags, (err: NodeJS.ErrnoException | null) => {
-            if (err) reject(err)
-            else resolve()
-          })
-        } catch (error) {
-          reject(error)
-        }
+        // Node.js: official prebuilt Node-API flock (async work; rejects with
+        // EAGAIN/EWOULDBLOCK on contention)
+        tryLockExclusive(fd).then(resolve, reject)
       }
     } catch (error) {
       reject(error)
     }
   })
 }
-
 /** Whether a flock failure means another descriptor holds the lock. */
 function isLockContention(error: unknown): boolean {
   const code = (error as NodeJS.ErrnoException | null)?.code
@@ -155,7 +145,7 @@ export class SessionWriteLease {
       const handle = await open(path, 'w')
       try {
         try {
-          await flockAsync(handle.fd, 'exnb')
+          await flockAsync(handle.fd)
         } catch (error: unknown) {
           if (isLockContention(error)) throw new SessionAlreadyOwnedError(id)
           throw error
