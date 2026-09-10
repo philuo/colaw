@@ -12,6 +12,7 @@ import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import { SidebarToggleButton } from '../src/client/shell/SidebarToggle.tsx'
 import type { SidebarToggleButtonProps } from '../src/client/shell/SidebarToggle.tsx'
 import { createSidebarRightStore } from '../src/client/stores.ts'
+import { GUIDE_KIND } from '../src/client/contract/seed.ts'
 
 const SESSION = 's-test' as SessionId
 
@@ -28,7 +29,7 @@ function hookOf<T>(inst: { subscribe: (fn: () => void) => () => void; getSnapsho
  * documented cast keeps the harness to what is actually exercised.
  */
 function mountButton() {
-  const instance = createSidebarRightStore(() => 'Start').create()
+  const instance = createSidebarRightStore(() => ({ kind: GUIDE_KIND, title: 'Start' })).create()
   const props = {
     sessionId: SESSION,
     useStore: hookOf(instance),
