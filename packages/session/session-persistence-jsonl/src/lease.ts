@@ -38,20 +38,36 @@ import { join } from 'node:path'
 const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined'
 import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
 type BunFfiFlockFn = { flock: (fd: number, operation: number) => number }
+/** Platform errno accessor over Bun.FFI: darwin `__error`, glibc `__errno_location`. */
+type BunFfiErrnoFn = () => number
 
 let bunFfiFloc: BunFfiFlockFn | null = null
+let bunFfiErrno: BunFfiErrnoFn | null = null
 
 function getBunFfiFloc(): BunFfiFlockFn {
   if (bunFfiFloc) return bunFfiFloc
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { dlopen } = require('bun:ffi')
+  const { dlopen, read } = require('bun:ffi')
   const libcPath = process.platform === 'darwin'
     ? '/usr/lib/libSystem.B.dylib'
     : 'libc.so.6'
   const lib = dlopen(libcPath, {
     flock: { args: ['i32', 'i32'], returns: 'i32' },
+    ...(process.platform === 'darwin'
+      ? { __error: { args: [], returns: 'pointer' } }
+      : { __errno_location: { args: [], returns: 'pointer' } }),
   })
-  bunFfiFloc = lib.symbols as unknown as { flock: (fd: number, operation: number) => number }
+  const symbols = lib.symbols as unknown as {
+    flock: (fd: number, operation: number) => number
+    __error?: () => number
+    __errno_location?: () => number
+  }
+  bunFfiFloc = symbols
+  const errnoAt = symbols.__error ?? symbols.__errno_location
+  // libc flock(2) reports failure as -1 with the reason in the errno global; read
+  // it when the accessor resolved, else fall back to contention (the only -1
+  // reachable for a LOCK_NB call on a descriptor this process keeps open).
+  bunFfiErrno = errnoAt === undefined ? () => 35 : () => read.u32(errnoAt())
   return bunFfiFloc
 }
 
@@ -80,8 +96,11 @@ function flockAsync(fd: number): Promise<void> {
         const libc = getBunFfiFloc()
         const result = libc.flock(fd, LOCK_EX | LOCK_NB)
         if (result !== 0) {
-          const errno = result
-          const code = errno === 11 ? 'EAGAIN' : `E${errno}`
+          // The return value is -1 on failure, not the errno: the reason lives
+          // in the errno global. darwin spells LOCK_NB contention EWOULDBLOCK
+          // (35); glibc EAGAIN (11). Both map to contention downstream.
+          const errno = result === -1 ? (bunFfiErrno?.() ?? 35) : 35
+          const code = errno === 11 ? 'EAGAIN' : errno === 35 ? 'EWOULDBLOCK' : `E${errno}`
           const error = new Error(`flock failed: ${code}`)
           ;(error as NodeJS.ErrnoException).code = code
           reject(error)

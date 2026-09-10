@@ -1,4 +1,25 @@
 .frame {
+  --dsh-titlebar-inset: 0px;
+  /* Unified top bar: 0 in the browser surface, a real band in desktop chrome
+     (AppFrame.tsx overrides the height inline). The conversation header reads
+     these to place its title row in the same band as the sidebar controls. */
+  --dsh-topbar-height: 0px;
+  --dsh-header-top-padding: 12px;
+  --dsh-topbar-left-inset: 0px;
+  /* The top bar's right end belongs to the frame's right column, which pins one
+     resident control inside this tail (sidebarRight's toggle). Everything else
+     in the bar ends before it: the conversation header's utilities, and the
+     panel's own strip, which comes to rest left of that control. */
+  --dsh-topbar-right-inset: 44px;
+  /* The strip the docking kit draws at a surface's top edge IS this bar, with
+     the kit's own 36px floor standing in where there is no bar (the browser
+     surface, which centres the conversation's title row inside its column
+     instead). The pane's hairline frame sits outside that band, so a control
+     pinned to this frame's edge — the right column's toggle — is offset by it
+     to land on the same centre line. Both are stated here because a
+     surface-wide band is the frame's to declare. */
+  --dsh-dockkit-strip-height: max(36px, var(--dsh-topbar-height, 0px));
+  --dsh-dockkit-pane-frame: 1px;
   position: relative; /* anchors the drag handles, which straddle column borders */
   display: grid;
   grid-template-rows: 100%;
@@ -8,6 +29,42 @@
   /* Collapse/expand animates the tracks on the deepsuite sider curve
      (--ds-ease-in-out / --ds-transition-duration-slow, ui-theme base.css). */
   transition: grid-template-columns var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+}
+
+/* Desktop chrome (Electrobun window with an inset transparent title bar): the
+   shell reserves the traffic-light strip and lets the sidebar paint to the top. */
+.frame[data-desktop-chrome] {
+  --dsh-titlebar-inset: 32px;
+}
+
+/* Window-drag surface over the reserved strip. Electrobun mirrors app-region
+   onto native WKWebView hit testing (its preload/dragRegions). It sits below the
+   conversation header (which now draws its title row inside this band and is
+   itself a drag region), below the peek panel (25), and below the right panel,
+   so every control in the band stays clickable. */
+.titlebarDrag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--dsh-titlebar-inset);
+  z-index: 1;
+  cursor: default;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+/* Sidebar-column drag strip: the same reserved strip, under the title-bar
+   controls (which opt out of the drag region). */
+.sidebarDrag {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: var(--dsh-titlebar-inset);
+  z-index: 1;
+  cursor: default;
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 /* Dragging writes widths at pointer cadence; easing them would detach the
@@ -29,6 +86,56 @@
   border-right: 0.5px solid var(--dsw-alias-border-l3);
 }
 
+/* Desktop collapsed: the track is zero-width and only the slot's floating
+   toggle survives; it must not be clipped by this column. */
+.sidebarCol[data-desktop-collapsed] {
+  overflow: visible;
+  background: transparent;
+  border-right-color: transparent;
+}
+
+/* Desktop hover-peek: the collapsed rail's panel floats over the conversation
+   instead of pushing it, so the column must not clip its overflowing child.
+   The panel itself (not the column) carries the stacking level, so the
+   title-bar controls — its sibling — can paint above it. */
+.sidebarCol[data-peeking] {
+  overflow: visible;
+  border-right-color: transparent;
+  background: transparent;
+}
+
+.sidebarCol[data-peeking] [data-sidebar-panel] {
+  position: relative;
+  z-index: 25;
+  box-shadow: 4px 0 16px rgb(0 0 0 / 14%);
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
+  animation: peek-in 160ms ease-out;
+}
+
+/* Hover target at the window's left edge (desktop collapsed): entering it or
+   the floating controls floats the hidden sidebar out. */
+.peekEdge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  z-index: 24;
+}
+
+@keyframes peek-in {
+  from {
+    opacity: 0;
+    transform: translateX(-16px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebarCol[data-peeking] [data-sidebar-panel] {
+    animation: none;
+  }
+}
+
 .centerCol {
   min-width: 0;
   display: flex;
@@ -36,6 +143,9 @@
   overflow: hidden;
 }
 
+/* Desktop chrome: the conversation header and the right panel each own their
+   top offset (the unified top bar), so the columns no longer reserve the strip
+   themselves. */
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
    centered on the column border via inline left, above column content. No
    handle draws a visible pill: the details column was the only one that did,

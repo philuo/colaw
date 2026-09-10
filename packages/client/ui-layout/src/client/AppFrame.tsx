@@ -16,7 +16,7 @@
  * shares — zero cordis or framework imports, zero self-made hooks.
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
@@ -35,6 +35,38 @@ export type AppFrameProps =
 /** Center column grid item (session-body building block). */
 function CenterColumn(props: { children?: ReactNode }) {
   return <div className={css.centerCol}>{props.children}</div>
+}
+
+/**
+ * Desktop chrome is announced by the native host through an index-injected
+ * global (`window.__DSH_DESKTOP__`): the window uses a transparent title bar
+ * with inset traffic lights, so the shell owns a top inset, a draggable strip,
+ * and a hover-peek rail. Absent in the browser surface.
+ */
+interface DesktopChromeMarker {
+  chrome?: string
+  titlebarInset?: number
+}
+
+/**
+ * Unified top-bar height in desktop chrome. Every header control — the sidebar
+ * toggle, New Session, the session title and preset, the open-locally pill, and
+ * the right-panel toggle — centres in this one band instead of living in the
+ * title-bar strip and the conversation header as two separate rows.
+ */
+const TOPBAR_HEIGHT = 42
+
+/**
+ * Horizontal room the two floating sidebar controls take, right of their
+ * `left` anchor: two 28px buttons, a 4px gap, and 8px of breathing room. A
+ * collapsed desktop sidebar drops its track, so the conversation header must
+ * reserve this much itself before its title can follow them.
+ */
+const TOPBAR_CONTROLS_WIDTH = 68
+
+function desktopChromeMarker(): DesktopChromeMarker | undefined {
+  const marker = (globalThis as { __DSH_DESKTOP__?: DesktopChromeMarker }).__DSH_DESKTOP__
+  return marker?.chrome === 'darwin' ? marker : undefined
 }
 
 /**
@@ -158,6 +190,28 @@ export function AppFrame({
 
   const narrow = viewport < SIDEBAR_AUTO_COLLAPSE
   const sidebarCollapsed = narrow ? !panels.narrowExpanded : panels.sidebar === 0
+  const desktopMarker = desktopChromeMarker()
+  const desktopChrome = desktopMarker !== undefined
+  // Desktop chrome: a collapsed sidebar has NO track (it is really hidden; only
+  // its floating toggle remains next to the traffic lights) and hovering that
+  // toggle floats the panel out over the conversation.
+  const [peeking, setPeeking] = useState(false)
+  const desktopHidden = desktopChrome && sidebarCollapsed
+  const peekingNow = desktopHidden && peeking
+  useEffect(() => { if (!desktopHidden) setPeeking(false) }, [desktopHidden])
+  // macOS fullscreen hides the traffic lights, so the title-bar controls move
+  // left. The native host is the authority (a maximized window is not
+  // fullscreen): it pushes `__DSH_DESKTOP_FULLSCREEN__` and a change event.
+  const [fullscreen, setFullscreen] = useState(false)
+  useEffect(() => {
+    if (!desktopChrome) return
+    const update = (): void => {
+      setFullscreen((globalThis as { __DSH_DESKTOP_FULLSCREEN__?: boolean }).__DSH_DESKTOP_FULLSCREEN__ === true)
+    }
+    update()
+    window.addEventListener('dsh:desktop-fullscreen', update)
+    return () => { window.removeEventListener('dsh:desktop-fullscreen', update) }
+  }, [desktopChrome])
   const sidebarPreference = sidebarCollapsed
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
@@ -166,6 +220,11 @@ export function AppFrame({
   // include that space before the occupant's first shown report arrives.
   const normal = computeColumns(viewport, !panels.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference)
   const cols = computeColumns(viewport, sidebarPreference, panels.rightbarTrack ? rightbarPreference : 0)
+  // The desktop collapsed state drops the rail track entirely.
+  const sidebarTrack = desktopHidden ? 0 : cols.sidebar
+  // The sidebar slot stays mounted (its floating toggle is the reopen affordance).
+  const slotCollapsed = desktopHidden ? !peekingNow : sidebarCollapsed
+  const slotWidth = peekingNow ? SIDEBAR_DEFAULT : sidebarTrack
   const colsRef = useRef(cols)
   colsRef.current = cols
   const rightbarWidth = useRef(normal.rightbar)
@@ -189,6 +248,9 @@ export function AppFrame({
     actions.setRightbar(rightbarBase.current - dx)
   }, [actions])
   const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
+  // macOS hides the traffic lights in fullscreen, so the two floating sidebar
+  // controls re-anchor to the window edge there.
+  const controlsLeft = fullscreen ? 14 : 76
 
   return (
     <div
@@ -196,27 +258,71 @@ export function AppFrame({
       className={css.frame}
       style={{
         gridTemplateColumns:
-          `${cols.sidebar}px minmax(0, 1fr) ${cols.rightbar}px`,
+          `${sidebarTrack}px minmax(0, 1fr) ${cols.rightbar}px`,
+        ...(desktopChrome
+          ? ({
+            '--dsh-titlebar-inset': `${desktopMarker.titlebarInset ?? 32}px`,
+            '--dsh-titlebar-controls-left': `${controlsLeft}px`,
+            '--dsh-topbar-height': `${TOPBAR_HEIGHT}px`,
+            // The conversation header's title row IS the top bar, so it drops
+            // the browser surface's own top padding while the bar exists.
+            '--dsh-header-top-padding': '0px',
+            // A hidden desktop sidebar has no track, so its two floating
+            // controls overhang the conversation; the header starts past them.
+            '--dsh-topbar-left-inset': desktopHidden
+              ? `${controlsLeft + TOPBAR_CONTROLS_WIDTH}px`
+              : '0px',
+          } as CSSProperties)
+          : {}),
       }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
       data-rightbar-collapsed={cols.rightbar === 0 || undefined}
       data-rightbar-fullscreen={panels.rightbarFullscreen || undefined}
       data-rightbar-instant={panels.rightbarInstant || undefined}
       data-dragging={dragging || undefined}
+      data-desktop-chrome={desktopChrome || undefined}
     >
       <DocumentTitle
         productTitle={productTitle}
         {...documentTitle === undefined ? {} : { title: documentTitle }}
       />
-      <div className={css.sidebarCol}>
+      {/* Draggable title-bar strips: the centre strip spans only the centre
+          track, so the sidebar controls and an open right panel stay
+          interactive; the sidebar column carries its own strip. */}
+      {desktopChrome && (
+        <div
+          className={css.titlebarDrag}
+          style={{ left: sidebarTrack, right: cols.rightbar }}
+          aria-hidden="true"
+        />
+      )}
+      <div
+        className={css.sidebarCol}
+        data-peeking={peekingNow || undefined}
+        data-desktop-collapsed={desktopHidden || undefined}
+        onPointerEnter={() => { if (desktopHidden) setPeeking(true) }}
+        onPointerLeave={() => { if (desktopHidden) setPeeking(false) }}
+      >
+        {/* Hover target at the window's left edge: entering it (or the floating
+            controls) floats the hidden sidebar out. */}
+        {desktopHidden && <div className={css.peekEdge} aria-hidden="true" />}
+        {/* Sidebar-column drag strip: sits below the title-bar controls. */}
+        {desktopChrome && !desktopHidden && (
+          <div className={css.sidebarDrag} style={{ width: sidebarTrack }} aria-hidden="true" />
+        )}
         {/* Render-site slot call with live concession output: a closed
             sidebar keeps the mounted slot at the compact-rail width, and the
             component sees its rendered state as owner params decided here
             (collapsed follows the resolved rail, so a derived auto-collapse
-            renders the rail UI too). */}
+            renders the rail UI too). Desktop chrome instead hides the track
+            and keeps only the slot's floating toggle; peeking re-renders it
+            wide at the default width, overlaying the centre. */}
         {renderSlot('sidebar', {
-          collapsed: sidebarCollapsed,
-          width: cols.sidebar,
+          collapsed: slotCollapsed,
+          // The top-bar toggle keys on the LAYOUT state, so the hover-peek
+          // panel floating out cannot flip its icon.
+          collapsedInLayout: sidebarCollapsed,
+          width: slotWidth,
         })}
       </div>
       <>

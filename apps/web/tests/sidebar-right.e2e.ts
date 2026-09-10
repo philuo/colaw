@@ -5,9 +5,9 @@
 // The frame owns the right column as a track; the Sidebar anchors its panel to
 // the column's edge and slides it in and out. Which of the two presentations
 // draws the panel is a recorded, reversible choice, so this file asserts against
-// the frame's track as much as against the panel itself. The way back in while
-// collapsed is not in the column at all: it is one button in the conversation
-// header, and it leaves when the panel opens.
+// the frame's track as much as against the panel itself. The way in and out is
+// one button the column pins to the frame's edge, resident in both states, so
+// the panel's own controls slide past a control that never moves.
 //
 // Ordering is the product's own: the hero comes before any session, so the
 // empty right edge is asserted first and the session-bound cases follow in a
@@ -107,9 +107,13 @@ async function holdPanelSlide(panel: Locator) {
   })
 }
 
-/** The expand button in the conversation header, present only while collapsed. */
+/**
+ * The pinned toggle in its expand state: the way in, and only that state, so a
+ * case can still ask "is there a control to open with" without matching the
+ * collapse glyph. The control itself is resident in the right column.
+ */
 function expandOf(page: Page): Locator {
-  return page.locator('[data-sidebar-right-expand]')
+  return page.locator('[data-sidebar-right-toggle="expand"]')
 }
 
 /**
@@ -331,8 +335,8 @@ describe('web e2e: shipped right Sidebar', () => {
       const expand = expandOf(page)
 
       // Collapsed default: no track, the panel sits off the frame's edge, and
-      // the only way in is the header button — on the same row as the other
-      // header utilities, at its far right.
+      // the only way in is the toggle the column pins to the frame's own edge —
+      // inside the right column, not in the conversation's header row.
       await expand.waitFor({ timeout: 15_000 })
       expect(await frame.getAttribute('data-rightbar-collapsed')).toBe('true')
       expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)
@@ -340,8 +344,8 @@ describe('web e2e: shipped right Sidebar', () => {
       const expandBox = await expand.boundingBox()
       const rowBox = await utilities.boundingBox()
       if (expandBox === null || rowBox === null) throw new Error('header utilities are not rendered')
-      expect(Math.round(expandBox.y + expandBox.height / 2)).toBe(Math.round(rowBox.y + rowBox.height / 2))
-      // Its own corner seat, past the utilities' right edge — not a utility.
+      expect(await conversation.locator('[data-sidebar-right-toggle]').count()).toBe(0)
+      // Past the utilities' right edge — a control of the column, not a utility.
       expect(expandBox.x).toBeGreaterThan(rowBox.x + rowBox.width)
       const conversationBoxBefore = await conversation.boundingBox()
       if (conversationBoxBefore === null) throw new Error('conversation is not rendered')
@@ -351,8 +355,8 @@ describe('web e2e: shipped right Sidebar', () => {
       await shot(page, '02a-collapsed-header-button')
 
       // Opening squeezes by default: the column takes a track of the panel's
-      // width, the conversation gives up exactly that much room, and the header
-      // button leaves with the panel's arrival.
+      // width, the conversation gives up exactly that much room, and the toggle
+      // holds its one position — the panel slides past it.
       await expand.click()
       await expect.poll(async () => await frame.getAttribute('data-rightbar-collapsed')).toBe(null)
       await expect.poll(async () => await column.locator('[data-sidebar-right-open]').count()).toBe(1)
@@ -360,9 +364,12 @@ describe('web e2e: shipped right Sidebar', () => {
       expect(panelWidth).toBeGreaterThan(0)
       expect(await width(conversation)).toBe(centerBefore - panelWidth)
       await expect.poll(async () => await expand.count()).toBe(0)
-      // The corner keeps its footprint, so the utilities' right edge stays where
-      // it was relative to the conversation's own right edge.
-      expect(await page.locator('[data-sidebar-right-expand-placeholder]').count()).toBe(1)
+      const toggle = page.locator('[data-sidebar-right-toggle]')
+      const openedBox = await toggle.boundingBox()
+      if (openedBox === null) throw new Error('the pinned toggle is not rendered')
+      expect(openedBox).toEqual(expandBox)
+      // The reserved tail holds, so the utilities' right edge stays where it was
+      // relative to the conversation's own right edge.
       const utilitiesAfter = await utilities.boundingBox()
       const conversationAfter = await conversation.boundingBox()
       if (utilitiesAfter === null || conversationAfter === null) throw new Error('header is not rendered')
@@ -377,20 +384,27 @@ describe('web e2e: shipped right Sidebar', () => {
       const chrome = column.locator('[data-dockkit-strip-chrome]')
       expect(await chrome.count()).toBe(1)
       expect(await chrome.locator('[data-sidebar-right-mode]').count()).toBe(1)
-      expect(await chrome.locator('[data-sidebar-right-toggle]').count()).toBe(1)
+      // The panel's controls come to rest inside the tail the toggle's box
+      // reserves: they slide in left of the button instead of under it.
+      const chromeBox = await chrome.boundingBox()
+      if (chromeBox === null) throw new Error('the panel chrome is not rendered')
+      expect(chromeBox.x + chromeBox.width).toBeLessThanOrEqual(openedBox.x)
 
-      // One centre line across the strip: chip text, split, and the two panel
-      // controls all sit at the same height. The add control joins the check
-      // below, once the strip draws it.
-      const centreY = async (selector: string): Promise<number> => {
-        const box = await column.locator(selector).first().boundingBox()
+      // One centre line across the strip: chip text, split, and the panel's
+      // presentation control all sit at the same height. The add control joins
+      // the check below, once the strip draws it.
+      const centreIn = async (root: Locator, selector: string): Promise<number> => {
+        const box = await root.locator(selector).first().boundingBox()
         if (box === null) throw new Error(`${selector} is not rendered`)
         return Math.round(box.y + box.height / 2)
       }
-      const textLine = await centreY('[data-dockkit-tab-title]')
-      for (const selector of ['[data-dockkit-split-button]', '[data-sidebar-right-mode]', '[data-sidebar-right-toggle]']) {
-        expect(await centreY(selector), selector).toBe(textLine)
+      const textLine = await centreIn(column, '[data-dockkit-tab-title]')
+      for (const selector of ['[data-dockkit-split-button]', '[data-sidebar-right-mode]']) {
+        expect(await centreIn(column, selector), selector).toBe(textLine)
       }
+      // The pinned toggle rides the same band from the column's side, one pane
+      // border and one strip hairline away from the strip's own content box.
+      expect(Math.abs(await centreIn(page, '[data-sidebar-right-toggle]') - textLine)).toBeLessThanOrEqual(1)
 
       // The guide is unique per pane, so while this pane holds one its strip
       // offers no add control. Closing it brings the control back, and the
@@ -402,7 +416,7 @@ describe('web e2e: shipped right Sidebar', () => {
       await column.locator('[data-dockkit-tab-close]').first().click()
       await expect.poll(async () => await tabTitles(column)).toEqual([SAMPLE_NAME])
       await expect.poll(async () => await addTab.count()).toBe(1)
-      expect(await centreY('[data-dockkit-add-tab]')).toBe(textLine)
+      expect(await centreIn(column, '[data-dockkit-add-tab]')).toBe(textLine)
       await addTab.click()
       await expect.poll(async () => await tabTitles(column)).toEqual([SAMPLE_NAME, 'Start'])
       await expect.poll(async () => await column.locator('[data-sidebar-right-guide]').count()).toBe(1)

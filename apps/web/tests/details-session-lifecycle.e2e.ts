@@ -223,7 +223,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
       await page.getByText(reply, { exact: true }).waitFor({ timeout: 15_000 })
     }
     const open = async (): Promise<void> => {
-      await page.locator('[data-sidebar-right-expand]').click()
+      await page.locator('[data-sidebar-right-toggle="expand"]').click()
       await expect.poll(() => column.locator('[data-sidebar-right-open]').count()).toBe(1)
       await expect.poll(() => columns(page)).toEqual(normalColumns)
       // The panel's slide completes independently of the frame's grid tracks.
@@ -323,7 +323,7 @@ describe.skipIf(MODE === 'record')('web e2e: details panel follows the current S
       expect(await column.locator('[data-sidebar-right-open]').count()).toBe(0)
       await checkpoint('A widened: remains closed')
 
-      await page.locator('[data-sidebar-right-expand]').click()
+      await page.locator('[data-sidebar-right-toggle="expand"]').click()
       await expect.poll(() => columns(page)).toEqual([420, viewport.width - 420 - normalWidth, normalWidth])
       await page.setViewportSize({ width: 767, height: viewport.height })
       await expect.poll(() => panel.boundingBox()).toEqual({ x: 0, y: 0, width: 767, height: viewport.height })

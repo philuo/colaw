@@ -66,15 +66,21 @@
   min-height: 0;
 }
 
-/* A body that overflows scrolls inside its pane; nothing escapes the pane. */
+/* A body that overflows scrolls inside its pane; nothing escapes the pane.
+
+   The frame is one transparent hairline the active pane paints, so selecting a
+   pane costs no reflow. It is stated as a var because it moves the pane's own
+   content box: the strip below starts inside it, and an embedder pinning a
+   control to the same band reads it to land on the strip's centre line. */
 .pane {
+  --dsh-dockkit-pane-frame: 1px;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
-  border: 1px solid transparent;
+  border: var(--dsh-dockkit-pane-frame) solid transparent;
 }
 
 .pane[data-dockkit-pane-active] {
@@ -86,6 +92,13 @@
    centres them, so chip text and control glyphs never sit at different heights.
    A child with another height would break that; keep them at 24px.
 
+   The strip is the embedder's top edge, so its own box is the embedder's to
+   set: --dsh-dockkit-strip-height is the band it takes (a surface whose top bar
+   is a real row makes the strip that tall) and the two pad vars are the room
+   its ends keep. An embedder that pins a control of its own to the window's
+   edge reserves the tail here, so the chrome it hands the strip comes to rest
+   beside that control instead of under it.
+
    The strip never clips: the chip box below is its one shrinking part, and
    every control after it is `flex: none`, so a narrow pane costs chips, never
    controls. */
@@ -94,8 +107,8 @@
   flex: none;
   gap: 4px;
   align-items: center;
-  height: 36px;
-  padding: 0 6px;
+  height: var(--dsh-dockkit-strip-height, 36px);
+  padding: 0 var(--dsh-dockkit-strip-pad-end, 6px) 0 var(--dsh-dockkit-strip-pad-start, 6px);
   border-bottom: 0.5px solid var(--dsw-alias-border-l1);
   touch-action: none;
 }

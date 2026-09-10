@@ -296,6 +296,8 @@ export function createSidebarRightStore(
       },
       // A tab already gone — closed twice by a racing callback and the user — is
       // left alone rather than handed to the kit, which refuses an unknown tab.
+      // Every tab is closable, the dock's last one included: the settle planner
+      // answers the emptied pane with a reseeded guide, the panel's home view.
       closeTab: (d, sessionId: string, tabId: TabId) => {
         d.bySession = seat(d, sessionId, seedTitle, s =>
           advance(s, state => state.tabs[tabId] === undefined ? [] : [{ type: 'closeTab', tabId }], seedTitle))

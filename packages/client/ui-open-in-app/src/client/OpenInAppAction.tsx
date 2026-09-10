@@ -69,6 +69,14 @@ const APP_LABEL_KEY: Record<string, OpenInAppKey | undefined> = {
 const failedIcons = new Set<string>()
 
 /**
+ * Desktop chrome (`window.__DSH_DESKTOP__`, injected by the native host) shows
+ * the open-locally control as a labelled pill in the session header.
+ */
+function desktopChromeEnabled(): boolean {
+  return (globalThis as { __DSH_DESKTOP__?: { chrome?: string } }).__DSH_DESKTOP__?.chrome === 'darwin'
+}
+
+/**
  * One application's real bundle icon (host-served PNG) with an inline generic
  * app-square fallback while the host has none.
  * @param props - catalog id, host icon URL, and rendered size.
@@ -208,6 +216,7 @@ export function OpenInAppAction(props: OpenInAppActionProps): React.JSX.Element 
               onClick={() => { launch(current) }}
             >
               <AppIcon id={current} url={props.iconUrl(current)} size={15} />
+              {desktopChromeEnabled() && <span className={css.label}>{currentLabel}</span>}
             </button>
           </Tooltip>
           <button

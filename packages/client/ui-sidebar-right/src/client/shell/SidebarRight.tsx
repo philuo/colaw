@@ -12,13 +12,16 @@
  * the panel. A fullscreen opening reserves its underlying track only after
  * the panel covers the frame, without animating those hidden columns.
  *
- * The panel has no header of its own: its two controls — presentation switch
- * and collapse — ride the docking kit's chrome seat at the end of the top-right
- * pane's tab strip, so the strip is the panel's whole top edge. The way back in
- * while collapsed is not here either: it is one button in the conversation
- * header (`ExpandButton.tsx`), because it exists only while this panel is
- * hidden. Floating panels portal out because they must cross the column and the
- * conversation, and the kit already positions them in viewport coordinates.
+ * The panel has no header of its own: its one control — the presentation
+ * switch — rides the docking kit's chrome seat at the end of the top-right
+ * pane's tab strip, so the strip is the panel's whole top edge, at the top
+ * bar's own height. Every tab is closable, and closing the dock's last one lands
+ * on the reseeded guide, the panel's home view. The way in and out while the
+ * panel slides is not inside it: it is one button (`SidebarToggle.tsx`) pinned
+ * to the frame's edge beside this panel, so the strip's own controls slide in
+ * and out from behind a control that never moves. Floating panels portal out
+ * because they must cross the column and the conversation, and the kit already
+ * positions them in viewport coordinates.
  *
  * Tab bodies do not live here. Each one is a registration under its type's kind,
  * dispatched through the keyed `sidebar.right.pane.tab` seat (and a live chip
@@ -39,6 +42,7 @@ import type { DockIntents, DockMode, FloatRect, TabId, TabRecord, TabRenderer } 
 import { canSplit, dockPaneIds, DockSurface, findPaneContentTab, FloatLayer } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { HalvesFit, LayoutState, PaneId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import { SidebarToggleButton } from './SidebarToggle.tsx'
 import { GUIDE_KIND, pageAddress } from '../contract/seed.ts'
 import { dockLabels } from '../labels.ts'
 import type { SidebarRightOpenTabOptions } from '../service.ts'
@@ -239,50 +243,32 @@ function ExitFullscreenGlyph(): ReactNode {
   )
 }
 
-/** The collapse glyph. */
-function CloseGlyph(): ReactNode {
-  return (
-    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-      <path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
-    </svg>
-  )
-}
-
-/** The panel's two controls, placed by the kit at the top-right pane's strip end. */
+/** The panel's one strip-end control: the presentation switch. The collapse
+ * affordance lives in the top bar, so the chrome keeps only this switch. */
 function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick<PanelProps, 'sessionId' | 'actions' | 't' | 'fullscreen' | 'autoFullscreen'>): ReactNode {
   const next: DockMode = fullscreen ? 'push' : 'fullscreen'
   return (
-    <>
-      <button
-        type="button"
-        className={css.iconButton}
-        aria-label={fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')}
-        title={fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')}
-        data-sidebar-right-mode={next}
-        onClick={() => {
-          if (fullscreen && autoFullscreen) actions.setExpanded(sessionId, false)
-          actions.setMode(sessionId, next)
-        }}
-      >
-        {fullscreen ? <ExitFullscreenGlyph /> : <FullscreenGlyph />}
-      </button>
-      <button
-        type="button"
-        className={css.iconButton}
-        aria-label={t('chrome.collapse')}
-        title={t('chrome.collapse')}
-        data-sidebar-right-toggle
-        onClick={() => { actions.toggleExpanded(sessionId) }}
-      >
-        <CloseGlyph />
-      </button>
-    </>
+    <button
+      type="button"
+      className={css.iconButton}
+      aria-label={fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')}
+      title={fullscreen ? t('chrome.exitFullscreen') : t('chrome.toFullscreen')}
+      data-sidebar-right-mode={next}
+      onClick={() => {
+        if (fullscreen && autoFullscreen) actions.setExpanded(sessionId, false)
+        actions.setMode(sessionId, next)
+      }}
+    >
+      {fullscreen ? <ExitFullscreenGlyph /> : <FullscreenGlyph />}
+    </button>
   )
 }
 
 /**
- * The panel: the docked surface with the two controls in its top-right strip,
- * anchored to the frame's right edge and slid off it while collapsed.
+ * The panel: the docked surface anchored to the frame's right edge and slid off
+ * it while collapsed. Every tab is closable — closing the dock's last one lands
+ * on the reseeded guide, the panel's home view — and the way in while collapsed
+ * is the conversation header's toggle button (`SidebarToggle.tsx`).
  */
 function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<HTMLDivElement> }): ReactNode {
   const { sessionId, surface, actions, t, renderSlot, openTab, width, reportRoom, fullscreen, autoFullscreen, panelRef } = panel
@@ -340,10 +326,16 @@ function Floats(panel: PanelProps): ReactNode {
 }
 
 /**
- * The right column's occupant: the panel, anchored to the column's edge and
- * shown or hidden by sliding, plus the floating layer. It is also where the
- * frame learns the panel's presentation, and where `ctx.sidebarRight` learns
- * which session it is acting on, because this is the seat that knows both.
+ * The right column's occupant: the pinned toggle, the panel anchored to the
+ * column's edge and shown or hidden by sliding, and the floating layer. It is
+ * also where the frame learns the panel's presentation, and where
+ * `ctx.sidebarRight` learns which session it is acting on, because this is the
+ * seat that knows both.
+ *
+ * The toggle is drawn here rather than in the conversation header so it can hold
+ * the frame's edge: this column's right edge is the frame's, whether the panel
+ * has a track or not, and the column never clips its occupant. Drawing it from
+ * this seat also means it reads the very store instance the panel does.
  */
 export function RightbarSeat({
   sessionId, width, viewportWidth, canShow, useStore, actions, t, renderSlot, syncPresentation, bindService, openTab,
@@ -409,13 +401,19 @@ export function RightbarSeat({
   // store as the runtime minted it and reconciles on the store's own commits,
   // on screen or not.
 
-  if (surface === undefined) return null
+  // Drawn before the surface exists, and on every path: the toggle is the top
+  // bar's resident control, and the seat mints the surface a tick after mount.
+  const toggle = (
+    <SidebarToggleButton sessionId={sessionId} useStore={useStore} actions={actions} t={t} />
+  )
+  if (surface === undefined) return toggle
   const panel: PanelProps = {
     sessionId, actions, t, renderSlot, surface, openTab, useTabTypes, useTabNavigation, useStore, occurrence,
     fullscreen, autoFullscreen, reportRoom,
   }
   return (
     <>
+      {toggle}
       <SidebarPanel {...panel} width={width} panelRef={panelRef} />
       <Floats {...panel} />
     </>

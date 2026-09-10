@@ -58,6 +58,13 @@
   flex: none;
 }
 
+/* Desktop chrome labels the pill with the remembered application. */
+.label {
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 img.icon {
   display: block;
   object-fit: contain;

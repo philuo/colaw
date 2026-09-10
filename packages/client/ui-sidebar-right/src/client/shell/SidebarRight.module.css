@@ -1,8 +1,16 @@
 /*
  * The Sidebar's own chrome only: the panel box, its two strip-end controls, and
  * the placeholder tab bodies. Everything inside the split tree is styled by the
- * docking kit; the expand button in the conversation header has its own sheet.
+ * docking kit; the pinned toggle that stays in the top bar has its own sheet.
  * Tokens only.
+ */
+
+/*
+ * The panel's strip is the top edge of this surface: the frame states the band
+ * it takes (--dsh-dockkit-strip-height, the top bar's height), and this tail is
+ * the room the frame keeps for the toggle pinned to its edge
+ * (SidebarToggle.module.css), so the split and fullscreen controls come to rest
+ * left of that button instead of under it.
  */
 
 /*
@@ -21,6 +29,8 @@
  */
 .panel {
   position: absolute;
+  /* 通顶：面板的 Tab 条（分栏/全屏）就是顶栏最右侧，随面板开合从右缘滑入。
+     (0 in the browser surface too — the scale vars below scope to body.) */
   top: 0;
   right: 0;
   bottom: 0;
@@ -28,6 +38,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  --dsh-dockkit-strip-pad-end: var(--dsh-topbar-right-inset, 44px);
   /* The same ground as the conversation: this is a column of the page, not a
      raised surface. */
   background: var(--dsw-alias-bg-base);
@@ -50,6 +61,11 @@
   inset: 0;
   z-index: 40;
   border: none;
+  /* Fullscreen reaches the window's left edge too, where desktop chrome draws
+     the traffic lights above the page: the strip starts past them — and past
+     nothing once the window is fullscreen and the lights are gone, which is the
+     frame's reading, not this surface's. */
+  --dsh-dockkit-strip-pad-start: var(--dsh-titlebar-controls-left, 6px);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -57,6 +73,12 @@
   .panel[data-sidebar-right-open] {
     transition: none;
   }
+}
+
+.panelBody {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .iconButton {
@@ -79,12 +101,6 @@
 .iconButton:hover {
   color: var(--dsw-alias-label-primary);
   background: var(--dsw-alias-interactive-bg-hover);
-}
-
-.panelBody {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
 }
 
 .unavailable {

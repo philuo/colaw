@@ -3,8 +3,8 @@
  *
  * The registry and the navigation controller are real, because "provided"
  * means what those faces do; the slot, locale, frame, and resource faces are
- * recorders, because what matters here is what was handed to them — two seats
- * over one store, the guide's body under its own id, the frame reports, the
+ * recorders, because what matters here is what was handed to them — the panel
+ * seat over one store, the guide's body under its own id, the frame reports, the
  * service binding — and that every registration is gone after dispose, which
  * is what makes a reload safe. The seats' components have their own specs.
  */
@@ -18,7 +18,6 @@ import { SidebarRightController } from '../src/client/service.ts'
 import { SidebarRightTabRegistry } from '../src/client/tab-registry.ts'
 import type { createSidebarRightStore } from '../src/client/stores.ts'
 import { RightbarSeat } from '../src/client/shell/SidebarRight.tsx'
-import { ExpandButton } from '../src/client/shell/ExpandButton.tsx'
 import { GuideBody } from '../src/client/tabs/guide/GuideBody.tsx'
 import { GUIDE_ID } from '../src/client/tabs/guide/definition.ts'
 import { en, zh } from '../src/client/locales.ts'
@@ -90,11 +89,10 @@ describe('ui-sidebar-right apply', () => {
     expect(guide?.id).toBe(GUIDE_ID)
     expect(guide?.priority).toBe('builtin')
     expect(guide?.title('sidebar://guide')).toBe('tab.guide.title')
-    // Three registrations: the panel seat, the header's corner seat, and the
-    // guide body under the guide implementation's id.
+    // Two registrations: the panel seat — which draws the pinned toggle beside
+    // the panel too — and the guide body under the guide implementation's id.
     expect(registered.map(entry => [entry.name, entry.key, entry.locale, entry.component])).toEqual([
       ['rightbar', undefined, 'sidebarRight', RightbarSeat],
-      ['conversation.session.header.corner', undefined, 'sidebarRight', ExpandButton],
       ['sidebar.right.pane.tab', GUIDE_ID, 'sidebarRight', GuideBody],
     ])
     // The panel declares the extension seats; the guide declares its chain child.
@@ -102,9 +100,9 @@ describe('ui-sidebar-right apply', () => {
       'sidebar.right.pane.tab', 'sidebar.right.pane.tab.title', 'sidebar.right.tab.menu.item',
     ])
     expect(seat('sidebar.right.pane.tab').children).toMatchObject({ 'sidebar.right.tab.guide': { kind: 'chain', scope: 'session' } })
-    // Both seats read one store: the button only needs to know whether the panel is expanded.
+    // One seat, one store: the toggle drawn beside the panel reads the same
+    // instance the panel does.
     expect(seat('rightbar').store).toBeDefined()
-    expect(seat('conversation.session.header.corner').store).toBe(seat('rightbar').store)
   })
 
   it('hands the panel seat the frame report, the service binding, the opens, the observable registry, and the Tab domain', async () => {
@@ -146,8 +144,7 @@ describe('ui-sidebar-right apply', () => {
   it('adopts each session\'s store instance as the runtime mints it, so a tab\'s own actions land with no seat bound', async () => {
     const { ctx, resources, seat } = await boot()
     const handle = seat('rightbar').store as ReturnType<typeof createSidebarRightStore>
-    // Both seats declare the same wrapped handle, so either minting adopts.
-    expect(seat('conversation.session.header.corner').store).toBe(handle)
+    // The seat declares the wrapped handle, so the runtime's minting is adopted.
     const instance = handle.create(SESSION)
     instance.actions.open(SESSION)
     const guide = Object.values(instance.getSnapshot().bySession[SESSION]?.layout.tabs ?? {})[0]
@@ -199,6 +196,6 @@ describe('ui-sidebar-right apply', () => {
     expect(dictionaries.size).toBe(0)
     await ctx.plugin({ inject: [...inject], apply }).await()
     expect(ctx.sidebarRightTabs.get('guide')?.id).toBe(GUIDE_ID)
-    expect(registered).toHaveLength(3)
+    expect(registered).toHaveLength(2)
   })
 })

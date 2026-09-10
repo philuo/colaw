@@ -1,15 +1,13 @@
 /**
- * Browser half: fill the frame's right column with the panel, put the expand
- * button in the conversation header, and own the seats a tab type registers
- * into.
+ * Browser half: fill the frame's right column with the pinned toggle and the
+ * panel, and own the seats a tab type registers into.
  *
- * Two seats share one session-scoped store, which the slot runtime allows
- * because both are session-scoped (a handle may not span scopes). The panel seat
- * in the frame draws the surface normally or fullscreen, retaining the track
- * on wide viewports; the header's corner seat draws the way back in
- * while the panel is hidden. The store is the layout's only source of truth; the docking
- * kit's pure planners compute every change and the store records them, one
- * history entry per intent.
+ * One seat draws both things, so both read the same session-scoped store
+ * instance: the way in and out (a button pinned to the frame's edge) and the
+ * panel it drives, normally or fullscreen, retaining the track on wide
+ * viewports. The store is the layout's only source of truth; the docking kit's
+ * pure planners compute every change and the store records them, one history
+ * entry per intent.
  *
  * The frame is a base package and never injects this one. What it needs —
  * whether the panel is shown and whether it wants a track — arrives through its
@@ -26,11 +24,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { ILayout } from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from './contract/slots.ts'
 import { GuideBody, type GuideInjected } from './tabs/guide/GuideBody.tsx'
-import { ExpandButton } from './shell/ExpandButton.tsx'
 import { RightbarSeat, type SidebarRightInjected } from './shell/SidebarRight.tsx'
 import { createSidebarRightController, type SidebarRightController } from './service.ts'
 import { SidebarRightTabRegistry } from './tab-registry.ts'
@@ -42,7 +38,7 @@ import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
 export type { RightbarSeatProps, SidebarRightInjected, SidebarRightPresentation } from './shell/SidebarRight.tsx'
 export type { GuideBodyProps, GuideInjected } from './tabs/guide/GuideBody.tsx'
-export type { ExpandButtonProps } from './shell/ExpandButton.tsx'
+export type { SidebarToggleButtonProps } from './shell/SidebarToggle.tsx'
 export type { SidebarRightState, SurfaceState } from './stores.ts'
 export type {
   ISidebarRight, SidebarRightBinding, SidebarRightOpenResourceOptions, SidebarRightOpenTabOptions,
@@ -158,15 +154,6 @@ export function apply(ctx: ClientContext): void {
         occurrence: tab => controller.tabDomain.occurrence(sessionId, tab),
       }),
     }, RightbarSeat))
-    // The expand button shares the panel's store: it only needs to know whether
-    // the panel is expanded, and to ask for it to be. The header's corner seat
-    // is its own place, past the utilities, so showing and hiding it moves
-    // nothing else in the row.
-    const disposeExpand = ctx.slots.inject('conversation.session.header.corner', () => ctx.slots.register({
-      name: 'conversation.session.header.corner',
-      locale: NS,
-      store,
-    }, ExpandButton))
     // Stage two for the guide: it declares the chain child it hosts and reads
     // the registry's entry boxes, which an ordinary type has no reason to do.
     const guideInjected: GuideInjected = {
@@ -185,7 +172,6 @@ export function apply(ctx: ClientContext): void {
     }, GuideBody))
     return () => {
       disposeGuide()
-      disposeExpand()
       disposeSeat()
       for (const dispose of disposeTypes.reverse()) dispose()
       for (const release of adoptions) release()

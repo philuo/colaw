@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-electrobun-host",
-  "version": "0.1.0",
+  "version": "0.1.5-alpha.1",
   "description": "Electrobun (Bun runtime) desktop host for deepseek-harness",
   "type": "module",
   "private": true,

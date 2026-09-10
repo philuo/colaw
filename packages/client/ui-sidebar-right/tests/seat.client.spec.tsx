@@ -115,6 +115,25 @@ function element(container: HTMLElement, selector: string): HTMLElement {
 }
 
 describe('RightbarSeat presentation', () => {
+  it('draws the pinned toggle in the column itself, beside the panel it drives', async () => {
+    const h = await mountSeat()
+    const toggle = element(h.view.container, '[data-sidebar-right-toggle]')
+    const panel = element(h.view.container, '[data-sidebar-right-panel]')
+    // This seat draws both, side by side: the pinned control is not carried by
+    // the panel, so a track of zero width leaves it where the open panel does.
+    expect(panel.contains(toggle)).toBe(false)
+    expect(toggle.getAttribute('data-sidebar-right-toggle')).toBe('expand')
+    expect(toggle.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // It reads this session's surface and asks it to open, like the panel does.
+    fireEvent.click(toggle)
+    expect(h.layout().expanded).toBe(true)
+    expect(panel.hasAttribute('data-sidebar-right-open')).toBe(true)
+    expect(toggle.getAttribute('data-sidebar-right-toggle')).toBe('collapse')
+    fireEvent.click(toggle)
+    expect(h.layout().expanded).toBe(false)
+    expect(panel.hasAttribute('data-sidebar-right-open')).toBe(false)
+  })
+
   it('keeps the panel mounted while collapsed and releases the frame on unmount', async () => {
     const h = await mountSeat()
     const panel = element(h.view.container, '[data-sidebar-right-panel]')
@@ -145,7 +164,7 @@ describe('RightbarSeat presentation', () => {
     expect(panel.style.width).toBe('420px')
     expect(element(h.view.container, '[data-tab-body]')).toBe(body)
     expect(h.frame.openRightbar).toHaveBeenLastCalledWith(true, false)
-    fireEvent.click(element(h.view.container, '[data-sidebar-right-toggle]'))
+    act(() => { h.actions.setExpanded(SESSION, false) })
     expect(h.layout().expanded).toBe(false)
     expect(h.frame.closeRightbar).toHaveBeenCalled()
   })
@@ -270,7 +289,7 @@ describe('RightbarSeat fullscreen entry', () => {
     vi.spyOn(element(h.view.container, '[data-sidebar-right-panel]'), 'getAnimations').mockReturnValue([slide.animation])
     h.open()
     expect(h.frame.openRightbar).not.toHaveBeenCalled()
-    if (change === 'close') fireEvent.click(element(h.view.container, '[data-sidebar-right-toggle]'))
+    if (change === 'close') act(() => { h.actions.setExpanded(SESSION, false) })
     else if (change === 'push') fireEvent.click(element(h.view.container, '[data-sidebar-right-mode]'))
     else if (change === 'session') {
       await h.runtime.sessions.add({ id: OTHER })

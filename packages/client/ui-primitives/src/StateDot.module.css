@@ -1,8 +1,10 @@
-/* Ongoing blue has no alias token (state-business-primary is the 500 step,
- * not this 450) — component-level var pinned to the static scale instead. */
+/* Ongoing rides the lighter cat-green step (400), deliberately lighter than
+ * the success green that marks done — the chase animation plus the shade keep
+ * working apart from finished. Component-level var pinned to the static scale
+ * (state-business-primary is the 500 step, not this one). */
 .dot,
 .matrix {
-  --dsh-state-ongoing: var(--dsw-static-deepseek-450);
+  --dsh-state-ongoing: var(--dsw-static-colaw-400);
 }
 
 /* Solid states: same-color halo via a 0.10-opacity outer layer (::before)

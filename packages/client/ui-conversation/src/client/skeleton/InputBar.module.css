@@ -341,9 +341,8 @@
   cursor: default;
 }
 
-/* Primary send (figma IconButton 34:10465): 34px circle, #3964FE light /
-   #679EFE dark — the info-fill pair (500→400), NOT button-primary (ink);
-   white glyph; empty text = 0.4 opacity. */
+/* Primary send: 34px circle riding the button-info pair (colaw 500 light /
+   400 dark), NOT button-primary (ink); white glyph; empty text = 0.4 opacity. */
 .primary {
   display: grid;
   place-items: center;

@@ -44,3 +44,23 @@ worktrees/
 .agents/worktrees/
 .typert-*/
 native/system/test/bin/
+
+# Electrobun desktop host — Hutch-managed build output and tool projection
+apps/electrobun-host/build/
+apps/electrobun-host/artifacts/
+apps/electrobun-host/.hutch/
+apps/electrobun-host/.cottontail-tmp/
+
+# TypeScript in-place emit guard.
+# A tsc run that loses its outDir drops .js/.d.ts/.map next to the sources;
+# real output belongs in lib/ (ignored above). Hand-written src declarations
+# are re-included by name so they stay visible.
+**/src/**/*.js
+**/src/**/*.js.map
+**/src/**/*.d.ts
+**/src/**/*.d.ts.map
+!**/src/**/css-modules.d.ts
+!**/src/**/vite-env.d.ts
+!**/src/**/use-sync-external-store.d.ts
+!**/src/**/turndown-plugin-gfm.d.ts
+!**/src/**/ripgrep.d.ts

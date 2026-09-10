@@ -36,8 +36,11 @@
 
 .header {
   position: relative;
+  /* Above the frame's title-bar drag strip (z-index 1): in desktop chrome the
+     title row draws inside that strip, and this row is the drag surface. */
+  z-index: 2;
   flex: none;
-  padding: 12px 28px 0 20px;
+  padding: var(--dsh-header-top-padding, 12px) 28px 0 20px;
   border-bottom: 1px solid transparent;
 }
 
@@ -59,11 +62,32 @@
   display: none;
 }
 
+/* The session title row is the top bar in desktop chrome: it takes the bar's
+   height (0 in the browser, so the plain 32px row stands), clears the floating
+   sidebar controls when the desktop sidebar is hidden, keeps clear of the
+   control the right column pins to the frame's edge, and drags the window
+   between its controls. */
 .titleRow {
   display: flex;
   align-items: center;
   gap: 0;
-  min-height: 32px;
+  min-height: max(32px, var(--dsh-topbar-height, 0px));
+  padding-left: var(--dsh-topbar-left-inset, 0px);
+  padding-right: var(--dsh-topbar-right-inset, 0px);
+  /* The inset collapses in step with the frame's track animation, so the
+     title glides ahead of the floating sidebar controls instead of jumping
+     beneath them at the moment of expansion. */
+  transition: padding var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.titleRow button,
+.titleRow a,
+.titleRow input,
+.titleRow [role='button'] {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .titleCluster {
@@ -98,7 +122,11 @@
 }
 
 .crumb {
-  max-width: 220px;
+  /* A flex item of its segment (min-width 0 up the chain), so the title
+     truncates by the space actually available instead of a fixed cap. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   padding: 4px 8px;
   border: none;

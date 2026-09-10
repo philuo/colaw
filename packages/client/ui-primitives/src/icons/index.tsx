@@ -97,6 +97,26 @@ export const IconPanelLeftOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** 点击打开.svg — right-panel outline with a right chevron: the affordance
+ * that opens the hidden right sidebar (user-supplied Lucide glyph). */
+export const IconPanelRightOpen24 = ({ size = 24, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M15 3v18" />
+    <path d="m8 9 3 3-3 3" />
+  </svg>
+)
+
+/** 点击折叠.svg — right-panel outline with a left chevron: the affordance
+ * that collapses the open right sidebar (user-supplied Lucide glyph). */
+export const IconPanelRightCollapse24 = ({ size = 24, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <rect width="18" height="18" x="3" y="3" rx="2" />
+    <path d="M15 3v18" />
+    <path d="m10 15-3-3 3-3" />
+  </svg>
+)
+
 /** ic_ds_ellipsis_outline_16 */
 export const IconEllipsisOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

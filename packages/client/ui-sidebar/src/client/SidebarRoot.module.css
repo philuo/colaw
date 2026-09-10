@@ -11,7 +11,9 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  padding: 6px var(--dsh-sidebar-inline-padding);
+  /* Desktop chrome reserves the unified top bar (--dsh-topbar-height, set by
+     AppFrame); 0 in the browser surface. */
+  padding: calc(6px + var(--dsh-topbar-height, 0px)) var(--dsh-sidebar-inline-padding) 6px;
   box-sizing: border-box;
   background: var(--dsw-specific-sidebar-fill);
   color: var(--dsw-alias-label-primary);
@@ -26,7 +28,7 @@
    rail (10px side padding), 12px vertical rhythm, 18px from the rail top to
    the whale's box (24px to the 24-wide whale glyph itself). */
 .root.collapsed {
-  padding: 18px 10px 6px;
+  padding: calc(18px + var(--dsh-topbar-height, 0px)) 10px 6px;
 }
 
 /* Scrollbars in the column are a pointer affordance: the shell adds this
@@ -84,20 +86,33 @@
   from { opacity: 0; }
 }
 
+/* Desktop chrome: title-bar controls (expand/collapse + new chat) immediately
+   right of the native traffic lights, centred in the unified top bar; the
+   anchor moves left in fullscreen, where macOS hides the lights. */
+.titlebarControls {
+  position: absolute;
+  left: var(--dsh-titlebar-controls-left, 76px);
+  top: 0;
+  height: var(--dsh-topbar-height, 32px);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 31;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* Collapsed mirrors the panel glyph so expand and collapse read as two icons. */
+.panelIconFlipped {
+  transform: scaleX(-1);
+}
+
 /* Logo row (figma pad (4,8,4,8)): expanded keeps the panel toggle at the
    right edge; the rail gives every control the same base left anchor before
    the shared entry translation is applied. */
 .logoRow {
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-  height: 60px;
-  padding: 8px 0 8px 4px;
-  margin-bottom: 8px;
-  box-sizing: border-box;
-  overflow: hidden;
+  height: 0;
+  margin-bottom: 4px;
 }
 
 .collapsed .logoRow {
@@ -130,7 +145,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  height: 24px;
+  height: 28px;
   min-width: 0;
 }
 
@@ -154,26 +169,35 @@
 }
 
 .fallbackBrandName {
-  font-size: 17px;
-  letter-spacing: 0px;
+  font-size: 19px;
+  line-height: 24px;
+  letter-spacing: 0.02em;
   white-space: nowrap;
+  font-family: var(--dsh-brand-font);
+  background: var(--dsh-brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .localBuildBrand {
   flex: none;
   display: inline-flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 1px;
-  height: 24px;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
   white-space: nowrap;
 }
 
 .localBuildTitle {
-  font-size: 12px;
-  line-height: 13px;
-  letter-spacing: 0;
+  font-size: 19px;
+  line-height: 24px;
+  letter-spacing: 0.02em;
+  font-family: var(--dsh-brand-font);
+  background: var(--dsh-brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .iconButton {

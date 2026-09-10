@@ -1,0 +1,60 @@
+/*
+ * The pinned box at the top bar's right end. The frame reserves this tail
+ * (`--dsh-topbar-right-inset`) for the control the right column keeps there, so
+ * the conversation header stops before it and the panel's own strip ends before
+ * it: the three never write over one another, and the switch holds one position
+ * whether the panel is drawn or not.
+ *
+ * It is positioned against the frame's right column, which never clips its
+ * occupant and never moves its right edge — the panel slides past the box, the
+ * box does not slide with the panel. Its band is the strip the panel draws at
+ * the surface's top edge (--dsh-dockkit-strip-height: the unified top bar in
+ * desktop chrome, the kit's own 36px strip in the browser surface), so the
+ * button centres on the same line as the panel's split and fullscreen controls
+ * — offset by the pane's own hairline frame, which the strip sits inside. The
+ * level is above the panel in both presentations, so those controls arrive from
+ * behind it.
+ */
+.seat {
+  --dsh-toggle-size: 28px;
+  position: absolute;
+  top: var(--dsh-dockkit-pane-frame, 0px);
+  right: calc((var(--dsh-topbar-right-inset, 44px) - var(--dsh-toggle-size)) / 2);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--dsh-dockkit-strip-height, 36px);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/*
+ * Square with the header's corner radius rather than a pill, because it is an
+ * icon button, not a labelled one. The same box serves both states — the glyph
+ * flips between the open and collapse icons — so the bar never moves.
+ */
+.button {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--dsh-toggle-size);
+  height: var(--dsh-toggle-size);
+  padding: 0;
+  color: var(--dsw-alias-label-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  corner-shape: round;
+}
+
+.button:hover {
+  color: var(--dsw-alias-label-primary);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.icon {
+  flex: none;
+}

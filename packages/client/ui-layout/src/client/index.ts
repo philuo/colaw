@@ -101,6 +101,12 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export interface SidebarOwnerProps {
   /** True when the sidebar is closed (the column renders the compact control rail). */
   collapsed: boolean
+  /**
+   * True when the column holds no layout width. Unlike {@link collapsed}, it
+   * does NOT flip while the desktop hover-peek panel floats out — the top-bar
+   * toggle keys its icon state on this, so peeking cannot flip the icon.
+   */
+  collapsedInLayout: boolean
   /** Rendered column width in px (SIDEBAR_COLLAPSED when collapsed). */
   width: number
 }

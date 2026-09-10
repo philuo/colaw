@@ -121,6 +121,21 @@ describe('createSidebarRightStore — the sequence', () => {
     expect(entries()).toBe(recorded)
   })
 
+  it('lands the last close on the reseeded guide: every tab is closable and the pane keeps a home view', () => {
+    const { actions, layout, entries, guide } = harness()
+    actions.setExpanded(SESSION, true)
+    const recorded = entries()
+    const closing = guide()
+    actions.closeTab(SESSION, closing)
+    // The closed guide is really gone; the settle planner seeds a fresh one so
+    // the panel keeps its home view, and the expansion is untouched.
+    expect(layout().tabs[closing]).toBeUndefined()
+    expect(Object.values(layout().tabs)).toHaveLength(1)
+    expect(Object.values(layout().tabs)[0]?.kind).toBe('guide')
+    expect(layout().expanded).toBe(true)
+    expect(entries()).toBe(recorded + 1)
+  })
+
   it('steps nowhere before the first entry, and forward again through an undone one', () => {
     const { actions, surface, layout } = harness()
     const start = surface()

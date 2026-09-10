@@ -1,20 +1,37 @@
 # Electrobun (Bun runtime) desktop host overlay patch.
 # Applied on top of the web profile (base + web-app).
 # We keep dsh's own webserver running; Electrobun simply loads its URL in a window.
-# Only disable plugins that are not needed in the bundled desktop app.
+#
+# A patch row REPLACES the targeted row's whole `config`, so every row below
+# restates all keys the bundle row owns.
 
 # ── Disable plugins not needed in the bundled Electrobun app ──
 
-# HMR is not needed in the packaged app.
-- id: hmr
-  disabled: true
-
-# open-in-app handles deep links; not needed for the bundled desktop app.
-- id: open-in-app
-  disabled: true
-
-# Don't print URL or open browser automatically; Electrobun owns the window.
-- id: web-startup
+# The tokenrhythm relay rejects the vendor-private `dsh_plugin_packages`
+# request field (HTTP 400 INVALID_REQUEST); keep the extension off in the app.
+- id: plugin-package-inventory-deepseek
   config:
-    printUrl: false
+    enabled: false
+
+# The desktop shell's session header keeps only the open-locally pill and the
+# right-panel toggle; drop the session-log download action.
+- id: session-log-download
+  disabled: true
+
+# Don't print the URL or hand off to the default browser; Electrobun owns the
+# window. The loader entry id is `web-runtime` (plugin name `web-app`).
+- id: web-runtime
+  config:
     openBrowser: false
+    printUrl: false
+    surfaceContext: true
+    trustedHosts: !!js ctx.webStartup.trustedHosts
+
+# Dedicated port (avoid the 3080 dev instance); restate the bundle's full config.
+- id: webserver
+  config:
+    host: 127.0.0.1
+    port: 3090
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
