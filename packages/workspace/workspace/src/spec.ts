@@ -53,6 +53,8 @@ export const workspaceDomainState = z.object({
   initialized: z.boolean(),
   workspaceIds: z.array(workspaceId),
   archivedSessionIds: z.array(z.string().transform(value => brandString<SessionId>(value))).default([]),
+  /** Session id → epoch ms when it was archived (absent for pre-existing archives). */
+  archivedAt: z.record(z.string().transform(value => brandString<SessionId>(value)), z.number()).default({}),
   pendingMutation: workspacePendingMutation.optional(),
 })
 
@@ -70,7 +72,7 @@ export const workspaceDomainSpec = defineDomain({
   version: 2,
   global: {
     schema: workspaceDomainState,
-    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [] },
+    initial: { initialized: false, workspaceIds: [], archivedSessionIds: [], archivedAt: {} },
   },
   tables: { workspaces: domainTable<WorkspaceId, WorkspaceRecord>(workspaceRecord) },
 })

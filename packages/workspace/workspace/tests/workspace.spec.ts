@@ -314,7 +314,7 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
         [ownedId, record(owned, ['old'], '2026-07-24T00:00:00.000Z')],
         [priorId, record(prior, ['drift'], '2026-07-23T00:00:00.000Z')],
       ],
-      { initialized: false, workspaceIds: [] },
+      { initialized: false, workspaceIds: [], archivedAt: {} },
     )
     const result = await harness({
       pool,
@@ -340,7 +340,7 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
     expect(prior.registry.list().map(workspace => workspace.id)).toEqual([secondId, firstId])
 
     const byId = await harness({
-      pool: storedPool(entries, { initialized: false, workspaceIds: [] }),
+      pool: storedPool(entries, { initialized: false, workspaceIds: [], archivedAt: {} }),
     })
     expect(byId.registry.list().map(workspace => workspace.id)).toEqual([firstId, secondId])
   })

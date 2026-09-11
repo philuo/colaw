@@ -249,7 +249,11 @@ export class WorkspaceRegistry extends Service {
         throw new WorkspaceUnknownSessionError(sessionId)
       }
       const state = this.requireState()
-      await this.setState({ ...state, archivedSessionIds: [...state.archivedSessionIds, sessionId] })
+      await this.setState({
+        ...state,
+        archivedSessionIds: [...state.archivedSessionIds, sessionId],
+        archivedAt: { ...state.archivedAt, [sessionId]: Date.now() },
+      })
     })
   }
 
@@ -330,6 +334,7 @@ export class WorkspaceRegistry extends Service {
         initialized: true,
         workspaceIds: [id, ...state.workspaceIds],
         archivedSessionIds: state.archivedSessionIds,
+        archivedAt: state.archivedAt,
       })
     } catch (error) {
       this.entities.delete(id)
@@ -362,6 +367,7 @@ export class WorkspaceRegistry extends Service {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds,
+        archivedAt: state.archivedAt,
     }
     await this.setState({
       ...nextState,
@@ -419,6 +425,7 @@ export class WorkspaceRegistry extends Service {
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
+        archivedAt: state.archivedAt,
     })
   }
 
@@ -501,9 +508,9 @@ export class WorkspaceRegistry extends Service {
       .map(([id]) => id)
 
     if (!sameIds(state.workspaceIds, workspaceIds)) {
-      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+      await this.setState({ initialized: false, workspaceIds, archivedSessionIds: state.archivedSessionIds, archivedAt: state.archivedAt })
     }
-    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds })
+    await this.setState({ initialized: true, workspaceIds, archivedSessionIds: state.archivedSessionIds, archivedAt: state.archivedAt })
   }
 
   private validateStoredState(state: WorkspaceDomainState): void {
