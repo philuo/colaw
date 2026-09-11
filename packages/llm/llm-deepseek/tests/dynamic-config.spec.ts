@@ -203,8 +203,8 @@ describe('request-level dynamic configuration', () => {
   })
 
   it('applies changed request file limits to the next request', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     const dir = await home()
+    await writeFile(join(dir, '.credentials.yaml'), 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: test-key\n', { mode: 0o600 })
     const server = await mockServer([
       { kind: 'sse', events: textEvents },
       { kind: 'sse', events: textEvents },
@@ -274,7 +274,7 @@ describe('request-level dynamic configuration', () => {
     const dir = await home()
     const good = await mockServer([{ kind: 'sse', events: textEvents }])
     const rejected = await mockServer([{ kind: 'sse', events: textEvents }])
-    vi.stubEnv('DEEPSEEK_API_KEY', 'good-key')
+    await writeFile(join(dir, '.credentials.yaml'), 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: good-key\n', { mode: 0o600 })
     const { ctx } = await boot(dir, { baseURL: good.url })
 
     // One snapshot moves the endpoint and fails the resolve step beyond the

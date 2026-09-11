@@ -11,6 +11,8 @@ import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
 import { LlmAdapter } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions, StreamChunk } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import * as jsonrpc from '../src/index.ts'
 
@@ -76,6 +78,10 @@ async function mountPlugin(
 ): Promise<ApplyHarness> {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
+  // The key rides the managed store — the only credential source; an exported
+  // DEEPSEEK_API_KEY is deliberately ignored.
+  await ctx.plugin(LocalCredentialProvider, { path: join(storageDir, '.credentials.yaml'), watch: false })
+  await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(JsonlSessionPersistence, { root: storageDir })
   await new Promise(resolve => setTimeout(resolve, 50))
@@ -173,7 +179,6 @@ async function mockCompletionServer(): Promise<{ url: string; requests: unknown[
 describe('dsh-sdk-jsonrpc-server plugin apply', () => {
   it('serves initialize over the injected stdio pair', async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-apply-init-'))
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     const harness = await mountPlugin(storageDir)
     try {
       harness.send({ jsonrpc: '2.0', id: 'init-1', method: 'initialize', params: { cwd: storageDir, provider: 'deepseek-official', model: 'apply-model' } })
@@ -193,7 +198,6 @@ describe('dsh-sdk-jsonrpc-server plugin apply', () => {
 
   it('waits for Loader-owned adapter registration before initialize', async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-apply-readiness-'))
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     let markStarted!: () => void
     let release!: () => void
     const started = new Promise<void>((resolve) => { markStarted = resolve })
@@ -249,7 +253,6 @@ describe('dsh-sdk-jsonrpc-server plugin apply', () => {
   it('drives a session/prompt turn end-to-end and forwards session notifications as output frames', async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-apply-prompt-'))
     const llmServer = await mockCompletionServer()
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     vi.stubEnv('DEEPSEEK_BASE_URL', llmServer.url)
     const harness = await mountPlugin(storageDir)
     try {

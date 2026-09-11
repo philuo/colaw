@@ -1,24 +1,10 @@
 /**
- * File-backed credentials provider over `$DSH_HOME/.credentials.yaml`, layered
- * against the environment by how much each layer is trusted:
- *
- * ```text
- * inherited process environment      (read-only, wins)
- * > $DSH_HOME/.credentials.yaml      (provider-managed, writable)
- * > <invocation cwd>/.env            (read-only fallback)
- * > $DSH_HOME/.env                   (read-only fallback)
- * ```
- *
- * The inherited environment wins because `DEEPSEEK_API_KEY=… dsh`, a CI
- * secret, or a container `-e` is this run's explicit intent; it cannot be
- * edited from inside, so it must be *visibly* read-only rather than silently
- * shadow writes. Everything below it loses to the managed store, so a key the
- * Models page writes takes effect immediately even when an older key sits in
- * the user's `.env`.
- *
- * The invoking project may supply a key, because the product trusts the
- * project it is launched in. It ranks below the managed store, so a key stored
- * through the Models page is never displaced by one a checkout happens to carry.
+ * File-backed credentials provider over `$DSH_HOME/.credentials.yaml` — the
+ * one credential source. Secrets are never read from the process environment
+ * or any `.env` layer: a key that reaches a request must have been configured
+ * by the user and stored in this document (the web Models page is the write
+ * path), so an ambient `DEEPSEEK_API_KEY=…`, a CI secret, or a
+ * checkout-carried `.env` can never silently speak for the user.
  *
  * The file is the provider-managed writable source: every write re-reads the
  * document under a cross-process writer lock before patching only its own key
@@ -42,7 +28,6 @@ import { dirname, join, resolve } from 'node:path'
 import { Document, isMap, isScalar, parseDocument, type YAMLError } from 'yaml'
 import { withFileLock, writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { canonicalizeWatchPath, resolveDshHome, watch as chokidarWatch } from '@deepseek-ai/dsh-home-paths'
-import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { CredentialProvider, credentialRef, parseCredentialKey } from '@deepseek-ai/dsh-credentials'
 import type {
   ApiKeyRecord,
@@ -54,7 +39,6 @@ import type {
   CredentialRef,
   ResolvedCredential,
 } from '@deepseek-ai/dsh-credentials'
-import type { LaunchEnvironmentEntry } from '@deepseek-ai/dsh-launch-environment'
 
 /** Basename of the credentials document inside the harness home. */
 export const CREDENTIALS_FILENAME = '.credentials.yaml'
@@ -553,22 +537,6 @@ export class LocalCredentialProvider extends CredentialProvider {
     this.spec = resolveSpec(config)
   }
 
-  /** The inherited-environment value for a reference, or `undefined` when empty or unset. */
-  private inherited(ref: CredentialRef): string | undefined {
-    const entry = launchEnvironmentOf(this.ctx).getFrom(ref, ['process'])
-    return entry !== undefined && entry.value.length > 0 ? entry.value : undefined
-  }
-
-  /**
-   * The `.env` fallback for a reference — below the managed store, never above
-   * it. The invoking project ranks over the user's home file, matching the
-   * environment layering: the more specific location wins.
-   */
-  private dotenvFallback(ref: CredentialRef): LaunchEnvironmentEntry | undefined {
-    const entry = launchEnvironmentOf(this.ctx).getFrom(ref, ['project-env', 'user-env'])
-    return entry !== undefined && entry.value.length > 0 ? entry : undefined
-  }
-
   async* [Service.init](): AsyncGenerator<() => Promise<void> | void, void, void> {
     yield async () => {
       // Drain: refuse new operations, then settle the queued ones so disposal
@@ -614,26 +582,14 @@ export class LocalCredentialProvider extends CredentialProvider {
   }
 
   override resolve(ref: CredentialRef): Promise<ResolvedCredential | undefined> {
-    const inherited = this.inherited(ref)
-    if (inherited !== undefined) return Promise.resolve({ value: inherited, source: 'env' })
     const stored = this.values.get(ref)
     if (stored !== undefined) return Promise.resolve({ value: stored, source: 'file' })
-    const fallback = this.dotenvFallback(ref)
-    if (fallback !== undefined) return Promise.resolve({ value: fallback.value, source: fallback.source })
     return Promise.resolve(undefined)
   }
 
   override describe(ref: CredentialRef): Promise<CredentialInfo> {
-    // Only the inherited environment is unwritable: it is the one layer this
-    // process cannot edit. A user `.env` value is writable in the sense that
-    // matters — storing a key replaces it as the effective one.
-    if (this.inherited(ref) !== undefined) {
-      return Promise.resolve({ configured: true, source: 'env', writable: false })
-    }
     const stored = this.values.get(ref)
     if (stored !== undefined) return Promise.resolve({ configured: true, source: 'file', writable: true })
-    const fallback = this.dotenvFallback(ref)
-    if (fallback !== undefined) return Promise.resolve({ configured: true, source: fallback.source, writable: true })
     return Promise.resolve({ configured: false, writable: true })
   }
 
@@ -754,13 +710,10 @@ export class LocalCredentialProvider extends CredentialProvider {
     if (this.isClosed()) {
       throw new Error(`credentials-local is disposed: cannot ${verb} "${ref}"`)
     }
-    this.assertUnshadowed(ref, verb)
     return this.enqueue(async () => {
       if (this.isClosed()) {
         throw new Error(`credentials-local was disposed before the queued "${ref}" ${verb} ran`)
       }
-      // Re-judged at run time: the environment may have changed while queued.
-      this.assertUnshadowed(ref, verb)
       // The writer lock's exclusive create needs the parent to exist; 0700
       // because the harness home holds user-private data.
       await mkdir(dirname(this.spec.filename), { recursive: true, mode: 0o700 })
@@ -783,20 +736,6 @@ export class LocalCredentialProvider extends CredentialProvider {
         this.notifyUpdated(ref)
       }, { waitMs: DOCUMENT_LOCK_WAIT_MS })
     })
-  }
-
-  /**
-   * Reject a write the inherited environment would shadow into apparent
-   * no-effect. Only that layer can shadow a write: everything else this
-   * provider resolves ranks below the document being written.
-   */
-  private assertUnshadowed(ref: CredentialRef, verb: 'set' | 'unset'): void {
-    if (this.inherited(ref) !== undefined) {
-      throw new Error(
-        `credentials-local: "${ref}" is supplied read-only by the launching environment, so ${verb} would be`
-        + ' shadowed; unset it in the shell you start dsh from instead',
-      )
-    }
   }
 
   /**

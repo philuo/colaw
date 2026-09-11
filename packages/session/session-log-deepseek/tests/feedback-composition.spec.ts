@@ -11,6 +11,8 @@ import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import MessageFeedback from '@deepseek-ai/dsh-message-feedback'
 import { recordFeedback } from '@deepseek-ai/dsh-command-feedback'
 import LlmRuntime, { createAssistantMessage, createUserMessage } from '@deepseek-ai/dsh-llm'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import DeepSeekLlmApiExtensions from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { startMockLlmServer, type MockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
@@ -34,13 +36,13 @@ afterEach(async () => {
 it('uploads freeform feedback and message put/edit/delete through the unchanged provider route', async () => {
   root = await mkdtemp(join(tmpdir(), 'dsh-feedback-upload-'))
   vi.stubEnv('DSH_HOME', root)
-  vi.stubEnv('DEEPSEEK_API_KEY', 'feedback-test-key')
   server = await startMockLlmServer({ sequence: ['invalid_request', 'success', 'success'] })
   const modules = new Map<string, unknown>([
     ['@deepseek-ai/dsh-session', SessionStore],
     ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
     ['@deepseek-ai/dsh-message-feedback', MessageFeedback],
     ['@deepseek-ai/dsh-llm', LlmRuntime],
+    ['@deepseek-ai/dsh-credentials-local', LocalCredentialProvider],
     ['@deepseek-ai/dsh-llm-deepseek', LlmDeepSeek],
     ['@deepseek-ai/dsh-deepseek-llm-api-extensions', DeepSeekLlmApiExtensions],
     ['@deepseek-ai/dsh-session-log-deepseek', SessionLogDeepSeek],
@@ -72,6 +74,9 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(config).href } })
   await ctx.loader.await()
   expect([...ctx.loader.entries()].filter(entry => entry.fiber === undefined && !entry.disabled)).toEqual([])
+  // The key rides the managed store — the only credential source; an exported
+  // DEEPSEEK_API_KEY is deliberately ignored.
+  await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'feedback-test-key')
 
   const session = ctx.sessions.create(SessionId('feedback-upload'))
   const handle = await ctx.sessionPersistence.create(session.header)

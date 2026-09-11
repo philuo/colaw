@@ -1,10 +1,11 @@
 /**
  * Service Definition for the credential-reference capability seam (`ctx.credentials`). Settings and composition files carry
- * *references* to secrets — environment-variable names — while providers own
- * the actual values and their storage. Consumers resolve a reference once per
- * operation, so a changed credential reaches the next operation without any
- * plugin restart, and configuration surfaces describe a reference without
- * ever seeing its value.
+ * *references* to secrets — POSIX-style names such as `DEEPSEEK_API_KEY`, which
+ * name a slot in the managed store rather than an environment read — while
+ * providers own the actual values and their storage. Consumers resolve a
+ * reference once per operation, so a changed credential reaches the next
+ * operation without any plugin restart, and configuration surfaces describe a
+ * reference without ever seeing its value.
  * @module @deepseek-ai/dsh-credentials
  */
 
@@ -35,10 +36,10 @@ export function credentialRef(value: string): CredentialRef {
 
 /**
  * Whether a raw string could name a reference at all. Consumers that receive
- * environment-variable names from somewhere else — a provider library's own
- * ambient discovery, a hook payload — ask this before resolving, because a name
- * outside the grammar has no reference to miss and should read as "not set"
- * rather than as a thrown error.
+ * names from somewhere else — a provider library's own credential discovery, a
+ * hook payload — ask this before resolving, because a name outside the grammar
+ * has no reference to miss and should read as "not set" rather than as a
+ * thrown error.
  * @param value - candidate reference.
  * @returns true when {@link credentialRef} would accept it.
  */
@@ -154,11 +155,11 @@ declare module '@deepseek-ai/cordis' {
 /**
  * Abstract credential service over two key spaces that answer two questions.
  *
- * A {@link CredentialRef} answers "what is behind this environment-variable
- * name", layered over the process environment, the provider-managed store, and
- * `.env` files. One seam-wide rule binds that half: an empty stored value is
- * absent everywhere — `resolve` skips it, `describe` reports it unconfigured —
- * so a blank never masquerades as a configured secret.
+ * A {@link CredentialRef} answers "what is behind this reference name" from the
+ * provider-managed store, the one credential source. One seam-wide rule binds
+ * that half: an empty stored value is absent — `resolve` skips it, `describe`
+ * reports it unconfigured — so a blank never masquerades as a configured
+ * secret.
  *
  * A {@link CredentialKey} answers "what credential does this plugin hold for
  * this id". Nothing can layer here — an authorization grant has no

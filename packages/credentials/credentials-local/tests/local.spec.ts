@@ -76,14 +76,14 @@ describe('layering and reads', () => {
     expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'file', writable: true })
   })
 
-  it('lets a non-empty process environment win read-only over the file', async () => {
+  it('ignores a non-empty process environment; the stored file is the whole credential plane', async () => {
     const dir = await tempDir()
     const path = join(dir, '.credentials.yaml')
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_TEST: from-file\n')
     const ctx = await boot({ path, watch: false })
     vi.stubEnv('DSH_CRED_TEST', 'from-env')
-    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'from-env', source: 'env' })
-    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'env', writable: false })
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'from-file', source: 'file' })
+    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'file', writable: true })
   })
 
   it('treats an empty environment value as absent, falling through to the file', async () => {
@@ -136,31 +136,27 @@ describe('layer ladder', () => {
     expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'rotated', source: 'file' })
   })
 
-  it('serves the user .env only when nothing is stored', async () => {
+  it('ignores the user .env even when nothing is stored', async () => {
     const dir = await tempDir()
     const ctx = await bootLayered(join(dir, '.credentials.yaml'), [
       { source: 'process', values: {} },
       { source: 'user-env', path: '/home/.dsh/.env', values: { DSH_CRED_TEST: 'from-user-env' } },
     ])
-    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'from-user-env', source: 'user-env' })
-    // Writable: storing a key replaces it as the effective one.
-    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'user-env', writable: true })
+    expect(await ctx.credentials.resolve(KEY)).toEqual(undefined)
+    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: false, writable: true })
   })
 
-  it('serves the invoking project .env over the user one, but never over the store', async () => {
+  it('ignores the invoking project .env alongside the user one', async () => {
     const dir = await tempDir()
     const path = join(dir, '.credentials.yaml')
-    // The product trusts the project it is launched in, so a checkout may
-    // carry its own key — ranked above the user's home file (more specific
-    // wins) and below the managed store, which a stored key must never lose to.
     const layers = [
       { source: 'process' as const, values: {} },
       { source: 'project-env' as const, path: '/work/.env', values: { DSH_CRED_TEST: 'from-project' } },
       { source: 'user-env' as const, path: '/home/.dsh/.env', values: { DSH_CRED_TEST: 'from-user' } },
     ]
     const bare = await bootLayered(path, layers)
-    expect(await bare.credentials.resolve(KEY)).toEqual({ value: 'from-project', source: 'project-env' })
-    expect(await bare.credentials.describe(KEY)).toEqual({ configured: true, source: 'project-env', writable: true })
+    expect(await bare.credentials.resolve(KEY)).toEqual(undefined)
+    expect(await bare.credentials.describe(KEY)).toEqual({ configured: false, writable: true })
 
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_TEST: stored\n')
     const stored = await bootLayered(path, layers)
@@ -208,7 +204,7 @@ describe('layer ladder', () => {
     await expect(ctx.plugin(LocalCredentialProvider, { path, watch: false })).rejects.toThrow(/EISDIR/)
   })
 
-  it('lets only the inherited environment shadow the store, read-only', async () => {
+  it('serves and writes the store regardless of the inherited environment', async () => {
     const dir = await tempDir()
     const path = join(dir, '.credentials.yaml')
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_TEST: stored\n')
@@ -216,9 +212,10 @@ describe('layer ladder', () => {
       { source: 'process', values: { DSH_CRED_TEST: 'from-shell' } },
       { source: 'user-env', path: '/home/.dsh/.env', values: { DSH_CRED_TEST: 'from-user-env' } },
     ])
-    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'from-shell', source: 'env' })
-    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'env', writable: false })
-    await expect(ctx.credentials.set(KEY, 'next')).rejects.toThrow(/launching environment/)
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'stored', source: 'file' })
+    expect(await ctx.credentials.describe(KEY)).toEqual({ configured: true, source: 'file', writable: true })
+    await ctx.credentials.set(KEY, 'next')
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'next', source: 'file' })
   })
 })
 
@@ -364,7 +361,7 @@ describe('document writes', () => {
     expect(seen).toEqual([KEY])
   })
 
-  it('rejects empty values and writes the environment would shadow', async () => {
+  it('rejects empty values; an ambient environment no longer blocks writes', async () => {
     const dir = await tempDir()
     const path = join(dir, '.credentials.yaml')
     await writeCredentials(path, 'version: 1\nrefs:\n  DSH_CRED_TEST: stored\n')
@@ -373,8 +370,8 @@ describe('document writes', () => {
     await expect(ctx.credentials.set(KEY, '')).rejects.toThrow(/empty value/)
 
     vi.stubEnv('DSH_CRED_TEST', 'shadowing')
-    await expect(ctx.credentials.set(KEY, 'next')).rejects.toThrow(/shadowed/)
-    await expect(ctx.credentials.unset(KEY)).rejects.toThrow(/shadowed/)
+    await ctx.credentials.set(KEY, 'next')
+    expect(await ctx.credentials.resolve(KEY)).toEqual({ value: 'next', source: 'file' })
   })
 
   it('leaves an empty mapping after unsetting the only entry', async () => {

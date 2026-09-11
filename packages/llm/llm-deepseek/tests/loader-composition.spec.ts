@@ -46,7 +46,14 @@ afterEach(async () => {
 })
 
 async function loadComposition(
-  options: { withDynamic: boolean; baseURL: string; reuseRoot?: string; enableSessionLog?: boolean },
+  options: {
+    withDynamic: boolean
+    baseURL: string
+    reuseRoot?: string
+    enableSessionLog?: boolean
+    /** Omit the credentials entry and document: the no-seam composition. */
+    withoutCredentials?: boolean
+  },
 ): Promise<{ ctx: Context; settingsPath: string; credentialsPath: string }> {
   // A reused root is the restart case: the same harness home, its documents
   // exactly as the previous process left them.
@@ -55,9 +62,11 @@ async function loadComposition(
   vi.stubEnv('DSH_HOME', root)
   const settingsPath = join(root, 'settings.yaml')
   const credentialsPath = join(root, '.credentials.yaml')
-  if (options.withDynamic && fresh) {
-    await writeFile(settingsPath, '# personal settings\n')
-    await writeFile(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: boot-key\n', { mode: 0o600 })
+  if (fresh) {
+    if (options.withDynamic) await writeFile(settingsPath, '# personal settings\n')
+    if (options.withoutCredentials !== true) {
+      await writeFile(credentialsPath, 'version: 1\nrefs:\n  DEEPSEEK_API_KEY: boot-key\n', { mode: 0o600 })
+    }
   }
 
   const configPath = join(root, 'cordis.yml')
@@ -77,17 +86,19 @@ async function loadComposition(
       : [],
     '- id: plugin-package-inventory-deepseek',
     "  name: '@deepseek-ai/dsh-plugin-package-inventory-deepseek'",
+    ...options.withoutCredentials === true ? [] : [
+      '- id: credentials',
+      "  name: '@deepseek-ai/dsh-credentials-local'",
+      '  config:',
+      `    path: ${JSON.stringify(credentialsPath)}`,
+      '    debounceMs: 10',
+    ],
     ...options.withDynamic
       ? [
         '- id: settings',
         "  name: '@deepseek-ai/dsh-settings-file'",
         '  config:',
         `    path: ${JSON.stringify(settingsPath)}`,
-        '    debounceMs: 10',
-        '- id: credentials',
-        "  name: '@deepseek-ai/dsh-credentials-local'",
-        '  config:',
-        `    path: ${JSON.stringify(credentialsPath)}`,
         '    debounceMs: 10',
       ]
       : [],
@@ -143,7 +154,6 @@ async function loadComposition(
 
 describe('llm-deepseek real dynamic composition', () => {
   it('keeps session upload off and package inventory on by default in the real Loader composition', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', 'entry-key')
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx } = await loadComposition({ withDynamic: false, baseURL: server.url })
     const session = ctx.sessions.create(SessionId('extension-composition'))
@@ -162,7 +172,6 @@ describe('llm-deepseek real dynamic composition', () => {
   })
 
   it('sends the canonical session suffix when the Loader composition explicitly enables upload', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', 'entry-key')
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx } = await loadComposition({
       withDynamic: false,
@@ -247,16 +256,16 @@ describe('llm-deepseek real dynamic composition', () => {
     expect(second.headers[0]?.authorization).toBe('Bearer rotated-after-restart')
   })
 
-  it('boots the same adapter on entry config alone, resolving the reference from the environment', async () => {
+  it('boots the same adapter on entry config alone; without a credentials seam there is no key', async () => {
     // No settings and no credentials provider: configuration carries only the
-    // reference, so the environment is the whole credential plane here.
+    // reference, and the launching environment is never a credential source.
     vi.stubEnv('DEEPSEEK_API_KEY', 'entry-key')
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
-    const { ctx } = await loadComposition({ withDynamic: false, baseURL: server.url })
+    const { ctx } = await loadComposition({ withDynamic: false, baseURL: server.url, withoutCredentials: true })
 
     expect(ctx.get('settings')).toBeUndefined()
     expect(ctx.get('credentials')).toBeUndefined()
-    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
-    expect(server.headers[0]?.authorization).toBe('Bearer entry-key')
+    const first = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
   })
 })

@@ -179,13 +179,14 @@ export function apply(ctx: Context, config: Config): void {
     const credentials = ctx.get('credentials')
     const hit = credentials !== undefined
       ? (await credentials.resolve(ref))?.value
-      // Without the seam the environment is the whole credential plane.
+      // A composition with no credential service still resolves its named
+      // reference from the launch environment; the shipped app always mounts
+      // the store, so its keys never come from here.
       : launchEnvironmentOf(ctx).get(ref)?.value
     if (hit !== undefined && hit.length > 0) return assertUsableApiKey(hit, 'llm-pi-ai', ref)
     throw new LlmError(
       `llm-pi-ai: no credential for provider route "${provider}"; its profile resolves ${ref}, which is not`
-      + ` set — store ${ref} through the credentials service (the web Models page writes it) or export it,`
-      + ' and remove apiKeyEnv only if this provider should authenticate from pi-ai\'s own environment discovery',
+      + ` set — store ${ref} through the credentials service (the web Models page writes it)`,
       'MISSING_CREDENTIAL',
     )
   }

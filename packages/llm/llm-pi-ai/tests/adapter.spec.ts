@@ -779,14 +779,16 @@ describe('provider profile lifecycle', () => {
     expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
   })
 
-  it('accepts absent credentials for pi-ai ambient authentication', async () => {
+  it('refuses ambient authentication for a profile that names no reference', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'ambient-key')
     const server = await mockServer([{ events: textEvents }])
-    // A profile that names no reference at all is the one case that defers to
-    // pi-ai's own provider-native discovery.
+    // A profile that names no reference defers to pi-ai's provider-native
+    // discovery, which reads the credential seam only — never the launching
+    // environment, so an exported key cannot authenticate it.
     const ctx = await harness(server.url, { apiKeyEnv: undefined })
-    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
-    expect(server.headers[0]?.authorization).toBe('Bearer ambient-key')
+    const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(result.finish).toMatchObject({ kind: 'error' })
+    expect(server.requests).toHaveLength(0)
   })
 
   it('falls back to the ambient environment for apiKeyEnv without the credentials seam', async () => {

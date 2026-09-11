@@ -226,36 +226,40 @@ describe('web-search-exa plugin registration', () => {
     await fiber.dispose()
   })
 
-  it('falls back to $EXA_API_KEY and the default base URL when config omits them', async () => {
+  it('ignores $EXA_API_KEY in the launching environment', async () => {
     const prev = process.env.EXA_API_KEY
     process.env.EXA_API_KEY = 'env-key'
     try {
-      const fetchMock = vi.fn(async () => jsonResponse({ results: [] }))
-      vi.stubGlobal('fetch', fetchMock)
       const ctx = new Context()
       await ctx.plugin(WebRuntime, { searchProvider: EXA_PROVIDER_ID })
-      const fiber = await ctx.plugin(exaPlugin, {})
-      await ctx.web.search({ query: 'q' })
-      const [url] = fetchMock.mock.calls[0] as unknown as [string]
-      expect(url).toBe('https://api.exa.ai/search')
-      await fiber.dispose()
+      await ctx.plugin(exaPlugin, {})
+      // An ambient secret must never authenticate a provider the user did not
+      // configure: the key is the user's own config only.
+      await expect(ctx.web.search({ query: 'q' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
     } finally {
       if (prev === undefined) delete process.env.EXA_API_KEY
       else process.env.EXA_API_KEY = prev
     }
   })
 
-  it('is unavailable when neither config nor env supplies a key', async () => {
-    const prev = process.env.EXA_API_KEY
-    delete process.env.EXA_API_KEY
-    try {
-      const ctx = new Context()
-      await ctx.plugin(WebRuntime, { searchProvider: EXA_PROVIDER_ID })
-      await ctx.plugin(exaPlugin, {})
-      await expect(ctx.web.search({ query: 'q' }))
-        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
-    } finally {
-      if (prev !== undefined) process.env.EXA_API_KEY = prev
-    }
+  it('uses the default base URL when config omits it', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ results: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { searchProvider: EXA_PROVIDER_ID })
+    const fiber = await ctx.plugin(exaPlugin, { apiKey: 'literal-key' })
+    await ctx.web.search({ query: 'q' })
+    const [url] = fetchMock.mock.calls[0] as unknown as [string]
+    expect(url).toBe('https://api.exa.ai/search')
+    await fiber.dispose()
+  })
+
+  it('is unavailable when config supplies no key', async () => {
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { searchProvider: EXA_PROVIDER_ID })
+    await ctx.plugin(exaPlugin, {})
+    await expect(ctx.web.search({ query: 'q' }))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
   })
 })

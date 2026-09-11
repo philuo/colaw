@@ -1,4 +1,4 @@
-import { readFile, readdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { join } from 'node:path'
@@ -46,6 +46,21 @@ const headlessSessionExpected = join(goldensDir, 'headless-profile', 'session.ex
 const headlessReasoningExpected = join(goldensDir, 'headless-profile', 'reasoning.stderr.expected.txt')
 const headlessFailureExpected = join(goldensDir, 'headless-profile', 'stderr.expected.txt')
 const refreshing = process.env.DSH_SNAPSHOT === 'refresh'
+
+/**
+ * Seed the isolated `DSH_HOME` credential store — the only place a run may
+ * resolve a key from. Tests that need a usable or deliberately invalid
+ * credential write it here instead of exporting an environment variable,
+ * which the product ignores.
+ * @param cwd - the smoke's isolated working directory (its `DSH_HOME` is `cwd/.dsh`).
+ * @param ref - the credential reference to store.
+ * @param value - the raw key value.
+ */
+async function seedCredential(cwd: string, ref: string, value: string): Promise<void> {
+  const dir = join(cwd, '.dsh')
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, '.credentials.yaml'), `version: 1\nrefs:\n  ${ref}: ${JSON.stringify(value)}\n`, { mode: 0o600 })
+}
 
 interface JsonObject {
   [key: string]: unknown
@@ -340,7 +355,7 @@ describe('headless stream-json snapshots', () => {
       binArgs: [credentialsConfigPath, 'say pong'],
       tsconfigPath,
       env: {
-        // First-run posture: no key in the environment, none under ./.dsh.
+        // First-run posture: nothing stored, and an ambient export ignored.
         DEEPSEEK_API_KEY: '',
         DEEPSEEK_BASE_URL: '',
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
@@ -349,20 +364,20 @@ describe('headless stream-json snapshots', () => {
     })
 
     // The failure reaches the caller through the stream, not stderr; the
-    // recorded transcript below pins the guidance text itself, which names
-    // both places a credential can come from and nothing else.
+    // recorded transcript below pins the guidance text itself, which names the
+    // one credential source and nothing else.
     expect(result.stderr).toBe('')
     const normalized = normalizeHeadlessStream(result.stdout, runCwd)
     if (refreshing) await writeFile(streamExpected, normalized)
     await expectHeadlessStream(normalized, streamExpected)
-    // The durable failure leads with the credential store — the path that
-    // keeps the secret out of configuration files — then names the launching
-    // environment, and stops there: configuration carries the reference, so
-    // there is no literal-key escape hatch left to offer.
+    // The durable failure names the one credential source — the managed store
+    // the Models page writes — and stops there: configuration carries the
+    // reference, the launching environment is never consulted, and there is no
+    // literal-key escape hatch left to offer.
     expect(normalized).toContain(
-      'store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it),',
+      'store DEEPSEEK_API_KEY through the credentials service (the web Models page writes it)',
     )
-    expect(normalized).toContain('or export DEEPSEEK_API_KEY in the launching environment')
+    expect(normalized).not.toContain('export DEEPSEEK_API_KEY')
     expect(normalized).not.toContain('as a last resort')
   }, LOADER_SMOKE_TEST_TIMEOUT_MS)
 
@@ -381,11 +396,14 @@ describe('headless stream-json snapshots', () => {
         // A key that exists but no HTTP header can carry — the paste the
         // credential guard exists for: without it, `fetch` refuses to build
         // the header and the turn ends on a retried ByteString TypeError.
-        DEEPSEEK_API_KEY: 'sk-\u{1F600}pasted-from-a-chat-window',
+        // It rides the managed store, never the environment.
         DEEPSEEK_BASE_URL: '',
         NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
       },
-      prepare: (cwd) => { runCwd = cwd },
+      prepare: async (cwd) => {
+        runCwd = cwd
+        await seedCredential(cwd, 'DEEPSEEK_API_KEY', 'sk-\u{1F600}pasted-from-a-chat-window')
+      },
     })
 
     expect(result.stderr).toBe('')
@@ -460,11 +478,11 @@ describe('headless stream-json snapshots', () => {
         tsconfigPath,
         env: {
           // Configuration carries only the reference; the key rides the
-          // launching environment, which is the whole credential plane here.
-          DEEPSEEK_API_KEY: 'snapshot-key',
+          // managed credential store seeded below, never the environment.
           DSH_SNAPSHOT_BASE_URL: server.url,
           NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
         },
+        prepare: (cwd) => seedCredential(cwd, 'DEEPSEEK_API_KEY', 'snapshot-key'),
       })
 
       expect(result.stderr).toBe('')
@@ -551,10 +569,10 @@ describe('headless stream-json snapshots', () => {
         ],
         tsconfigPath,
         env: {
-          DEEPSEEK_API_KEY: 'snapshot-key',
           DSH_SNAPSHOT_BASE_URL: server.url,
           NODE_OPTIONS: [process.env.NODE_OPTIONS, '--disable-warning=ExperimentalWarning'].filter(Boolean).join(' '),
         },
+        prepare: (cwd) => seedCredential(cwd, 'DEEPSEEK_API_KEY', 'snapshot-key'),
       })
 
       expect(result.stderr).toBe('')

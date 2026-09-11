@@ -185,8 +185,10 @@ describe('pi-ai ambient auth context', () => {
     await expect(authContextFrom(ctx).env('PI_AUTH_SEAM')).resolves.toBe('from-seam')
   })
 
-  it('falls back to the launch environment when nothing is stored', async () => {
-    await expect(authContextFrom(await stored()).env('PI_AUTH_AMBIENT')).resolves.toBe('from-environment')
+  it('ignores the launch environment when nothing is stored', async () => {
+    // Provider-native discovery asks here; an ambient secret must never
+    // authenticate a route the user did not store a credential for.
+    await expect(authContextFrom(await stored()).env('PI_AUTH_AMBIENT')).resolves.toBeUndefined()
   })
 
   it('answers "not set" for a name no reference could ever address', async () => {

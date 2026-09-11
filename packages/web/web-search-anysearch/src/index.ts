@@ -9,7 +9,6 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-web'
@@ -58,15 +57,12 @@ export function apply(ctx: Context, config: Config): void {
     endpoint: config.endpoint ?? ANYSEARCH_DEFAULT_ENDPOINT,
     ...config.apiKey !== undefined ? { apiKey: config.apiKey } : {},
     resolveApiKey: async (): Promise<string> => {
-      // The credentials store is the in-app path (the settings card writes
-      // it); the launching environment is the ambient fallback for headless
-      // compositions, mirroring every other credential this product resolves.
+      // The credentials store is the only source: a key exported in the
+      // launching environment is deliberately never consulted.
       const credentials = ctx.get('credentials')
-      if (credentials !== undefined) {
-        const hit = await credentials.resolve(ref)
-        if (hit !== undefined) return hit.value
-      }
-      return launchEnvironmentOf(ctx).get(ref)?.value ?? ''
+      if (credentials === undefined) return ''
+      const hit = await credentials.resolve(ref)
+      return hit?.value ?? ''
     },
   }))
 

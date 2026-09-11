@@ -481,7 +481,7 @@ describe('web-search-deepseek plugin registration', () => {
     await fiber.dispose()
   })
 
-  it('falls back to the env key and defaults when config omits them', async () => {
+  it('ignores the ambient $DEEPSEEK_API_KEY and uses defaults when config omits them', async () => {
     const prev = process.env.DEEPSEEK_API_KEY
     process.env.DEEPSEEK_API_KEY = 'env-key'
     try {
@@ -489,11 +489,13 @@ describe('web-search-deepseek plugin registration', () => {
       vi.stubGlobal('fetch', fetchMock)
       const ctx = new Context()
       await ctx.plugin(WebRuntime, { searchProvider: DEEPSEEK_PROVIDER_ID })
-      deepseekPlugin.apply(ctx, {})
+      // Literal key, no baseURL/model: defaults apply, and the ambient key is
+      // never used — it would appear as x-api-key otherwise.
+      deepseekPlugin.apply(ctx, { apiKey: 'literal-key' })
       await ctx.web.search({ query: 'q' })
       const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
       expect(url).toBe('https://api.deepseek.com/anthropic/v1/messages')
-      expect((init.headers as Record<string, string>)['x-api-key']).toBe('env-key')
+      expect((init.headers as Record<string, string>)['x-api-key']).toBe('literal-key')
       expect(JSON.parse(init.body as string)).toMatchObject({ model: 'deepseek-v4-flash' })
       await ctx.fiber.dispose()
     } finally {
@@ -533,7 +535,7 @@ describe('web-search-deepseek plugin registration', () => {
     }
   })
 
-  it('reports an actionable credential error when neither config nor env supplies a key', async () => {
+  it('reports an actionable credential error when config supplies no key', async () => {
     const prev = process.env.DEEPSEEK_API_KEY
     delete process.env.DEEPSEEK_API_KEY
     try {

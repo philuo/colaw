@@ -1,11 +1,16 @@
 import { createUserMessage, expandAssistantStream } from '@deepseek-ai/dsh-llm'
+import { mkdtempSync } from 'node:fs'
 import { createServer } from 'node:http'
 import type { AddressInfo } from 'node:net'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-testkit'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import type { MockLlmBehavior, MockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import { startMockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
@@ -19,6 +24,7 @@ const servers: MockLlmServer[] = []
 afterEach(async () => {
   await context?.fiber.dispose()
   context = undefined
+  vi.unstubAllEnvs()
   await Promise.all(servers.splice(0).map(server => server.close()))
 })
 
@@ -35,9 +41,13 @@ async function harness(
   baseURL: string,
   options: { streamIdleTimeoutMs?: number; initialDelayMs?: number } = {},
 ): Promise<Context> {
-  vi.stubEnv('DEEPSEEK_API_KEY', 'mock-key')
+  // The key rides the managed credential store — the product's only source;
+  // an exported DEEPSEEK_API_KEY is deliberately ignored.
+  vi.stubEnv('DSH_HOME', mkdtempSync(join(tmpdir(), 'dsh-llm-retry-home-')))
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
+  await ctx.plugin(LocalCredentialProvider, { watch: false })
+  await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'mock-key')
   await ctx.plugin(LlmDeepSeek, {
     baseURL,
     streamIdleTimeoutMs: options.streamIdleTimeoutMs ?? 1_000,

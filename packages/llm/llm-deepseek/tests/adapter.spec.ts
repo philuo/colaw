@@ -20,6 +20,8 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import type { PreparedDeepSeekLlmApiExtensions } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { DeepSeekAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-deepseek'
 import { httpErrorCode } from '../src/adapter.ts'
 import { resolveRequestImagePolicy } from '../src/request-pricing.ts'
@@ -44,11 +46,10 @@ afterEach(async () => {
 
 async function harness(baseURL: string, config: object = {}) {
   // Configuration carries only the reference; the key comes from the
-  // environment, which is the whole credential plane without a mounted seam.
-  // The reference is stated explicitly because the plugin no longer defaults
-  // one — the launching environment is never read unless the section names it.
-  vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
+  // user-configured credential store, mounted exactly as the product mounts it.
   const ctx = new Context()
+  await ctx.plugin(LocalCredentialProvider, { watch: false })
+  await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(DeepSeekLlmApiExtensionRegistry)
   await ctx.plugin(LlmDeepSeek, { baseURL, apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
@@ -2152,17 +2153,21 @@ describe('plugin registration and config', () => {
     },
   )
 
-  it('falls back to DEEPSEEK_API_KEY and DEEPSEEK_BASE_URL env vars', async () => {
+  it('keeps the route registered with only the base-URL env fallback; the key comes from the store', async () => {
     vi.stubEnv('DEEPSEEK_API_KEY', 'env-key')
     vi.stubEnv('DEEPSEEK_BASE_URL', 'http://127.0.0.1:1')
     const ctx = new Context()
+    await ctx.plugin(LocalCredentialProvider, { watch: false })
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {})
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
+    // The ambient env value must not serve as the credential: the request
+    // still fails for the missing store entry.
+    const first = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
   })
 
   it('loads keyless, keeps the catalog browsable, and fails the request actionably', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', '')
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { baseURL: 'http://127.0.0.1:1' })
@@ -2179,19 +2184,19 @@ describe('plugin registration and config', () => {
     // The guidance names both places a credential can come from, and nothing
     // else: configuration carries the reference, never a literal key.
     expect(second.finish.failure.message)
-      .toMatch(/store DEEPSEEK_API_KEY through the credentials service.*export DEEPSEEK_API_KEY/s)
+      .toMatch(/store DEEPSEEK_API_KEY through the credentials service/s)
   })
 
-  it('reads the ambient variable when no credentials seam is mounted', async () => {
-    // The plain cordis.yml composition: no credential provider, the key in
-    // the launching environment.
+  it('ignores the ambient variable when no credentials seam is mounted', async () => {
+    // The plain cordis.yml composition: no credential provider means no
+    // credential at all — the launching environment is never consulted.
     vi.stubEnv('DEEPSEEK_API_KEY', 'ambient-key')
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, { baseURL: server.url, apiKeyEnv: 'DEEPSEEK_API_KEY' })
-    await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
-    expect(server.headers[0]?.authorization).toBe('Bearer ambient-key')
+    const first = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
+    expect(first.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
   })
 
   it('treats an empty ambient variable as no key when no credentials seam is mounted', async () => {
@@ -2215,8 +2220,9 @@ describe('plugin registration and config', () => {
   it('uses DEEPSEEK_BASE_URL when config omits baseURL', async () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     vi.stubEnv('DEEPSEEK_BASE_URL', server.url)
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     const ctx = new Context()
+    await ctx.plugin(LocalCredentialProvider, { watch: false })
+    await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {})
     await assemble(ctx,{ model: 'deepseek-v4-flash', messages: [] })

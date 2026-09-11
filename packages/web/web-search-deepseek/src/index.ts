@@ -100,11 +100,12 @@ function resolveOptions(ctx: Context, config: Config): DeepSeekSearchProviderOpt
   return {
     ...literalApiKey === undefined ? {} : { apiKey: literalApiKey },
     resolveApiKey: async () => {
+      // The credential store is the only source: a key exported in the
+      // launching environment is deliberately never consulted.
       const credentials = ctx.get('credentials')
-      if (credentials !== undefined) return (await credentials.resolve(apiKeyEnv))?.value
-      // Without the seam the environment is the whole credential plane.
-      const ambient = launchEnvironmentOf(ctx).get(apiKeyEnv)
-      return ambient !== undefined && ambient.value.length > 0 ? ambient.value : undefined
+      if (credentials === undefined) return undefined
+      const hit = await credentials.resolve(apiKeyEnv)
+      return hit !== undefined && hit.value.length > 0 ? hit.value : undefined
     },
     apiKeyEnv,
     baseURL: config.baseURL

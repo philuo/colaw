@@ -90,10 +90,10 @@
     - id: settings
       name: '@deepseek-ai/dsh-settings-file'
 
-    # Credential sources: inherited environment over the managed
-    # `$DSH_HOME/.credentials.yaml`, with project and user `.env` fallbacks.
-    # Adapters resolve references per request; the Models page writes only the
-    # managed document, which is never materialized into the process environment.
+    # The one credential source: the managed `$DSH_HOME/.credentials.yaml`.
+    # Adapters resolve references per request; the Models page writes only this
+    # document, and the launching environment (or any `.env` layer) is never
+    # consulted — a key the user did not configure here does not authenticate.
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 

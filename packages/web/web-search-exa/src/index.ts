@@ -6,7 +6,6 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-web'
 import {
@@ -31,9 +30,9 @@ export const name = 'web-search-exa'
 /** The web seam this provider registers into. */
 export const inject = ['web']
 
-/** Plugin config (all optional — `apply` fills env-var and constant defaults). */
+/** Plugin config (all optional — `apply` fills constant defaults). */
 export interface Config {
-  /** Exa API key. Falls back to `$EXA_API_KEY`. Empty → provider unavailable. */
+  /** Exa API key; the user's own configuration. Empty → provider unavailable. */
   apiKey?: string
   /** Endpoint base; `/search` is appended. Defaults to the public API. */
   baseURL?: string
@@ -56,9 +55,10 @@ export const Config: z<Config> = z.object({
 /** Register the Exa search provider with `ctx.web`. */
 export function apply(ctx: Context, config: Config): void {
   ctx.web.registerSearchProvider(new ExaSearchProvider({
-    // Every environment layer may name this key: the product trusts the
-    // project it is launched in, and the managed store is not involved here.
-    apiKey: config.apiKey ?? launchEnvironmentOf(ctx).get('EXA_API_KEY')?.value ?? '',
+    // The key is the user's own configuration only: a value exported in the
+    // launching environment is deliberately never read, so an unconfigured
+    // provider stays unavailable rather than borrowing an ambient secret.
+    apiKey: config.apiKey ?? '',
     baseURL: config.baseURL ?? EXA_DEFAULT_BASE_URL,
     searchType: config.searchType ?? EXA_DEFAULT_SEARCH_TYPE,
     highlightsPerResult: config.highlightsPerResult ?? EXA_DEFAULT_HIGHLIGHTS_PER_RESULT,

@@ -13,6 +13,8 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
 import SubagentRuntime, { type SubagentResult, type SubagentRunEndInfo } from '@deepseek-ai/dsh-subagent'
 import type { JsonRpcTransportPeer } from '@deepseek-ai/dsh-sdk-protocol'
@@ -64,6 +66,10 @@ async function mockCompletionServer(): Promise<{ url: string; requests: unknown[
 async function makeHarness(storageDir: string) {
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx)
+  // The key rides the managed store — the only credential source; an exported
+  // DEEPSEEK_API_KEY is deliberately ignored.
+  await ctx.plugin(LocalCredentialProvider, { path: join(storageDir, '.credentials.yaml'), watch: false })
+  await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
   await ctx.plugin(AgentLoop, { agents: [] })
   await ctx.plugin(SubagentRuntime)
   await ctx.plugin(JsonlSessionPersistence, { root: storageDir })
@@ -115,7 +121,6 @@ describe('HarnessSdkJsonRpcServer', () => {
   it('creates a harness agent and calls the configured OpenAI-compatible endpoint', { timeout: 15_000 }, async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-'))
     const llmServer = await mockCompletionServer()
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     vi.stubEnv('DEEPSEEK_BASE_URL', llmServer.url)
     const ctx = await makeHarness(storageDir)
     try {
@@ -406,7 +411,6 @@ describe('HarnessSdkJsonRpcServer', () => {
   it('creates an SDK session without an optional system prompt', { timeout: 15_000 }, async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-no-system-'))
     const llmServer = await mockCompletionServer()
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     vi.stubEnv('DEEPSEEK_BASE_URL', llmServer.url)
     const ctx = await makeHarness(storageDir)
     try {
@@ -894,7 +898,6 @@ describe('HarnessSdkJsonRpcServer', () => {
   it('does not re-register an LLM adapter whose provider already has an owner', async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-existing-llm-'))
     const ctx = await makeHarness(storageDir)
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     await ctx.plugin(LlmDeepSeek)
     try {
       const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
@@ -915,7 +918,6 @@ describe('HarnessSdkJsonRpcServer', () => {
   it('rejects a missing non-DeepSeek provider when an LLM service already exists', async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-new-llm-'))
     const ctx = await makeHarness(storageDir)
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     await ctx.plugin(LlmDeepSeek)
     try {
       const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
@@ -1042,7 +1044,6 @@ describe('HarnessSdkJsonRpcServer', () => {
   it('rejects an unsupported reasoning effort during initialize', async () => {
     const storageDir = await mkdtemp(join(tmpdir(), 'dsh-jsonrpc-unsupported-reasoning-'))
     const ctx = await makeHarness(storageDir)
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     try {
       const server = new HarnessSdkJsonRpcServer(ctx, new FakeTransport())
       await expect(server.handleRequest('initialize', {

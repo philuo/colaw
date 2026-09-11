@@ -207,37 +207,41 @@ describe('web-search-perplexity plugin registration', () => {
     await fiber.dispose()
   })
 
-  it('falls back to env key and defaults for base URL and model when config omits them', async () => {
+  it('ignores $PERPLEXITY_API_KEY in the launching environment', async () => {
     const prev = process.env.PERPLEXITY_API_KEY
     process.env.PERPLEXITY_API_KEY = 'env-key'
     try {
-      const fetchMock = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'a' } }], citations: [] }))
-      vi.stubGlobal('fetch', fetchMock)
       const ctx = new Context()
       await ctx.plugin(WebRuntime, { searchProvider: PERPLEXITY_PROVIDER_ID })
-      const fiber = await ctx.plugin(perplexityPlugin, {})
-      await ctx.web.search({ query: 'q' })
-      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
-      expect(url).toBe('https://api.perplexity.ai/chat/completions')
-      expect(JSON.parse(init.body as string)).toMatchObject({ model: 'sonar' })
-      await fiber.dispose()
+      await ctx.plugin(perplexityPlugin, {})
+      // An ambient secret must never authenticate a provider the user did not
+      // configure: the key is the user's own config only.
+      await expect(ctx.web.search({ query: 'q' }))
+        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
     } finally {
       if (prev === undefined) delete process.env.PERPLEXITY_API_KEY
       else process.env.PERPLEXITY_API_KEY = prev
     }
   })
 
-  it('is unavailable when neither config nor env supplies a key', async () => {
-    const prev = process.env.PERPLEXITY_API_KEY
-    delete process.env.PERPLEXITY_API_KEY
-    try {
-      const ctx = new Context()
-      await ctx.plugin(WebRuntime, { searchProvider: PERPLEXITY_PROVIDER_ID })
-      await ctx.plugin(perplexityPlugin, {})
-      await expect(ctx.web.search({ query: 'q' }))
-        .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
-    } finally {
-      if (prev !== undefined) process.env.PERPLEXITY_API_KEY = prev
-    }
+  it('uses the default base URL and model when config omits them', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({ choices: [{ message: { content: 'a' } }], citations: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { searchProvider: PERPLEXITY_PROVIDER_ID })
+    const fiber = await ctx.plugin(perplexityPlugin, { apiKey: 'literal-key' })
+    await ctx.web.search({ query: 'q' })
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('https://api.perplexity.ai/chat/completions')
+    expect(JSON.parse(init.body as string)).toMatchObject({ model: 'sonar' })
+    await fiber.dispose()
+  })
+
+  it('is unavailable when config supplies no key', async () => {
+    const ctx = new Context()
+    await ctx.plugin(WebRuntime, { searchProvider: PERPLEXITY_PROVIDER_ID })
+    await ctx.plugin(perplexityPlugin, {})
+    await expect(ctx.web.search({ query: 'q' }))
+      .rejects.toThrow(expect.objectContaining({ code: 'WEB_PROVIDER_CONFIGURED_UNAVAILABLE' }))
   })
 })

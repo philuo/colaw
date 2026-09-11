@@ -38,13 +38,18 @@ import { vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as LlmDeepSeek from '../src/index.ts'
 
 let home: string
+let storedKey: Context | undefined
 beforeAll(() => {
   home = mkdtempSync(join(tmpdir(), 'dsh-deepseek-egress-'))
   vi.stubEnv('DSH_HOME', home)
-  vi.stubEnv('DEEPSEEK_API_KEY', 'probe-key')
+})
+afterAll(async () => {
+  await storedKey?.fiber.dispose()
 })
 afterAll(() => {
   vi.unstubAllEnvs()
@@ -54,6 +59,11 @@ afterAll(() => {
 /** Drive the shipping adapter's chat-completions request at an unresolvable endpoint. */
 async function streamOnce(): Promise<void> {
   const ctx = new Context()
+  await ctx.plugin(LocalCredentialProvider, { watch: false })
+  if (storedKey === undefined) {
+    storedKey = ctx
+    await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'probe-key')
+  }
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(DeepSeekLlmApiExtensionRegistry)
   await ctx.plugin(LlmDeepSeek, { baseURL: 'http://deepseek-probe.invalid/v1', apiKeyEnv: 'DEEPSEEK_API_KEY', models: [{ id: 'm' }] })

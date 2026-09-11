@@ -17,7 +17,6 @@ import {
   credentialKey, credentialKeyId, credentialKeyScope, credentialRef, isCredentialKeySegment, isCredentialRefName,
 } from '@deepseek-ai/dsh-credentials'
 import type { CredentialKey, CredentialProvider, CredentialRecord } from '@deepseek-ai/dsh-credentials'
-import { launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 
 /**
@@ -189,14 +188,15 @@ export function credentialStoreFrom(ctx: Context): CredentialStore {
  * A pi-ai `AuthContext` over the harness credential plane and the host
  * filesystem.
  *
- * `env()` answers from the credential seam first, so a value a deployment
- * stored through the harness is found by a provider's own ambient discovery —
- * without this, that discovery reads only the process environment and a stored
- * `AWS_ACCESS_KEY_ID` is invisible to it. `fileExists()` answers about the host
- * process's own filesystem rather than the workspace `ctx.fs` seam, because the
- * paths it is asked about (`~/.aws/credentials`, application-default
- * credentials) are facts about where this process runs, not about the project
- * under edit.
+ * `env()` answers from the credential seam only: a name a provider's own
+ * ambient discovery asks about resolves if the user stored it through the
+ * harness, and otherwise answers "not set". The process environment is
+ * deliberately never consulted, so an exported `OPENAI_API_KEY` (or any other
+ * ambient secret) can never authenticate a route the user did not configure.
+ * `fileExists()` answers about the host process's own filesystem rather than
+ * the workspace `ctx.fs` seam, because the paths it is asked about
+ * (`~/.aws/credentials`, application-default credentials) are facts about
+ * where this process runs, not about the project under edit.
  * @param ctx - the plugin context carrying the optional `ctx.credentials`.
  * @returns the auth context to hand `createModels()`.
  */
@@ -206,12 +206,10 @@ export function authContextFrom(ctx: Context): AuthContext {
       // pi-ai asks about arbitrary provider-declared names; one that is not a
       // POSIX identifier can never have been stored as a reference, and asking
       // the seam would throw instead of answering "not set".
-      if (isCredentialRefName(name)) {
-        const credentials = ctx.get('credentials')
-        const hit = await credentials?.resolve(credentialRef(name))
-        if (hit !== undefined) return hit.value
-      }
-      return launchEnvironmentOf(ctx).get(name)?.value
+      if (!isCredentialRefName(name)) return undefined
+      const credentials = ctx.get('credentials')
+      const hit = await credentials?.resolve(credentialRef(name))
+      return hit?.value
     },
     async fileExists(path) {
       const expanded = path.startsWith('~/') || path === '~'

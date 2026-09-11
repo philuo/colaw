@@ -128,7 +128,7 @@ Source: [`packages/credentials/authorization/src/index.ts`](../../packages/crede
 
 Abstract credential service over two key spaces that answer two questions.
 
-A CredentialRef answers "what is behind this environment-variable name", layered over the process environment, the provider-managed store, and `.env` files. One seam-wide rule binds that half: an empty stored value is absent everywhere — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.
+A CredentialRef answers "what is behind this reference name" from the provider-managed store, the one credential source. One seam-wide rule binds that half: an empty stored value is absent — `resolve` skips it, `describe` reports it unconfigured — so a blank never masquerades as a configured secret.
 
 A CredentialKey answers "what credential does this plugin hold for this id". Nothing can layer here — an authorization grant has no environment to be read from — so presence of the record is the whole fact, and modifyRecord is the only write path because a correct write depends on the current value (a token refresh is read-decide-replace under one lock).
 
