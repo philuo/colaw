@@ -22,6 +22,14 @@
      scrollbar uses the l2 pair. .quietBars hides it without changing layout. */
   --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
+  /* Navigation chrome, not a document: labels, counts, and icons must not come
+     away in a selection band when a press travels across the column. */
+  user-select: none;
+}
+
+/* Text fields the column hosts (search, rename) keep their own selection. */
+.root :is(input, textarea, [contenteditable='true']) {
+  user-select: text;
 }
 
 /* Rail geometry (figma rail spec): 36x36 control boxes centered in the 56px

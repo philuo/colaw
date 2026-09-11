@@ -24,7 +24,7 @@ export function MarkdownBody({ content, t }: MarkdownBodyProps): ReactNode {
   }), [copyLabel, copiedLabel, footnotes])
   if (content.kind !== 'text') return null
   return (
-    <div className={css.document} data-document-markdown>
+    <div className={css.document} data-document-markdown data-dsh-selectable="">
       <MarkdownText text={content.text} streaming={!content.eof} labels={labels} />
     </div>
   )

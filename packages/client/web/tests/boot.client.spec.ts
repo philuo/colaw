@@ -218,3 +218,64 @@ describe('plugin activation', () => {
     await entry.dispose()
   })
 })
+
+describe('tab swallow', () => {
+  function booted(): { entry: AppWebEntry, target: HTMLElement } {
+    const container = document.createElement('div')
+    document.body.append(container)
+    return { entry: new AppWebEntry(container), target: container }
+  }
+
+  /** Dispatch a cancelable keydown and report whether its default was prevented. */
+  function press(key: string, target: Element, init: KeyboardEventInit = {}): boolean {
+    const event = new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...init })
+    target.dispatchEvent(event)
+    return event.defaultPrevented
+  }
+
+  it('prevents Tab from moving focus to any button or input', () => {
+    const { entry } = booted()
+    const button = document.body.appendChild(document.createElement('button'))
+    const input = document.body.appendChild(document.createElement('input'))
+
+    expect(press('Tab', button)).toBe(true)
+    expect(press('Tab', input)).toBe(true)
+    expect(press('Tab', input, { shiftKey: true })).toBe(true)
+    expect(document.activeElement).toBe(document.body)
+
+    void entry.dispose()
+  })
+
+  it('leaves every other key untouched', () => {
+    const { entry } = booted()
+    const input = document.body.appendChild(document.createElement('input'))
+
+    expect(press('Enter', input)).toBe(false)
+    expect(press('Escape', input)).toBe(false)
+    expect(press('a', input)).toBe(false)
+
+    void entry.dispose()
+  })
+
+  it('still lets focused controls see the Tab gesture', () => {
+    // The composer menu picks its highlight with Tab; only the default focus
+    // move is suppressed, never the event itself.
+    const { entry } = booted()
+    const input = document.body.appendChild(document.createElement('input'))
+    let seen = 0
+    input.addEventListener('keydown', () => { seen += 1 })
+
+    expect(press('Tab', input)).toBe(true)
+    expect(seen).toBe(1)
+
+    void entry.dispose()
+  })
+
+  it('stops swallowing after disposal', async () => {
+    const { entry } = booted()
+    await entry.dispose()
+
+    const button = document.body.appendChild(document.createElement('button'))
+    expect(press('Tab', button)).toBe(false)
+  })
+})

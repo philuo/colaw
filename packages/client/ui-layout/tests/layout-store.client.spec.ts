@@ -14,6 +14,7 @@ describe('createLayoutStore', () => {
       panelInfo: { activePanelId: null },
       layoutInfo: {
         sidebar: 280,
+        sidebarWidth: 280,
         viewportWidth: 1920,
         narrowExpanded: false,
         rightbar: null,
@@ -44,13 +45,34 @@ describe('createLayoutStore', () => {
     expect(store.getSnapshot().layoutInfo.sidebar).toBe(420)
   })
 
-  it('toggles the wide sidebar between closed and default width', () => {
+  it('toggles the wide sidebar between closed and the width the user dragged', () => {
     const { store, actions } = createLayoutStore().create()
     actions.setSidebar(400)
     actions.toggleSidebar()
     expect(store.getSnapshot().layoutInfo.sidebar).toBe(0)
+    // Reopening restores the dragged width, not the contract default: a
+    // collapse must never cost the user their panel size.
     actions.toggleSidebar()
-    expect(store.getSnapshot().layoutInfo.sidebar).toBe(280)
+    expect(store.getSnapshot().layoutInfo.sidebar).toBe(400)
+  })
+
+  it('keeps both panels at their dragged width across close and reopen', () => {
+    const { store, actions } = createLayoutStore().create()
+    actions.setSidebar(400)
+    actions.openRightbar(true, false)
+    actions.setRightbar(500)
+    const dragged = store.getSnapshot().layoutInfo
+
+    actions.toggleSidebar()
+    actions.closeRightbar()
+    expect(store.getSnapshot().layoutInfo).toMatchObject({ sidebar: 0, rightbarShown: false })
+    // The track is gone on both sides; neither width is.
+    expect(store.getSnapshot().layoutInfo.sidebarWidth).toBe(dragged.sidebarWidth)
+    expect(store.getSnapshot().layoutInfo.rightbar).toBe(dragged.rightbar)
+
+    actions.toggleSidebar()
+    actions.openRightbar(true, false)
+    expect(store.getSnapshot().layoutInfo).toMatchObject({ sidebar: 400, rightbar: 500, rightbarShown: true })
   })
 
   it('keeps the sidebar preference while toggling its narrow override', () => {

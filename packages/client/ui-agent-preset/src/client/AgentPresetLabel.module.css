@@ -1,5 +1,6 @@
-/* Session-header agent-preset label: static chrome, never a control. */
-
+/* Session-header agent-preset label: static chrome, never a control. It is not a
+   pointer target either, so a press beside the title reaches the window's drag
+   strip and the cursor stays an arrow over the name. */
 .label {
   display: inline-flex;
   align-items: center;
@@ -15,6 +16,8 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  pointer-events: none;
+  cursor: default;
 }
 
 .icon {

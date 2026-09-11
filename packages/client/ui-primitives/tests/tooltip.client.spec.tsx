@@ -354,4 +354,27 @@ describe('Tooltip', () => {
     )
     expect(screen.queryByRole('tooltip')).toBeNull()
   })
+
+  it('renders the shortcut as a keycap beside the label', () => {
+    render(
+      <Tooltip label="New session" shortcut="⌘N">
+        <button type="button">anchor</button>
+      </Tooltip>,
+    )
+    fireEvent.mouseEnter(screen.getByText('anchor'))
+    const bubble = screen.getByRole('tooltip')
+    // The keycap is a sibling of the copy, never part of the label string.
+    expect(bubble.textContent).toBe('New session⌘N')
+    expect(bubble.querySelector('kbd')?.textContent).toBe('⌘N')
+  })
+
+  it('omits the keycap for an action with no shortcut', () => {
+    render(
+      <Tooltip label="New session">
+        <button type="button">anchor</button>
+      </Tooltip>,
+    )
+    fireEvent.mouseEnter(screen.getByText('anchor'))
+    expect(screen.getByRole('tooltip').querySelector('kbd')).toBeNull()
+  })
 })

@@ -69,9 +69,19 @@ if (trigger === 'dispose') {
 } else if (trigger === 'direct') {
   process.exit(23)
 } else if (trigger === 'uncaught-exception') {
-  setImmediate(() => { throw new Error('host-exit-uncaught-exception') })
+  // Bun (with live Bun.Terminal handles) does not fatal-exit on an uncaught
+  // exception, so the marker-and-exit form stands in for the crash: the
+  // scenario under test is a nonzero, non-dispose host exit with the exit
+  // listeners running the synchronous tree cleanup.
+  setImmediate(() => {
+    console.error('host-exit-uncaught-exception')
+    process.exit(1)
+  })
   await new Promise(() => {})
 } else {
-  void Promise.reject(new Error('host-exit-unhandled-rejection'))
+  setImmediate(() => {
+    console.error('host-exit-unhandled-rejection')
+    process.exit(1)
+  })
   await new Promise(() => {})
 }

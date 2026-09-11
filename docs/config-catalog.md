@@ -538,7 +538,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/credentials/credentials-local/src/index.ts:64`](../packages/credentials/credentials-local/src/index.ts)
+Source: [`packages/credentials/credentials-local/src/index.ts:63`](../packages/credentials/credentials-local/src/index.ts)
 
 <a id="deepseek-aidsh-e2b"></a>
 
@@ -1094,7 +1094,7 @@ export interface DeepSeekCatalogModel {
 
 Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · [`SystemPromptUpdate`](../packages/llm/llm/src/index.ts)
 
-Source: [`packages/llm/llm-deepseek/src/index.ts:134`](../packages/llm/llm-deepseek/src/index.ts)
+Source: [`packages/llm/llm-deepseek/src/index.ts:141`](../packages/llm/llm-deepseek/src/index.ts)
 
 <a id="deepseek-aidsh-llm-pi-ai"></a>
 
@@ -2151,7 +2151,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/settings/settings-file/src/index.ts:22`](../packages/settings/settings-file/src/index.ts)
+Source: [`packages/settings/settings-file/src/index.ts:21`](../packages/settings/settings-file/src/index.ts)
 
 <a id="deepseek-aidsh-shell-env"></a>
 
@@ -2217,7 +2217,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/skill/skill-filesystem/src/index.ts:49`](../packages/skill/skill-filesystem/src/index.ts)
+Source: [`packages/skill/skill-filesystem/src/index.ts:48`](../packages/skill/skill-filesystem/src/index.ts)
 
 <a id="deepseek-aidsh-spill-local"></a>
 
@@ -2584,7 +2584,7 @@ Source: [`packages/e2b/subprocess-e2b/src/index.ts:26`](../packages/e2b/subproce
 ```ts config-catalog
 /** Plugin config: the deployment-authored fragment of the system prompt (see {@link Config.personaPrefix} for its contract). */
 export interface Config {
-  /** Include the fixed DeepSeek Harness identity before the deployment persona (default true). */
+  /** Include the fixed Colaw identity before the deployment persona (default true). */
   includeHarnessIdentity?: boolean
   /** Include dynamic runtime-context snapshots in model history (default true). */
   includeRuntimeContext?: boolean
@@ -3309,6 +3309,26 @@ export interface Config {
 ```
 
 Source: [`packages/web/web-fetch-http/src/index.ts:32`](../packages/web/web-fetch-http/src/index.ts)
+
+<a id="deepseek-aidsh-web-search-anysearch"></a>
+
+## `@deepseek-ai/dsh-web-search-anysearch`
+
+Requires: `web`
+
+```ts config-catalog
+/** Plugin config; every field is optional. */
+export interface Config {
+  /** Credential reference naming the stored key; defaults to `ANYSEARCH_API_KEY`. */
+  apiKeyEnv?: string
+  /** Literal key; the credentials store wins when both exist. */
+  apiKey?: string
+  /** The MCP endpoint URL; defaults to the public AnySearch MCP. */
+  endpoint?: string
+}
+```
+
+Source: [`packages/web/web-search-anysearch/src/index.ts:39`](../packages/web/web-search-anysearch/src/index.ts)
 
 <a id="deepseek-aidsh-web-search-deepseek"></a>
 

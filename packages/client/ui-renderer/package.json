@@ -56,9 +56,10 @@
     "use-sync-external-store": "1.2.0"
   },
   "files": [
+    "lib",
+    "lib",
     "lib/index.js",
     "lib/invariant.js",
-    "lib/client.js",
-    "lib/types/**/*.d.ts"
+    "lib/client.js"
   ]
 }

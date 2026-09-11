@@ -12,9 +12,12 @@ import { DEFAULT_FONT_SIZE, DEFAULT_PREFERENCE, type ThemePreference } from './t
 function bootThemeScript(preference: ThemePreference, fontSize: number): string {
   return `(() => {
   const preference = ${JSON.stringify(preference)}
+  const injected = window.__DSH_DESKTOP_APPEARANCE__
   const systemDark = preference === 'system'
-    && typeof matchMedia !== 'undefined'
-    && matchMedia('(prefers-color-scheme: dark)').matches
+    && (injected === 'dark' || injected === 'light'
+      ? injected === 'dark'
+      : typeof matchMedia !== 'undefined'
+        && matchMedia('(prefers-color-scheme: dark)').matches)
   const dark = preference === 'dark' || systemDark
   document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
   document.body.toggleAttribute('data-ds-dark-theme', dark)

@@ -35,3 +35,11 @@
     compression: gzip
     compressionLevel: 1
     compressionThresholdBytes: 1024
+
+# The dev app keeps the hot-reload poll tight: the host notices a rebuilt
+# plugin bundle within ~100ms instead of the default 500ms, so a source save
+# reaches the running view in a few hundred milliseconds end to end. Polling
+# (vs. fs events) stays the mechanism — network mounts deliver no inotify.
+- id: client-hmr
+  config:
+    pollIntervalMs: 100

@@ -328,7 +328,8 @@ describe('Hero chrome', () => {
   it('renders the English hero headline through the hero locale seat', () => {
     const renderSlot = vi.fn<HeroShellProps['renderSlot']>(() => null)
     const view = render(<HeroShell t={makeTranslate(en, commonEn)} renderSlot={renderSlot} />)
-    expect(view.getByText('Into the Unknown')).toBeTruthy()
+    // The copy is the hero locale seat's own (`hero.headline` in ./locales.ts).
+    expect(view.getByText('Qizi! On standby')).toBeTruthy()
     // The rebrand dropped the preview badge the headline used to carry.
     expect(view.queryByText('Preview')).toBeNull()
     expect(renderSlot).toHaveBeenCalledOnce()

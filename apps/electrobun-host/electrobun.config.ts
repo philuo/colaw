@@ -12,10 +12,11 @@ export default {
     bun: {
       entrypoint: "src/bun/index.ts",
     },
-    // dsh 前端由运行中的 webserver 提供；overlay 补丁文件需进包（主进程按
-    // Resources/config/... 相对路径读取）
+    // dsh 前端由运行中的 webserver 提供；overlay 补丁文件与暗色图标需进包
+    // （主进程按 Resources/ 相对路径读取：补丁在 Resources/app/、图标同处）
     copy: {
       "config/electrobun.cordis.patch.yml": "config/electrobun.cordis.patch.yml",
+      "cat5_dark.icns": "cat5_dark.icns",
     },
     mac: {
       bundleCEF: false,

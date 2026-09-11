@@ -23,9 +23,9 @@
     "./package.json": "./package.json"
   },
   "files": [
+    "lib",
     "lib/index.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "cordis.patch.yml"
   ],
   "license": "MIT",
   "dsh": {
@@ -115,7 +115,7 @@
     "@deepseek-ai/dsh-user-questions": "workspace:^",
     "@deepseek-ai/dsh-web": "workspace:^",
     "@deepseek-ai/dsh-web-fetch-http": "workspace:^",
-    "@deepseek-ai/dsh-web-search-deepseek": "workspace:^",
+    "@deepseek-ai/dsh-web-search-anysearch": "workspace:^",
     "@deepseek-ai/dsh-workflow-worker-thread": "workspace:^",
     "@deepseek-ai/dsh-agent-instructions": "workspace:^"
   },

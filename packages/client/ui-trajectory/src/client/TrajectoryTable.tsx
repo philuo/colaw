@@ -2805,6 +2805,12 @@ export function TrajectoryTable({
               </button>
             ))}
           </div>
+          {/* The panel is a record's content, not chrome: its text is what the
+              reader came to copy, so it opts back into selection. The shell
+              makes everything unselectable by default (see ui-theme
+              design-platform.css); controls inside it stay chrome, because the
+              element rules for buttons and links outrank the opt-in's zero
+              specificity. */}
           <div
             id="trajectory-detail-panel"
             className={activeTab === 'overview'
@@ -2812,6 +2818,7 @@ export function TrajectoryTable({
               : css.detailBody}
             role="tabpanel"
             aria-labelledby={`trajectory-detail-${activeTab}`}
+            data-dsh-selectable=""
           >
             {selectedRequestInfo !== undefined
               && selectedRequestState !== undefined

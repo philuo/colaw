@@ -1,11 +1,12 @@
 /**
- * The web-search provider's card: its endpoint, its per-request search budget,
- * and the key — which is written through the credentials domain, never into
- * the settings section, so the literal never rides a response.
+ * The web-search provider's card. The key is its only control: the provider is
+ * the product's own AnySearch MCP, and the key is written through the
+ * credentials domain, never into the settings section, so the literal never
+ * rides a response.
  */
 
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
-import { SecretField, ValueField } from './fields.tsx'
+import { SecretField } from './fields.tsx'
 import { PluginCard } from './PluginCard.tsx'
 import type { WebSearchCardFace } from './web-search-card-controller.ts'
 import type {} from './slot-contract.ts'
@@ -24,7 +25,6 @@ export type WebSearchCardProps =
 export function WebSearchCard(props: WebSearchCardProps) {
   const { t } = props
   const state = props.useWebSearchCard(snapshot => snapshot)
-  const disabled = !state.writable
   return (
     <PluginCard
       t={t}
@@ -46,32 +46,8 @@ export function WebSearchCard(props: WebSearchCardProps) {
         text={state.apiKey.text}
         configured={state.apiKeyConfigured}
         stateLabel={state.apiKeyConfigured ? t('webSearchApiKeySet') : t('webSearchApiKeyUnset')}
+        placeholder={state.apiKeyConfigured ? t('webSearchApiKeyStored') : t('webSearchApiKeyPlaceholder')}
         onEdit={(text) => { props.edit('apiKey', text) }}
-      />
-      <ValueField
-        id="plugin-config-web-search-endpoint"
-        label={t('webSearchBaseUrl')}
-        hint={t('webSearchBaseUrlHint')}
-        overriddenLabel={t('overridden')}
-        resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
-        disabled={disabled}
-        {...state.baseURL}
-        onEdit={(text) => { props.edit('baseURL', text) }}
-        onReset={() => { props.resetField('baseURL') }}
-      />
-      <ValueField
-        id="plugin-config-web-search-max-uses"
-        label={t('webSearchMaxUses')}
-        hint={t('webSearchMaxUsesHint')}
-        overriddenLabel={t('overridden')}
-        resetLabel={t('reset')}
-        invalidLabel={t('invalidNumber')}
-        numeric
-        disabled={disabled}
-        {...state.maxUses}
-        onEdit={(text) => { props.edit('maxUses', text) }}
-        onReset={() => { props.resetField('maxUses') }}
       />
     </PluginCard>
   )

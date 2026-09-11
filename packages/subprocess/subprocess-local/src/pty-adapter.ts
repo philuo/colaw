@@ -1,17 +1,12 @@
 /**
- * Unified PTY adapter: selects node-pty on Node.js, Bun.Terminal on Bun.
- *
- * node-pty fails to start PTY shells in Bun ("PTY shell exited during startup").
- * Bun.Terminal is a native Bun API that provides equivalent PTY functionality.
+ * Unified PTY adapter. Bun-only by fork policy: the terminal surface the
+ * subprocess seam consumes is backed by Bun.Terminal + Bun.spawn (see
+ * bun-pty-adapter.ts).
  *
  * @module dsh-subprocess-local/pty-adapter
  */
 
-const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined'
-
-// Static import of node-pty-adapter allows vitest's vi.mock('node-pty') to intercept.
-// Under Bun, node-pty-adapter exports a stub (avoids native ABI mismatch).
-import { nodePty } from './node-pty-adapter'
+import * as bunPty from './bun-pty-adapter.ts'
 
 export interface IPtyForkOptions {
   name?: string
@@ -48,14 +43,7 @@ let ptyModule: IPtyModule | null = null
 
 export function getPtyModule(): IPtyModule {
   if (ptyModule) return ptyModule
-  if (isBun) {
-    // Bun: use Bun.Terminal adapter
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    ptyModule = require('./bun-pty-adapter') as IPtyModule
-  } else {
-    // Node.js: use node-pty (static import via node-pty-adapter for vitest mock compatibility)
-    ptyModule = nodePty as unknown as IPtyModule
-  }
+  ptyModule = bunPty as unknown as IPtyModule
   return ptyModule
 }
 

@@ -16,7 +16,7 @@
  * MUST NOT run concurrently with `pnpm run build`: both write the same
  * `lib/` and `apps/web/dist/` trees.
  *
- * Usage: `pnpm exec tsx scripts/dev-web.ts [--poll[=ms]]`. Requires one prior
+ * Usage: `bun scripts/dev-web.ts [--poll[=ms]]` — Bun only. Requires one prior
  * `pnpm run build`: every stage is incremental over the previous stage's output
  * and none of them bootstraps a missing tree. `--poll` switches the source
  * watchers to polling (default 500ms): network mounts (weka) deliver no inotify
@@ -162,25 +162,52 @@ export async function watchClientPlugins(
 const stages: StageHandle[] = []
 
 /**
+ * Terminate every registered stage. Each stage leads its own process group, so
+ * a group signal reaches the whole descendant tree (`pnpm run watch` and the
+ * vite process it spawns); killing the direct child alone orphans grandchildren,
+ * which then hold the served artifacts open against the next watcher's builds.
+ */
+function stopStages(): void {
+  for (const stage of stages) stage.kill()
+}
+
+/**
  * Spawn one watcher stage, inheriting stdio, registering it for teardown, and
  * failing loud if it ever exits: a dead stage leaves the artifact chain silently
  * stale, which reads as "my edit did nothing" — the one failure this script
- * exists to prevent.
+ * exists to prevent. Every stage runs under Bun (this fork's only runtime): a
+ * command that is itself a JS entry is executed by Bun directly, never through
+ * a `#!/usr/bin/env node` bin shim.
  * @param stage - command label used in the exit diagnostic.
- * @param command - executable, resolved from the workspace bin when local.
- * @param args - command arguments.
- * @param local - whether to resolve `command` from the workspace's installed bins.
+ * @param cmd - argv to spawn; argv[0] is the Bun binary.
+ * @param cwd - working directory for the stage; defaults to the repo root.
  */
-function spawnStage(stage: string, command: string, args: readonly string[], local: boolean): void {
-  const child = execa(command, [...args], {
-    cwd: repoRoot,
+function spawnStage(stage: string, cmd: readonly string[], cwd: string = repoRoot): void {
+  // Detached: the stage leads its own process group (see stopStages).
+  const child = execa(cmd[0]!, [...cmd.slice(1)], {
+    cwd,
     stdio: 'inherit',
-    preferLocal: local,
     reject: false,
+    detached: true,
   })
-  stages.push({ kill: () => { child.kill() } })
+  const pid = child.pid
+  stages.push({
+    kill: () => {
+      if (pid === undefined) return
+      try {
+        process.kill(-pid, 'SIGTERM')
+      } catch {
+        // The group is already gone.
+        child.kill()
+      }
+    },
+  })
   void child.then((result) => {
     console.error(`dev-web: ${stage} exited (code ${String(result.exitCode)}); the artifact chain is now stale`)
+    // A dead stage means a stale chain either way; stopping the sibling stages
+    // before exiting keeps this script's death from leaking running watchers.
+    // Signalling this stage's own (already dead) group is harmless.
+    stopStages()
     process.exit(1)
   })
 }
@@ -193,6 +220,14 @@ interface StageHandle {
 const invokedPath = process.argv[1]
 const isMain = invokedPath !== undefined && import.meta.url === pathToFileURL(resolve(invokedPath)).href
 if (isMain) {
+  // Bun only, by fork policy: the stages below are Bun's own binary executing
+  // JS entries directly. Under Node the entry either crashes (tsx's module
+  // hooks on Node 24) or silently re-introduces node-shebang children.
+  const bun = (globalThis as { Bun?: { readonly version: string } }).Bun
+  if (bun === undefined) {
+    console.error('dev-web: bun only — run as `bun scripts/dev-web.ts --poll` (never node/tsx)')
+    process.exit(1)
+  }
   const buildEnvironment = devWebBuildEnvironment(repoRoot, process.env)
   for (const name of Object.keys(process.env)) {
     if (name === CLIENT_BUILD_PROFILE_SELECTOR || name.startsWith('DSH_CLIENT_')) {
@@ -217,7 +252,7 @@ if (isMain) {
   const args = process.argv.slice(2)
   const pollArg = args.find(a => a === '--poll' || a.startsWith('--poll='))
   if (args.some(a => a !== pollArg)) {
-    console.error('dev-web: usage: tsx scripts/dev-web.ts [--poll[=ms]]')
+    console.error('dev-web: usage: bun scripts/dev-web.ts [--poll[=ms]]')
     process.exit(1)
   }
   const pollInterval = pollArg === undefined ? undefined : Number(pollArg.split('=')[1] ?? '500')
@@ -228,33 +263,51 @@ if (isMain) {
 
   // Registered before any stage starts: `stages` is read at signal time, so an
   // interrupt during tsdown's initial builds still kills whatever is running.
-  const stop = (): void => { for (const stage of stages) stage.kill() }
-  process.once('SIGINT', stop)
-  process.once('SIGTERM', stop)
+  process.once('SIGINT', stopStages)
+  process.once('SIGTERM', stopStages)
+
+  // Supervised runs (the Electrobun dev app) must die with their parent: a GUI
+  // quit can terminate the host without any signal this process would see, and
+  // an orphaned watcher keeps rewriting artifacts nobody serves. A dead parent
+  // reparents this process, so polling ppid is the exact check.
+  const supervisorPid = Number(process.env.DSH_SUPERVISOR_PID)
+  if (Number.isInteger(supervisorPid) && supervisorPid > 0) {
+    const orphanWatch = setInterval(() => {
+      if (process.ppid !== supervisorPid) {
+        clearInterval(orphanWatch)
+        stopStages()
+        process.exit(0)
+      }
+    }, 2_000)
+  }
 
   // tsc has no polling interval flag, so `--poll` selects its fixed-interval
   // watchers rather than an interval. Dropping that translation leaves tsc
   // natively watching on a network mount where inotify never fires: it stops
   // re-emitting lib/types, and the two later stages then rebuild forever from
-  // stale input without printing anything.
-  spawnStage(`tsc -b ${CLIENT_TYPE_PROGRAM} --watch`, 'tsc', [
+  // stale input without printing anything. Bun executes TypeScript's JS entry
+  // directly — the node-shebang bin shim is exactly what this fork forbids.
+  spawnStage(`tsc -b ${CLIENT_TYPE_PROGRAM} --watch`, [
+    process.execPath, join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc'),
     '-b', CLIENT_TYPE_PROGRAM, '--watch', '--preserveWatchOutput',
     ...pollInterval !== undefined
       ? ['--watchFile', 'fixedPollingInterval', '--watchDirectory', 'fixedPollingInterval']
       : [],
-  ], true)
+  ])
 
   // tsdown's initial builds are awaited before the dist watcher starts so vite's
   // first build reads current lib bundles rather than whatever the last full
   // build left. Its own watch then covers later lib rewrites — those files are
   // in its module graph.
   await watchClientPlugins(repoRoot, [...pluginDirs, ...libraryDirs], pollInterval)
-  // Through the shell's own `watch` script rather than vite's API: vite is not a
-  // repository-root dependency, and more importantly the vite root is its
-  // working directory — `resolve.dedupe` resolves react from that root, so
-  // running vite from anywhere but apps/web silently switches which react copy
-  // the bundle gets.
-  spawnStage('vite build --watch', 'pnpm', ['--filter', SHELL_PACKAGE, 'run', 'watch'], false)
+  // Vite's JS entry is executed by Bun directly (no node bin shim), from the
+  // shell package's own directory: the vite root is its working directory —
+  // `resolve.dedupe` resolves react from that root, so running vite from
+  // anywhere but apps/web silently switches which react copy the bundle gets.
+  spawnStage('vite build --watch', [
+    process.execPath, join(repoRoot, 'apps', 'web', 'node_modules', 'vite', 'bin', 'vite.js'),
+    'build', '--watch', '--no-emptyOutDir',
+  ], join(repoRoot, 'apps', 'web'))
 
   console.log(
     `dev-web: watching ${String(pluginDirs.length)} dsh.client plugin packages`

@@ -30,7 +30,7 @@ export function JsonBlock({ label, payload, defaultOpen = false, truncatedLabel 
       <button type="button" className={css.toggle} onClick={() => { setOpen(v => !v) }}>
         {open ? '▾' : '▸'} {label}
       </button>
-      {open && <pre className={css.body}>{body}</pre>}
+      {open && <pre className={css.body} data-dsh-selectable="">{body}</pre>}
     </div>
   )
 }

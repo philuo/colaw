@@ -30,6 +30,14 @@ import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
 
+/**
+ * Window event the desktop host fires for a native menu command. The host
+ * answers the key equivalent itself, so the shell subscribes to the command
+ * rather than to keystrokes.
+ * Keep in sync with `apps/electrobun-host/src/bun/index.ts`.
+ */
+const DESKTOP_COMMAND_EVENT = 'dsh:desktop-command'
+
 export type { UiWorkspace } from './navigation.ts'
 export type {
   DirectoryFlowOwnerProps, DirectoryFlowSlotName, DirectoryPickingHooks, DirectoryPickingInjected,
@@ -157,4 +165,19 @@ export function apply(ctx: Context): void {
     },
     WorkspacePicker,
   ))
+
+  // Desktop menu commands: the same two verbs the shell's own controls run, so
+  // the menu needs no state of its own.
+  ctx.effect(() => {
+    // Only a browser has the host's window; the apply-time specs compose this
+    // plugin without a DOM.
+    if (typeof window === 'undefined') return () => {}
+    const onCommand = (event: Event): void => {
+      const command = (event as CustomEvent<{ command?: unknown }>).detail?.command
+      if (command === 'new-session') uiWorkspace.startSession()
+      else if (command === 'toggle-sidebar') ctx.layout.toggleSidebar()
+    }
+    window.addEventListener(DESKTOP_COMMAND_EVENT, onCommand)
+    return () => { window.removeEventListener(DESKTOP_COMMAND_EVENT, onCommand) }
+  }, 'ui-workspace: desktop menu commands')
 }

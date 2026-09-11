@@ -4,7 +4,7 @@ import type { GlobalStandardProps, RenderOpts } from '@deepseek-ai/dsh-client-ui
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render } from '@testing-library/react'
-import { AppFrame } from '../src/client/AppFrame.tsx'
+import { AppFrame, isWindowDragTarget } from '../src/client/AppFrame.tsx'
 import type { AppFrameProps } from '../src/client/AppFrame.tsx'
 import type { MainPanelId, RightbarOwnerProps, SidebarOwnerProps } from '../src/client/index.ts'
 import { createLayoutStore } from '../src/client/stores.ts'
@@ -588,5 +588,149 @@ describe('AppFrame frame measurement lifecycle', () => {
     act(() => { observer.fire(); flushFrames() })
     expect(instance.getSnapshot().layoutInfo.viewportWidth).toBe(1920)
     expect(animationFrames.size).toBe(0)
+  })
+})
+
+/** Computed-style reader over a fixed table, standing in for the mirroring preload. */
+function readerFor(regions: [Element, string][]) {
+  const table = new Map(regions)
+  return (element: Element): Pick<CSSStyleDeclaration, 'getPropertyValue'> => ({
+    getPropertyValue: () => table.get(element) ?? '',
+  })
+}
+
+describe('isWindowDragTarget', () => {
+  it('answers from an ancestor the stylesheet marked as a drag region', () => {
+    const row = document.createElement('div')
+    const label = document.createElement('span')
+    row.append(label)
+    // The title text is painted over the frame's drag strips, not inside them:
+    // the region it belongs to is the row above it.
+    expect(isWindowDragTarget(label, readerFor([[row, 'drag']]))).toBe(true)
+  })
+
+  it('stops at a control that opted out of the drag inside a drag region', () => {
+    const row = document.createElement('div')
+    const button = document.createElement('button')
+    row.append(button)
+    expect(isWindowDragTarget(button, readerFor([[row, 'drag'], [button, 'no-drag']]))).toBe(false)
+  })
+
+  it('lets a no-drag declaration stop the walk even below a dragged element', () => {
+    const row = document.createElement('div')
+    const group = document.createElement('div')
+    const label = document.createElement('span')
+    group.append(label)
+    row.append(group)
+    expect(isWindowDragTarget(label, readerFor([[row, 'drag'], [group, 'no-drag']]))).toBe(false)
+  })
+
+  it('is not a drag region when nothing declares one', () => {
+    const label = document.createElement('span')
+    expect(isWindowDragTarget(label, readerFor([]))).toBe(false)
+  })
+
+  it('reads the preload class markers and the frame\'s own strip marker', () => {
+    const marker = document.createElement('div')
+    marker.className = 'electrobun-webkit-app-region-drag'
+    expect(isWindowDragTarget(marker, readerFor([]))).toBe(true)
+
+    const strip = document.createElement('div')
+    const inner = document.createElement('span')
+    strip.append(inner)
+    strip.setAttribute('data-dsh-window-drag', '')
+    expect(isWindowDragTarget(inner, readerFor([]))).toBe(true)
+
+    const optedOut = document.createElement('div')
+    const label = document.createElement('span')
+    optedOut.append(label)
+    optedOut.className = 'electrobun-webkit-app-region-no-drag'
+    expect(isWindowDragTarget(label, readerFor([]))).toBe(false)
+  })
+
+  it('reads an inline declaration through the real computed style', () => {
+    const row = document.createElement('div')
+    row.setAttribute('style', 'app-region: drag')
+    const label = document.createElement('span')
+    row.append(label)
+    expect(isWindowDragTarget(label)).toBe(true)
+  })
+
+  it('treats an unresolvable target as no drag region', () => {
+    expect(isWindowDragTarget(null, readerFor([]))).toBe(false)
+  })
+})
+
+describe('AppFrame window zoom gesture', () => {
+  const desktop = globalThis as { __DSH_DESKTOP__?: unknown }
+
+  function press(target: Element, timeStamp: number): void {
+    const event = new MouseEvent('mousedown', { bubbles: true, cancelable: true, button: 0 })
+    Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+    act(() => { target.dispatchEvent(event) })
+  }
+
+  /** A title bar: an element that drags the window, holding a label and a button. */
+  function titleBar(): { label: HTMLElement; button: HTMLElement } {
+    const action = document.createElement('button')
+    action.setAttribute('style', 'app-region: no-drag')
+    const label = document.createElement('span')
+    const row = document.createElement('div')
+    row.setAttribute('style', 'app-region: drag')
+    row.append(label, action)
+    document.body.append(row)
+    return { label, button: action }
+  }
+
+  beforeEach(() => {
+    desktop.__DSH_DESKTOP__ = { chrome: 'darwin' }
+  })
+
+  afterEach(() => { delete desktop.__DSH_DESKTOP__ })
+
+  it('toggles the window zoom on a second press inside the title bar', () => {
+    const send = vi.fn()
+    vi.stubGlobal('__electrobunSendToHost', send)
+    mountFrame()
+    const { label } = titleBar()
+    press(label, 1000)
+    expect(send).not.toHaveBeenCalled()
+    press(label, 1200)
+    expect(send).toHaveBeenCalledWith({ id: 'toggle-window-zoom' })
+  })
+
+  it('leaves a press that is too late to be a double press pending', () => {
+    const send = vi.fn()
+    vi.stubGlobal('__electrobunSendToHost', send)
+    mountFrame()
+    const { label } = titleBar()
+    press(label, 1000)
+    press(label, 2000)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('ignores presses outside the drag region and on its controls', () => {
+    const send = vi.fn()
+    vi.stubGlobal('__electrobunSendToHost', send)
+    mountFrame()
+    const outside = document.createElement('span')
+    document.body.append(outside)
+    press(outside, 1000)
+    press(outside, 1100)
+    const { button } = titleBar()
+    press(button, 1000)
+    press(button, 1100)
+    expect(send).not.toHaveBeenCalled()
+  })
+
+  it('does not claim the gesture in the browser surface', () => {
+    delete desktop.__DSH_DESKTOP__
+    const send = vi.fn()
+    vi.stubGlobal('__electrobunSendToHost', send)
+    mountFrame()
+    const { label } = titleBar()
+    press(label, 1000)
+    press(label, 1100)
+    expect(send).not.toHaveBeenCalled()
   })
 })

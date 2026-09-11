@@ -22,9 +22,9 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "lib/index.js",
-    "cordis.patch.yml",
-    "lib/types/**/*.d.ts"
+    "lib",
+    "lib",
+    "lib/index.js"
   ],
   "license": "MIT",
   "dsh": {

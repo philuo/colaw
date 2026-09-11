@@ -18,6 +18,7 @@
   ],
   "scripts": {
     "build": "tsx scripts/build.ts",
+    "build:app:stable": "bun scripts/pack-stable-app.ts",
     "build:bench": "npm run build:native-system && npm run build:lib && tsdown --config benchmarks/tsdown.config.ts",
     "build:official": "tsx scripts/build.ts --profile official",
     "build:lib": "pnpm run build:lib:host && pnpm run build:lib:client",
@@ -166,7 +167,8 @@
     "demo:ptc": "node scripts/demo-ptc.mjs",
     "demo:inspector": "node --import tsx/esm apps/cli/src/bin.ts web --patch ./packages/experimental/inspector/cordis.source.patch.yml",
     "mock:llm": "node --import tsx packages/test-support/llm-mock-server/src/bin.ts",
-    "dev:web": "tsx scripts/dev-web.ts --poll",
+    "dev:web": "bun scripts/dev-web.ts --poll",
+    "dev:shell": "bun scripts/dev-shell.ts",
     "postinstall": "node scripts/install-lefthook.mjs"
   },
   "devDependencies": {

@@ -11,13 +11,20 @@ import {
   HoverCard, IconAlarmClockOutline16, IconArchiveOutline20, IconBranchOutline16,
   IconEditOutline16, IconEllipsisOutline16, IconFolderClose16, IconFolderOpen16,
   IconPlusOutline16, IconTrashOutline16, IconTriangleRightFill14, Menu, relativeTime,
-  StateDot,
+  StateDot, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { StateDotState } from '@deepseek-ai/dsh-client-ui-primitives'
 import { abbreviateHomePath } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceBrowserProps } from '../contract/slots.ts'
 import type { GroupNode, SearchResultNode, SessionNode } from '../tree.ts'
 import css from './Rows.module.css'
+
+/**
+ * Key equivalent the desktop menu answers for "new conversation"; shown beside
+ * this row's own control so the two entry points read as the same verb.
+ * Keep in sync with `apps/electrobun-host/src/bun/index.ts`.
+ */
+const NEW_SESSION_SHORTCUT = '⌘N'
 
 /** The standard locale seat, prop-passed from the browser root. */
 type RowTranslate = WorkspaceBrowserProps['t']
@@ -184,14 +191,16 @@ export function ProjectRowItem({ group, onToggle, onCreate, actions, drag, home,
             )}
           />
         )}
-        <button
-          type="button"
-          className={css.iconButton}
-          aria-label={t('actions.newSession.aria', { name: label })}
-          onClick={(e) => { e.stopPropagation(); onCreate() }}
-        >
-          <IconPlusOutline16 />
-        </button>
+        <Tooltip label={t('actions.newSession.aria', { name: label })} side="bottom" delayMs={500} shortcut={NEW_SESSION_SHORTCUT}>
+          <button
+            type="button"
+            className={css.iconButton}
+            aria-label={t('actions.newSession.aria', { name: label })}
+            onClick={(e) => { e.stopPropagation(); onCreate() }}
+          >
+            <IconPlusOutline16 />
+          </button>
+        </Tooltip>
       </span>
     </div>
   )

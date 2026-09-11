@@ -120,7 +120,7 @@ export function ReadBlock({
     [line, highlighted?.[index]])
 
   return (
-    <div ref={rootRef} className={clsx(css.block, className)} data-read="">
+    <div ref={rootRef} className={clsx(css.block, className)} data-read="" data-dsh-selectable="">
       <div className={css.banner}>
         <div className={css.label}>{label ?? ''}</div>
         <div className={css.action}>

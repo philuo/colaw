@@ -18,7 +18,7 @@ export function CodeBody({ resourceAddress, content, wrap, scrollportRef, t }: C
   if (file === undefined) throw new Error(`ui-sidebar-documentpreview: not a file address "${resourceAddress}"`)
   const language = languageForPath(file.path)
   return (
-    <div className={css.renderer} data-code-preview data-wrap={wrap}>
+    <div className={css.renderer} data-code-preview data-wrap={wrap} data-dsh-selectable="">
       <CodeBlock
         className={css.code}
         contentRef={scrollportRef}

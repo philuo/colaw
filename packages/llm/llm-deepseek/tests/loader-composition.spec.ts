@@ -95,6 +95,7 @@ async function loadComposition(
     "  name: '@deepseek-ai/dsh-llm-deepseek'",
     '  config:',
     `    baseURL: ${JSON.stringify(options.baseURL)}`,
+    '    apiKeyEnv: DEEPSEEK_API_KEY',
     '',
   ].join('\n'))
 

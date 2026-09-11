@@ -10,6 +10,9 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* The transcript's own scroller: a bounce here would drag the composer
+     clearance around with it, and nothing outside it should scroll in turn. */
+  overscroll-behavior: none;
   /* Sides = composer clearance + 16px: on narrow viewports the transcript
      stays exactly 32px narrower than the input card (the shared width rule). */
   padding: 16px calc(var(--dsh-composer-side-clearance) + 16px);

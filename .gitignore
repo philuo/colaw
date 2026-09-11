@@ -64,3 +64,4 @@ apps/electrobun-host/.cottontail-tmp/
 !**/src/**/use-sync-external-store.d.ts
 !**/src/**/turndown-plugin-gfm.d.ts
 !**/src/**/ripgrep.d.ts
+.pack/

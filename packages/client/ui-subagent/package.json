@@ -66,8 +66,9 @@
     "@deepseek-ai/dsh-client-ui-session": "workspace:^"
   },
   "files": [
+    "lib",
+    "lib",
     "lib/index.js",
-    "lib/client.js",
-    "lib/types/**/*.d.ts"
+    "lib/client.js"
   ]
 }

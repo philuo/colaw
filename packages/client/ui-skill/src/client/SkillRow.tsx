@@ -151,7 +151,7 @@ export function SkillRow({ block, inspect, t }: SkillRowProps) {
         <div className={css.bodyWrap}>
           <section className={css.instructionsCard} aria-label={t('row.instructions')}>
             <div className={css.instructionsHeader}>{t('row.instructions')}</div>
-            <pre className={css.instructions} data-error={model.state === 'error' || undefined}>{model.output}</pre>
+            <pre className={css.instructions} data-error={model.state === 'error' || undefined} data-dsh-selectable="">{model.output}</pre>
           </section>
           {inspect !== undefined ? (
             <button type="button" className={css.inspectButton} onClick={inspect}>

@@ -100,6 +100,8 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
   configured: boolean
   /** Copy describing the configured state. */
   stateLabel: string
+  /** Placeholder shown while the draft is empty. */
+  placeholder?: string
 }) {
   return (
     <div className={css.field}>
@@ -115,6 +117,7 @@ export function SecretField(props: Pick<FieldProps, 'id' | 'label' | 'hint' | 't
         type="password"
         autoComplete="off"
         value={props.text}
+        placeholder={props.placeholder ?? ''}
         disabled={props.disabled}
         onChange={(event) => { props.onEdit(event.target.value) }}
       />

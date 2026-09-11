@@ -231,6 +231,22 @@ describe('TrajectoryTable', () => {
     expect(panel.querySelector('[data-summary-scroll-region]')).toBeNull()
   })
 
+  it('lets the reader select the record content its tabs show', () => {
+    render(<TrajectoryTable turns={TURNS} {...FOLD_PROPS} />)
+    fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
+
+    // The shell makes the whole app unselectable by default, so a pane whose
+    // text is the point opts back in (ui-theme design-platform.css). Both tab
+    // panes are the same element, and it holds no chrome of its own.
+    const panel = screen.getByRole('tabpanel')
+    expect(panel.getAttribute('data-dsh-selectable')).toBe('')
+
+    fireEvent.click(screen.getByRole('tab', { name: 'Preview' }))
+    expect(screen.getByRole('tabpanel').getAttribute('data-dsh-selectable')).toBe('')
+    fireEvent.click(screen.getByRole('tab', { name: 'Raw' }))
+    expect(screen.getByRole('tabpanel').getAttribute('data-dsh-selectable')).toBe('')
+  })
+
   it('keeps long thinking collapsed until the user asks to render it', () => {
     const thinking = 'private chain '.repeat(1_000)
     const turns: readonly TrajectoryTurnModel[] = [{

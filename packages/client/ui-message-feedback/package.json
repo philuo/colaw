@@ -70,8 +70,9 @@
     "@deepseek-ai/dsh-client-store": "workspace:^"
   },
   "files": [
+    "lib",
+    "lib",
     "lib/index.js",
-    "lib/client.js",
-    "lib/types/**/*.d.ts"
+    "lib/client.js"
   ]
 }

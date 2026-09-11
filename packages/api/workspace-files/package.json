@@ -72,10 +72,11 @@
     "@deepseek-ai/dsh-util-workspace-path": "workspace:^"
   },
   "files": [
+    "lib",
+    "lib",
     "lib/index.js",
     "lib/client.js",
     "lib/types/**/*.js",
-    "lib/types/**/*.d.ts",
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",

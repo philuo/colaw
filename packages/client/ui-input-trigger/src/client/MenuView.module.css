@@ -235,3 +235,27 @@
   display: inline-flex;
   color: var(--dsw-alias-label-caption);
 }
+
+/* Dark theme: one of the composer's glass panes — the recipe lives in ui-theme design-platform.css; what belongs to this surface is the token it is made of. */
+body[data-ds-dark-theme] .menu {
+  background: transparent;
+  box-shadow: none;
+}
+
+/* The pane is a layer behind the surface, not the surface: a `backdrop-filter`
+   on the element that owns the menu items would also become the containing
+   block for every `position: fixed` descendant, which is how the tooltips above
+   those items are placed. */
+body[data-ds-dark-theme] .menu::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background: var(--dsh-glass-sheen), color-mix(in srgb, var(--dsw-specific-menu) 66%, transparent);
+  -webkit-backdrop-filter: var(--dsh-glass-filter);
+  backdrop-filter: var(--dsh-glass-filter);
+  box-shadow: var(--dsh-glass-edge);
+  pointer-events: none;
+}
+

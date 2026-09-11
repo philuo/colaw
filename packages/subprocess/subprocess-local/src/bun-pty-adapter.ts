@@ -1,23 +1,7 @@
 /**
- * Bun.Terminal adapter for node-pty IPty interface.
- * Enables dsh subprocess-local to run on pure Bun without node-pty.
- *
- * node-pty API: nodePty.spawn(command, args, options) → IPty
- *   - ipy.pid
- *   - ipy.onData(cb) → IDisposable
- *   - ipy.onExit(cb) → IDisposable
- *   - ipy.write(data)
- *   - ipy.kill(signal?)
- *   - ipy.resize(cols, rows)
- *
- * Bun API: new Bun.Terminal({cols, rows, data}) + Bun.spawn([cmd, ...args], {terminal, env})
- *   - terminal.write(data)
- *   - terminal.close()
- *   - terminal.resize(cols, rows)
- *   - proc.pid
- *   - proc.kill(signal)
- *   - proc.exited (Promise)
- *   - data callback: (term, data: Uint8Array) => void
+ * PTY adapter over Bun's native `Bun.Terminal` + `Bun.spawn({ terminal })`.
+ * Implements the IPty surface the subprocess seam consumes:
+ * pid, onData, onExit, write, kill, resize.
  *
  * @module dsh-subprocess-local/bun-pty-adapter
  */
@@ -80,7 +64,7 @@ export interface IPty {
 
 /**
  * Spawn a PTY process using Bun.Terminal + Bun.spawn.
- * Compatible with node-pty's spawn signature.
+ * Spawn signature matches the historical node-pty `spawn(file, args, options)`.
  */
 export function spawn(
   file: string,

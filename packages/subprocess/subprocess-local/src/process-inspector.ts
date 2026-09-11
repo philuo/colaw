@@ -3,7 +3,6 @@
 import { closeSync, openSync, readFileSync, readdirSync, readlinkSync, readSync, statSync } from 'node:fs'
 import { execFileSync } from 'node:child_process'
 import type { SubprocessTerminalSignal } from '@deepseek-ai/dsh-subprocess'
-import { createWindowsProcessInspector } from './windows-inspector.ts'
 
 /** PID plus start identity, preventing teardown escalation after PID reuse. */
 export interface ProcessIdentity {
@@ -21,11 +20,9 @@ interface FileStatus {
  * single readiness poll or teardown pass asks.
  *
  * The table is read at most once, on the first question that needs it — a
- * `/bin/ps` fork on macOS, a `/proc` walk on Linux, a Toolhelp32 enumeration on
- * Windows. Later questions never re-read it, which is what keeps a poll's cost
- * independent of how many descendants the running command spawned. Windows
- * liveness needs no table at all: wait state is a per-handle question there, so
- * a snapshot asked only for liveness never enumerates.
+ * `/bin/ps` fork on macOS, a `/proc` walk on Linux. Later questions never
+ * re-read it, which is what keeps a poll's cost independent of how many
+ * descendants the running command spawned.
  *
  * A snapshot answers what the process table showed, which is what batch
  * filtering wants and what signalling must not use: {@link ProcessInspector.isAlive}
@@ -532,6 +529,5 @@ export function createProcessInspector(
 ): ProcessInspector {
   if (platform === 'linux') return new LinuxProcessInspector(arch, internals)
   if (platform === 'darwin') return new MacProcessInspector(internals)
-  if (platform === 'win32') return createWindowsProcessInspector()
   throw new Error(`subprocess-local: terminal inspection is unsupported on platform ${platform}`)
 }

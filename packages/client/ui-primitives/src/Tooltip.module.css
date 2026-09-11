@@ -6,6 +6,11 @@
      max-content sizes by the label alone, capped at half the viewport. */
   width: max-content;
   max-width: 50vw;
+  /* Label and keycap sit on one line; the gap keeps the shortcut from reading
+     as part of the sentence it qualifies. */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   padding: 3px 7px;
   border-radius: 8px;
   background: var(--dsw-alias-tooltip-bg);
@@ -29,6 +34,16 @@
 
 .bubble[data-side='top'] {
   transform: translate(-50%, -100%);
+}
+
+/* The key equivalent an action also answers to, drawn as a keycap: inherits the
+   bubble's type metrics so it never looks like a second message. */
+.shortcut {
+  font: inherit;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: rgb(255 255 255 / 18%);
+  white-space: nowrap;
 }
 
 @keyframes tooltip-in {

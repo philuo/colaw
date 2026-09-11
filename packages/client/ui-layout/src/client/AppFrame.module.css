@@ -50,6 +50,9 @@
   height: var(--dsh-titlebar-inset);
   z-index: 1;
   cursor: default;
+  /* What is painted into the strip is chrome, not a document: the press is a
+     window move, and app-region alone would still let it start a selection. */
+  user-select: none;
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -63,6 +66,7 @@
   height: var(--dsh-titlebar-inset);
   z-index: 1;
   cursor: default;
+  user-select: none;
   -webkit-app-region: drag;
   app-region: drag;
 }

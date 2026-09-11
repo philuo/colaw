@@ -411,7 +411,7 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
       >
         {state.view === null
           ? null
-          : <pre className={css.viewerCode}>{state.view.content}</pre>}
+          : <pre className={css.viewerCode} data-dsh-selectable="">{state.view.content}</pre>}
       </Modal>
       <Modal
         open={state.pendingDelete !== null}

@@ -83,8 +83,18 @@
      title glides ahead of the floating sidebar controls instead of jumping
      beneath them at the moment of expansion. */
   transition: padding var(--ds-transition-duration-slow) var(--ds-ease-in-out);
+  /* The row is a window-drag surface, so a press on it moves the window. Text
+     stays unselectable — which is also what keeps the pointer an arrow instead
+     of a caret, since no `cursor` is forced here to fight the controls' own. */
+  user-select: none;
   -webkit-app-region: drag;
   app-region: drag;
+}
+
+/* Text fields the row may host keep their own selection and caret. */
+.titleRow :is(input, textarea, [contenteditable='true']) {
+  user-select: text;
+  cursor: auto;
 }
 
 .titleRow button,
@@ -157,6 +167,16 @@
 .crumbCurrent {
   font-weight: 500;
   color: var(--dsw-alias-label-primary);
+  cursor: default;
+  /* The current title is a read-only label, not a control: it must not be a
+     pointer target at all, so a press reaches the strip beneath it and the
+     cursor can never become a caret over the text. */
+  pointer-events: none;
+}
+
+/* A crumb that cannot be followed reads the same way. */
+.crumb:disabled {
+  pointer-events: none;
   cursor: default;
 }
 
@@ -387,6 +407,10 @@
      the column's edge instead of flush against it. */
   margin-right: 2px;
   overflow-y: auto;
+  /* The composer seat rides this box's content box, so an elastic bounce at
+     either end would lift the input area with the content. Containment keeps
+     the scroll — and its overscroll — inside the transcript. */
+  overscroll-behavior: none;
   /* Reserved unconditionally: the composer seat rides this box's content box in
      Chat and its padding box under a view's composer overlay, so an `auto`
      gutter moves the input card sideways by the bar's width whenever the two
@@ -423,6 +447,39 @@
     var(--dsw-alias-bg-base) 36px
   );
 }
+
+/* Dark theme: the dock is frosted, not masked. The mask above is opaque from
+   36px down, and the composer's own glass can only blur what is *behind* it —
+   an opaque band under the card leaves nothing to blur, which is exactly how a
+   glass composer ends up looking like a flat panel. Thinning the band and
+   blurring it keeps the transcript visible on its way under the dock, so the
+   card's backdrop has the moving content the effect is made of. Light theme
+   keeps the opaque mask: a frosted band over a light transcript reads as a
+   smudge rather than as glass. */
+body[data-ds-dark-theme] .root[data-phase='active'] .composerSeat {
+  background: transparent;
+}
+
+/* The seat carries only the fade veil — no `backdrop-filter` of its own. The
+   panes of the dock (input card, Todo, queue) each blur once, and their
+   backdrop is whatever is painted below them: transcript, then this veil. A
+   filter here would filter *again* under their glass — two stacked blurs and
+   two brightening passes, which is exactly the mud a "more transparent" request
+   kept failing to produce. The layer still exists (rather than a background on
+   the seat) so it can never re-anchor the composer's fixed-position tooltips. */
+body[data-ds-dark-theme] .root[data-phase='active'] .composerSeat::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 0%, transparent) 0px,
+    color-mix(in srgb, var(--dsw-alias-bg-base) 35%, transparent) 36px
+  );
+  pointer-events: none;
+}
+
 
 /* An open @/slash menu (data-trigger-menu, ui-input-trigger) renders inside
    the input card, so the seat's stacking context caps its z-index; lift the

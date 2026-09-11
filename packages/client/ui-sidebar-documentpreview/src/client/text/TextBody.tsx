@@ -12,7 +12,7 @@ export function TextBody({ content, useTabInfo }: DocumentPreviewProps): ReactNo
   const target = params !== undefined && 'line' in params ? params.line : undefined
   if (content.kind !== 'text') return null
   return (
-    <div className={css.textDocument} data-textpreview-plain>
+    <div className={css.textDocument} data-textpreview-plain data-dsh-selectable="">
       {content.pages.map(page => (
         <pre key={page.offset} className={css.page} data-textpreview-page={page.offset}>
           {linesOf(page).map((text, index) => {

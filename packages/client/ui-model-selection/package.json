@@ -67,8 +67,9 @@
     "clsx": "^2.1.1"
   },
   "files": [
+    "lib",
+    "lib",
     "lib/index.js",
-    "lib/client.js",
-    "lib/types/**/*.d.ts"
+    "lib/client.js"
   ]
 }

@@ -234,7 +234,11 @@ export function ToolRow({
           </>
         )}
       >
-        <div className={css.bodyWrap}>
+        {/* Everything a tool body shows is a record of what ran — terminal
+            output, diffs, reads, search hits — and is what a reader copies, so
+            the body opts back into selection (the shell makes the app
+            unselectable by default). Controls inside stay chrome. */}
+        <div className={css.bodyWrap} data-dsh-selectable="">
           {askQuestionBody !== null
             ? <AskQuestionCard card={askQuestionBody} />
             : terminalBody !== null

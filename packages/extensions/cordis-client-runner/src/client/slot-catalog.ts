@@ -146,7 +146,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ownerProps: [
       '/** Owner currency of finalized-assistant actions. */\nexport interface AssistantActionOwnerProps {\n  messageId: MessageId\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'MessageId',
+    ],
     standardProps: [
       'useResource: UseResource',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
@@ -354,6 +356,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       '/** Owner values used to elect a composer takeover. */\nexport interface ComposerChainProps {\n  /** Current Session identity used by temporary business-owned entries. */\n  sessionId: SessionId | undefined\n  /** Current Session lifecycle state, absent without a selected Session. */\n  session: SessionSnapshot | undefined\n  /** Effective business-owned interaction awaiting the user in this Session. */\n  pendingInteraction: SessionPendingInteraction | undefined\n}',
     ],
     ownerPropsReferences: [
+      'SessionId',
       'SessionPendingInteraction',
       'SessionSnapshot',
     ],
@@ -952,6 +955,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       '/** Message image group handed to the optional attachment presentation plugin. */\nexport interface MessageImagesOwnerProps {\n  /** Durable references or submission-echo previews in source order. */\n  images: readonly MessageImageSource[]\n  /** Session-authorized image URL loader for the durable arm. */\n  loadImage: MessageImageLoader\n  /** Horizontal placement inside the owning record. */\n  align: \'start\' | \'end\'\n  /** Force every image into the compact message-attachment tile size. */\n  compact?: boolean\n}',
     ],
     ownerPropsReferences: [
+      'Message',
       'MessageImageLoader',
       'MessageImageSource',
     ],
@@ -1160,7 +1164,9 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ownerProps: [
       '/** Plain breadcrumb data handed to the optional lineage renderer. */\nexport interface ConversationHeaderLineageOwnerProps {\n  /** Session represented by this breadcrumb title. */\n  lineageSessionId: SessionId\n  /** Display title available to a combined title/control renderer. */\n  displayTitle: string\n  /** Navigate to an ancestor title when present. */\n  openTitle?: () => void\n}',
     ],
-    ownerPropsReferences: [],
+    ownerPropsReferences: [
+      'SessionId',
+    ],
     standardProps: [
       'useResource: UseResource',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
@@ -1257,6 +1263,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       '/** Message image group handed to the optional attachment presentation plugin. */\nexport interface MessageImagesOwnerProps {\n  /** Durable references or submission-echo previews in source order. */\n  images: readonly MessageImageSource[]\n  /** Session-authorized image URL loader for the durable arm. */\n  loadImage: MessageImageLoader\n  /** Horizontal placement inside the owning record. */\n  align: \'start\' | \'end\'\n  /** Force every image into the compact message-attachment tile size. */\n  compact?: boolean\n}',
     ],
     ownerPropsReferences: [
+      'Message',
       'MessageImageLoader',
       'MessageImageSource',
     ],

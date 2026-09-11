@@ -31,6 +31,39 @@
   --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
 }
 
+/* Dark theme: the Todo card takes the composer's glass, so the two cards of the
+   dock read as one pane of it. Same recipe as the input card (ui-theme
+   design-platform.css); this surface is the tip token, and it draws its own
+   stroke rather than the elevation one, so the hairline rides the border. Light
+   theme keeps the opaque tip surface. */
+/* Dark theme: the Todo card takes the composer's glass. */
+body[data-ds-dark-theme] .root {
+  background: transparent;
+  box-shadow: none;
+  position: relative;
+}
+
+/* The pane itself is a layer *behind* the surface, not the surface: a
+   `backdrop-filter` on the element that owns the content would also become
+   the containing block for every `position: fixed` descendant — which is how
+   the tooltips above these controls are placed. */
+body[data-ds-dark-theme] .root::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  background:
+    var(--dsh-glass-sheen),
+    color-mix(in srgb, var(--dsw-specific-tip) 60%, transparent);
+  border-color: rgb(255 255 255 / 13%);
+  -webkit-backdrop-filter: var(--dsh-glass-filter);
+  backdrop-filter: var(--dsh-glass-filter);
+  box-shadow: var(--dsh-glass-edge);
+  pointer-events: none;
+}
+
+
 .body {
   display: flex;
   flex-direction: column;

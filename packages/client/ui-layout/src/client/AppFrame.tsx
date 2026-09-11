@@ -75,6 +75,107 @@ function desktopChromeMarker(): DesktopChromeMarker | undefined {
 }
 
 /**
+ * Send one window command to the desktop host.
+ *
+ * The preload owns the channel and the host reads the command out of the
+ * event's detail; a browser surface has no host, so the send is simply dropped
+ * there.
+ * @param command - name the host's window-command handler answers.
+ */
+function sendDesktopCommand(command: 'toggle-window-zoom'): void {
+  const send = (globalThis as { __electrobunSendToHost?: (message: unknown) => void }).__electrobunSendToHost
+  send?.({ id: command })
+}
+
+/**
+ * Chrome that a press must not be read as a window drag: every control that
+ * answers a click of its own.
+ */
+const DRAG_REGION_CONTROLS = 'button, a, input, textarea, select, [role="button"], [contenteditable="true"]'
+
+/**
+ * Drag-region markers the host preload reads, plus the custom property a
+ * stylesheet's `app-region` declaration is mirrored into — the webview drops the
+ * unsupported property from the CSSOM, so the preload rewrites every
+ * `-webkit-app-region`/`app-region`/`window-drag` declaration in place and the
+ * mirrored value is all the page can still read back.
+ */
+const PRELOAD_DRAG_CLASS = 'electrobun-webkit-app-region-drag'
+const PRELOAD_NO_DRAG_CLASS = 'electrobun-webkit-app-region-no-drag'
+const MIRRORED_REGION_PROPERTY = '--electrobun-app-region'
+const REGION_PROPERTIES = [
+  MIRRORED_REGION_PROPERTY, '-webkit-app-region', 'app-region', 'window-drag',
+] as const
+
+/** How a stylesheet spells a region, for an element that carries one inline. */
+const INLINE_REGION = /(?:^|;)\s*(?:-webkit-app-region|app-region|window-drag)\s*:\s*(no-drag|drag)\b/i
+
+type AppRegion = 'drag' | 'no-drag' | null
+
+function normalizedRegion(value: string | null | undefined): AppRegion {
+  const trimmed = (value ?? '').trim()
+  if (trimmed === 'no-drag') return 'no-drag'
+  if (trimmed === 'drag') return 'drag'
+  return null
+}
+
+/** The region one element declares, read in the order the preload reads it. */
+function elementRegion(
+  element: Element,
+  readComputedStyle: (element: Element) => Pick<CSSStyleDeclaration, 'getPropertyValue'>,
+): AppRegion {
+  if (element.classList.contains(PRELOAD_NO_DRAG_CLASS)) return 'no-drag'
+  // Our own marker for the strips the frame paints behind the header. The
+  // preload never sees it, but a press on a strip lands on the strip, so it has
+  // to read as a drag region here as well.
+  if (element.hasAttribute('data-dsh-window-drag')) return 'drag'
+  const inline = element.getAttribute('style')
+  if (inline !== null) {
+    const declared = normalizedRegion(INLINE_REGION.exec(inline)?.[1])
+    if (declared !== null) return declared
+  }
+  for (const property of REGION_PROPERTIES) {
+    try {
+      const region = normalizedRegion(readComputedStyle(element).getPropertyValue(property))
+      if (region !== null) return region
+    } catch {
+      // A detached element has no computed style; keep walking.
+      break
+    }
+  }
+  return element.classList.contains(PRELOAD_DRAG_CLASS) ? 'drag' : null
+}
+
+/**
+ * Whether a press at `target` moves the window — the same question the host
+ * preload answers for itself before it starts a native window move.
+ *
+ * The gesture is counted from the presses (see the double-click effect below)
+ * because the native move that follows the first one swallows every later event,
+ * so the page must decide for itself whether a press was in the title bar. It
+ * decides by asking the preload's question — walk up, `no-drag` is a hard stop —
+ * rather than by testing for the drag strips: the strips sit *behind* the title
+ * bar's content, so a press on the title text never has one as an ancestor.
+ * @param target - the pressed element, as the event reports it.
+ * @param readComputedStyle - computed-style reader, injected so this is testable.
+ */
+export function isWindowDragTarget(
+  target: EventTarget | null,
+  readComputedStyle: (element: Element) => Pick<CSSStyleDeclaration, 'getPropertyValue'> =
+    element => getComputedStyle(element),
+): boolean {
+  let element: Element | null = target instanceof Element ? target : null
+  let drag = false
+  while (element !== null) {
+    const region = elementRegion(element, readComputedStyle)
+    if (region === 'no-drag') return false
+    if (region === 'drag') drag = true
+    element = element.parentElement
+  }
+  return drag
+}
+
+/**
  * Right column grid item. Zero-width unless the occupant asked for a track; the
  * occupant's panel is positioned against the column's right edge, which never
  * moves, so it can hang over the centre when there is no track.
@@ -193,6 +294,39 @@ export function AppFrame({
   const sidebarCollapsed = narrow ? !layoutInfo.narrowExpanded : layoutInfo.sidebar === 0
   const desktopMarker = desktopChromeMarker()
   const desktopChrome = desktopMarker !== undefined
+
+  // Desktop chrome: double-clicking the title bar toggles the window's zoom —
+  // what macOS itself runs on that gesture. The strip's drag is started by the
+  // host's preload on mousedown, and the native window move that follows swallows
+  // mouseup, click, and dblclick: the page never sees them. The gesture is
+  // therefore counted from the presses themselves, which the page does see. A
+  // capture-phase listener runs ahead of the preload's, so the second press can
+  // be claimed before it starts a move of its own, and `preventDefault` keeps
+  // every such press from starting a text selection — otherwise the drag
+  // region's default.
+  useEffect(() => {
+    if (!desktopChrome) return
+    const DOUBLE_PRESS_MS = 400
+    let lastPressAt = 0
+    const onMouseDown = (event: MouseEvent): void => {
+      if (!isWindowDragTarget(event.target)) return
+      const target = event.target
+      if (target instanceof Element && target.closest(DRAG_REGION_CONTROLS) !== null) return
+      // The window is already moving with the pointer; the word under it must
+      // not come away as well.
+      event.preventDefault()
+      if (event.timeStamp - lastPressAt > DOUBLE_PRESS_MS) {
+        lastPressAt = event.timeStamp
+        return
+      }
+      lastPressAt = 0
+      event.stopImmediatePropagation()
+      sendDesktopCommand('toggle-window-zoom')
+    }
+    document.addEventListener('mousedown', onMouseDown, true)
+    return () => { document.removeEventListener('mousedown', onMouseDown, true) }
+  }, [desktopChrome])
+
   // Desktop chrome: a collapsed sidebar has NO track (it is really hidden; only
   // its floating toggle remains next to the traffic lights) and hovering that
   // toggle floats the panel out over the conversation.
@@ -213,9 +347,9 @@ export function AppFrame({
     window.addEventListener('dsh:desktop-fullscreen', update)
     return () => { window.removeEventListener('dsh:desktop-fullscreen', update) }
   }, [desktopChrome])
-  const sidebarPreference = sidebarCollapsed
-    ? 0
-    : layoutInfo.sidebar === 0 ? SIDEBAR_DEFAULT : layoutInfo.sidebar
+  // The remembered drag width, which a collapse does not clear — so re-expanding
+  // (and a narrow re-widen) returns to the width the user chose.
+  const sidebarPreference = sidebarCollapsed ? 0 : layoutInfo.sidebarWidth
   const rightbarPreference = layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
   // Opening on a narrow frame collapses the left sidebar. Eligibility must
   // include that space before the occupant's first shown report arrives.
@@ -312,6 +446,7 @@ export function AppFrame({
         <div
           className={css.titlebarDrag}
           style={{ left: sidebarTrack, right: cols.rightbar }}
+          data-dsh-window-drag=""
           aria-hidden="true"
         />
       )}
@@ -327,7 +462,12 @@ export function AppFrame({
         {desktopHidden && <div className={css.peekEdge} aria-hidden="true" />}
         {/* Sidebar-column drag strip: sits below the title-bar controls. */}
         {desktopChrome && !desktopHidden && (
-          <div className={css.sidebarDrag} style={{ width: sidebarTrack }} aria-hidden="true" />
+          <div
+            className={css.sidebarDrag}
+            style={{ width: sidebarTrack }}
+            data-dsh-window-drag=""
+            aria-hidden="true"
+          />
         )}
         {sidebar}
       </div>

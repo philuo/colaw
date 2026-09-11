@@ -128,6 +128,31 @@ const BUILTIN_THEMES: readonly ThemeDefinition[] = Object.freeze([
   Object.freeze({ id: 'dark', colorScheme: 'dark' as const, tokens: Object.freeze({}) }),
 ])
 
+/**
+ * The desktop host's pushed color scheme, when a desktop shell owns the page.
+ *
+ * A desktop webview's `prefers-color-scheme` reports the app-level appearance
+ * frozen at launch (re-setting it under live views crashes the process), so it
+ * stops describing the system the moment either side changes. The host pushes
+ * the resolved scheme into this global instead — at index injection for the
+ * first paint, then through `dsh:desktop-appearance` events.
+ */
+function desktopAppearance(): 'dark' | 'light' | undefined {
+  const value = (globalThis as { __DSH_DESKTOP_APPEARANCE__?: unknown }).__DSH_DESKTOP_APPEARANCE__
+  return value === 'dark' || value === 'light' ? value : undefined
+}
+
+/**
+ * Whether the environment currently reports the dark scheme: the desktop
+ * host's pushed value when present, the `prefers-color-scheme` media query
+ * otherwise.
+ */
+function environmentDark(media: MediaQueryList | undefined): boolean {
+  const desktop = desktopAppearance()
+  if (desktop !== undefined) return desktop === 'dark'
+  return media?.matches === true
+}
+
 const BUILTIN_INSPECT_TOKENS: readonly ThemeTokenInspection[] = Object.freeze([
   { name: '--dsw-alias-bg-base', description: 'Application base background.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-bg-base' },
   { name: '--dsw-alias-bg-layer-1', description: 'Primary raised surface background.', valueType: 'CSS color', requiresLightAndDark: true, cssVariable: '--dsw-alias-bg-layer-1' },
@@ -190,6 +215,17 @@ export class ThemeRuntime {
         media.addEventListener('change', onChange)
         return () => { media.removeEventListener('change', onChange) }
       }, 'ui-theme: prefers-color-scheme listener')
+    }
+    // Non-browser runs (node e2e booting the client tree) have no event target.
+    if (typeof globalThis.addEventListener === 'function') {
+      const onDesktopAppearance = (): void => {
+        if (this.preference !== 'system') return
+        this.publish()
+      }
+      ctx.effect(() => {
+        globalThis.addEventListener('dsh:desktop-appearance', onDesktopAppearance)
+        return () => { globalThis.removeEventListener('dsh:desktop-appearance', onDesktopAppearance) }
+      }, 'ui-theme: desktop appearance listener')
     }
     ctx.effect(() => host.subscribe(() => { this.adopt() }), 'ui-theme: settings scope adoption')
     this.adopt()
@@ -318,7 +354,7 @@ export class ThemeRuntime {
 
   private buildSnapshot(): ThemeSnapshot {
     const resolvedId = this.preference === 'system'
-      ? (this.media?.matches === true ? 'dark' : 'light')
+      ? (environmentDark(this.media) ? 'dark' : 'light')
       : this.preference
     // Both built-ins always exist; a registered preference id resolves or has
     // been reset by its disposer, so the lookup cannot miss.

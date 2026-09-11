@@ -534,6 +534,7 @@ export function JsonTree({
     <div
       ref={rootRef}
       className={clsx(css.root, className)}
+      data-dsh-selectable=""
       onMouseOver={handleRootMouseOver}
       onMouseLeave={() => {
         if (!copyMenuOpenRef.current) clearCopyTarget()

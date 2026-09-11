@@ -26,6 +26,7 @@ export class AppWebEntry {
   private ctx: Context | undefined
   private modules!: ClientModuleSystem
   private manifest!: BootManifest
+  private readonly swallowTab: (event: KeyboardEvent) => void
 
   /**
    * Draw the boot page; {@link run} starts the loader.
@@ -36,6 +37,15 @@ export class AppWebEntry {
     this.container = container
     this.seams = seams
     this.page = new BootPage(container)
+    // Tab never moves focus in this surface: buttons and inputs are reachable
+    // by pointer only, and the key stays a gesture the focused control may
+    // still consume (the composer menu picks its highlight with it). Capture
+    // phase so no inner handler can re-enable the default focus move; without
+    // stopPropagation, so those consumers keep seeing the event.
+    this.swallowTab = (event) => {
+      if (event.key === 'Tab') event.preventDefault()
+    }
+    document.addEventListener('keydown', this.swallowTab, true)
   }
 
   /**
@@ -86,6 +96,7 @@ export class AppWebEntry {
 
   /** Dispose the client plugin tree and whichever page owns the mount point. */
   async dispose(): Promise<void> {
+    document.removeEventListener('keydown', this.swallowTab, true)
     const ctx = this.ctx
     this.ctx = undefined
     if (ctx !== undefined) await ctx.fiber.dispose()

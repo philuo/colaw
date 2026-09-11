@@ -19,7 +19,7 @@
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
     "@deepseek-ai/dsh-launch-environment": "workspace:*",
     "@deepseek-ai/dsh-web-frontend": "workspace:*",
-    "electrobun": "^2.0.1"
+    "electrobun": "2.0.2-beta.17"
   },
   "devDependencies": {
     "@types/bun": "latest"

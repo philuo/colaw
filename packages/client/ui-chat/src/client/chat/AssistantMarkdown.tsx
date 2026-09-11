@@ -133,7 +133,7 @@ export const AssistantMarkdown = memo(function AssistantMarkdown({
   }
   return (
     <div className={css.root} data-streaming={streaming || undefined}>
-      <div className={css.body}>
+      <div className={css.body} data-dsh-selectable="">
         {rendered}
         {interrupted && <span className={css.stopped}>{t('message.stopped')}</span>}
       </div>

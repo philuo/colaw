@@ -63,7 +63,10 @@ export function ContextInjectionRow({ content, source, provenance, form, t }: Co
       expandOnRowClick
       onToggle={() => { setOpen(value => !value) }}
     >
-      <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined}>
+      {/* The body is the model-facing record — the text a reader came to copy —
+          so it opts back into selection; the shell makes the app unselectable by
+          default. The row's own header stays chrome. */}
+      <div className={css.body} data-context-injection-body data-context-form={rendered ?? undefined} data-dsh-selectable="">
         {body}
       </div>
     </DisclosureRow>

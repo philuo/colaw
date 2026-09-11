@@ -4,7 +4,6 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
 import { describe, expect, it, vi } from 'vitest'
-import { resolveExampleLaunch } from '@deepseek-ai/dsh-loader-smoke'
 import { createProcessInspector } from '../src/process-inspector.ts'
 import type { ProcessIdentity, ProcessInspector } from '../src/process-inspector.ts'
 import { taskkillProcessTree } from '../src/spawn.ts'
@@ -15,7 +14,9 @@ interface TreeState { root: number; descendant: number }
 
 const repoRoot = fileURLToPath(new URL('../../../../', import.meta.url))
 const hostScript = fileURLToPath(new URL('./fixtures/process-exit-host.ts', import.meta.url))
-const scenarioTimeoutMs = process.platform === 'win32' ? 60_000 : 30_000
+// The fixture allocates a terminal through the Bun-only PTY adapter, so it is
+// launched with Bun directly — matching the production runtime (Bun Only).
+const scenarioTimeoutMs = 30_000
 const testTimeoutMs = scenarioTimeoutMs + 15_000
 
 function processExists(pid: number): boolean {
@@ -89,15 +90,8 @@ function cleanupTree(state: TreeState | undefined, identities: ProcessIdentity[]
 
 async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
   const root = await mkdtemp(join(tmpdir(), `dsh-subprocess-host-exit-${kind}-${trigger}-`))
-  const launch = resolveExampleLaunch({
-    srcBin: hostScript,
-    mode: 'src',
-    tsconfigPath: join(repoRoot, 'tsconfig.json'),
-    configArgs: [kind, trigger, root],
-  })
-  const child = execa(launch.command, launch.args, {
+  const child = execa('bun', [hostScript, kind, trigger, root], {
     cwd: repoRoot,
-    env: launch.env,
     stdin: 'ignore',
     reject: false,
     timeout: scenarioTimeoutMs,

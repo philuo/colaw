@@ -45,11 +45,13 @@ afterEach(async () => {
 async function harness(baseURL: string, config: object = {}) {
   // Configuration carries only the reference; the key comes from the
   // environment, which is the whole credential plane without a mounted seam.
+  // The reference is stated explicitly because the plugin no longer defaults
+  // one — the launching environment is never read unless the section names it.
   vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
   const ctx = new Context()
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(DeepSeekLlmApiExtensionRegistry)
-  await ctx.plugin(LlmDeepSeek, { baseURL, ...config })
+  await ctx.plugin(LlmDeepSeek, { baseURL, apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
   return ctx
 }
 
@@ -2187,7 +2189,7 @@ describe('plugin registration and config', () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmDeepSeek, { baseURL: server.url })
+    await ctx.plugin(LlmDeepSeek, { baseURL: server.url, apiKeyEnv: 'DEEPSEEK_API_KEY' })
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(server.headers[0]?.authorization).toBe('Bearer ambient-key')
   })

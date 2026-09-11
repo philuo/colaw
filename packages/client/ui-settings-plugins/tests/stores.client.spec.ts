@@ -54,7 +54,7 @@ function ctxWith(namespaces: object) {
 function credentialsApi(configured: boolean) {
   const describe = vi.fn(() => Promise.resolve({
     ok: true as const,
-    value: { DEEPSEEK_API_KEY: { configured, writable: true } },
+    value: { ANYSEARCH_API_KEY: { configured, writable: true } },
   }))
   const set = vi.fn(() => Promise.resolve({ ok: true as const, value: undefined }))
   return { ctx: ctxWith({ credentials: { describe, set } }), describe, set }
@@ -861,11 +861,10 @@ describe('WebSearchCardController', () => {
     const state = () => controller.inject().hooks.webSearchCard.getSnapshot()
     await vi.waitFor(() => { expect(credentials.describe).toHaveBeenCalled() })
 
-    host.publish({ status: 'ready', writable: true, value: { baseURL: 'https://search.test/v1' }, user: {} })
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     await vi.waitFor(() => { expect(state().apiKeyConfigured).toBe(true) })
 
     expect(state()).toMatchObject({
-      baseURL: { text: 'https://search.test/v1', overridden: false },
       apiKey: { text: '', overridden: false },
     })
   })
@@ -883,12 +882,12 @@ describe('WebSearchCardController', () => {
 
     credentials.describe.mockImplementation(() => Promise.resolve({
       ok: true as const,
-      value: { DEEPSEEK_API_KEY: { configured: true, writable: true } },
+      value: { ANYSEARCH_API_KEY: { configured: true, writable: true } },
     }))
     face.save()
     await vi.waitFor(() => { expect(credentials.set).toHaveBeenCalled() })
 
-    expect(credentials.set).toHaveBeenCalledWith('DEEPSEEK_API_KEY', 'ds-secret')
+    expect(credentials.set).toHaveBeenCalledWith('ANYSEARCH_API_KEY', 'ds-secret')
     expect(host.set).not.toHaveBeenCalled()
     await vi.waitFor(() => {
       expect(face.hooks.webSearchCard.getSnapshot()).toMatchObject({ dirty: false, apiKeyConfigured: true })
@@ -925,9 +924,9 @@ describe('WebSearchCardController', () => {
     // A key written on another surface reaches this card only through this signal.
     credentials.describe.mockImplementation(() => Promise.resolve({
       ok: true as const,
-      value: { DEEPSEEK_API_KEY: { configured: true, writable: true } },
+      value: { ANYSEARCH_API_KEY: { configured: true, writable: true } },
     }))
-    controller.refreshCredential('DEEPSEEK_API_KEY')
+    controller.refreshCredential('ANYSEARCH_API_KEY')
 
     await vi.waitFor(() => {
       expect(controller.inject().hooks.webSearchCard.getSnapshot().apiKeyConfigured).toBe(true)
@@ -967,7 +966,7 @@ describe('WebSearchCardController', () => {
     const host = stubSettingsScope<WebSearchSettings>()
     const refusal = () => Promise.resolve({
       ok: false as const,
-      error: new RemoteError('credential/rejected', 'offline', { ref: 'DEEPSEEK_API_KEY' }),
+      error: new RemoteError('credential/rejected', 'offline', { ref: 'ANYSEARCH_API_KEY' }),
     })
     const describe = vi.fn(refusal)
     const set = vi.fn(refusal)
@@ -975,7 +974,7 @@ describe('WebSearchCardController', () => {
     const face = controller.inject()
     await vi.waitFor(() => { expect(describe).toHaveBeenCalled() })
 
-    host.publish({ status: 'ready', writable: true, value: { baseURL: 'https://search.test/v1' }, user: {} })
+    host.publish({ status: 'ready', writable: true, value: {}, user: {} })
     face.edit('apiKey', 'ds-secret')
     face.save()
     await vi.waitFor(() => { expect(set).toHaveBeenCalled() })
@@ -983,7 +982,6 @@ describe('WebSearchCardController', () => {
     expect(face.hooks.webSearchCard.getSnapshot()).toMatchObject({
       available: true,
       apiKeyConfigured: false,
-      baseURL: { text: 'https://search.test/v1' },
     })
   })
 
@@ -1001,22 +999,6 @@ describe('WebSearchCardController', () => {
     expect(controller.inject().hooks.webSearchCard.getSnapshot().apiKeyConfigured).toBe(false)
   })
 
-  it('saves the endpoint and the search budget together', async () => {
-    const host = stubSettingsScope<WebSearchSettings>()
-    acceptWrites(host)
-    const credentials = credentialsApi(true)
-    const controller = new WebSearchCardController(host.scope, credentials.ctx)
-    host.publish({ status: 'ready', writable: true, value: {}, base: {}, user: {} })
-    const face = controller.inject()
-
-    face.edit('baseURL', 'https://other.test')
-    face.edit('maxUses', '3')
-    face.save()
-    await vi.waitFor(() => { expect(host.set).toHaveBeenCalledTimes(2) })
-
-    expect(host.set.mock.calls).toEqual([['baseURL', 'https://other.test'], ['maxUses', 3]])
-    expect(credentials.set).not.toHaveBeenCalled()
-  })
 })
 
 describe('ConfigurablePluginsTabController', () => {
@@ -1054,7 +1036,7 @@ describe('ConfigurablePluginsTabController', () => {
 
   it('never dispatches a card whose namespace this deployment does not serve', async () => {
     const settings = settingsApi(['bash'])
-    const controller = new ConfigurablePluginsTabController(settings.mirror, () => ledger('bash', 'web-search-deepseek'))
+    const controller = new ConfigurablePluginsTabController(settings.mirror, () => ledger('bash', 'web-search-anysearch'))
 
     await settings.mirror.ensure()
 

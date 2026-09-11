@@ -5,7 +5,6 @@ import {
   parseProcStat,
 } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import type { ProcessInspectorInternals } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
-import { WindowsProcessInspector } from '@deepseek-ai/dsh-subprocess-local/src/windows-inspector.ts'
 
 function stat(
   pid: number,
@@ -330,7 +329,6 @@ describe('macOS process inspector', () => {
     expect(createProcessInspector('darwin', 'arm64', fake.internals).foregroundPgid(1)).toBeUndefined()
     fake.internals.exec = () => { throw new Error('gone') }
     expect(createProcessInspector('darwin', 'arm64', fake.internals).foregroundPgid(1)).toBeUndefined()
-    expect(createProcessInspector('win32', 'x64', fake.internals)).toBeInstanceOf(WindowsProcessInspector)
     expect(() => createProcessInspector('freebsd', 'x64', fake.internals)).toThrow('unsupported on platform freebsd')
   })
 })

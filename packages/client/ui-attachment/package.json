@@ -59,9 +59,10 @@
     "clsx": "^2.0.0"
   },
   "files": [
+    "lib",
+    "lib",
     "lib/index.js",
-    "lib/client.js",
-    "lib/types/**/*.d.ts"
+    "lib/client.js"
   ],
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

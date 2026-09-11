@@ -124,7 +124,9 @@ async function boot(dir: string, config: object): Promise<Harness> {
   const settingsFiber = ctx.plugin(FileSettingsProvider, { path: join(dir, 'settings.yaml'), watch: false })
   await settingsFiber
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
-  await ctx.plugin(LlmDeepSeek, config)
+  // The reference is stated explicitly: the plugin no longer defaults one, so
+  // the launching environment is never consulted unless a test opts in.
+  await ctx.plugin(LlmDeepSeek, { apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
   return { ctx, settingsFiber }
 }
 

@@ -85,6 +85,13 @@ export const name = 'llm-deepseek'
 export const inject = ['llm']
 
 const NS = 'llm-deepseek'
+/**
+ * The credentials-store reference this provider resolves. It is a store name,
+ * not an environment read: the Models page writes the key under it, and every
+ * request resolves it through the credentials service. The launching
+ * environment is only consulted when no credentials seam is mounted at all
+ * (headless compositions) — the desktop app always mounts one.
+ */
 const DEFAULT_API_KEY_ENV = 'DEEPSEEK_API_KEY'
 /** The single provider route this plugin owns. */
 const PROVIDER = 'deepseek-official'

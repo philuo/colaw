@@ -38,7 +38,7 @@ export function PresentRow({ block, inspect, t }: PresentRowProps) {
       open={expanded && details !== ''} expandable={details !== ''} expandOnRowClick keepContentWhenOpen
       onToggle={() => { setExpanded(value => !value) }}
       collapsedContent={<span className={css.summary}><span>{t(`row.${state}`)}</span><span className={css.paths}>{fileNames(args)}</span></span>}>
-      <pre className={css.output}>{details}</pre>
+      <pre className={css.output} data-dsh-selectable="">{details}</pre>
       {inspect && <button type="button" className={css.inspect} onClick={inspect}>{t('row.inspect')}</button>}
     </DisclosureRow>
   </div>

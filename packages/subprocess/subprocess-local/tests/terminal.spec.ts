@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import type { IDisposable, IPty } from 'node-pty'
+import type { IDisposable, IPty } from '../src/pty-adapter.ts'
 import { LocalTerminalHandle } from '@deepseek-ai/dsh-subprocess-local/src/terminal.ts'
 import { createProcessInspector } from '@deepseek-ai/dsh-subprocess-local/src/process-inspector.ts'
 import type {
@@ -108,9 +108,7 @@ class FakeInspector implements ProcessInspector {
 afterEach(() => { vi.useRealTimers() })
 
 function makeHandle(pty: FakePty, inspector: ProcessInspector, graceMs: number): LocalTerminalHandle {
-  // The suite pins POSIX signalling semantics deterministically on every host;
-  // the win32 branches get their own platform-explicit tests below.
-  return new LocalTerminalHandle(pty.asPty(), inspector, graceMs, 'linux')
+  return new LocalTerminalHandle(pty.asPty(), inspector, graceMs)
 }
 
 describe('LocalTerminalHandle', () => {
@@ -131,7 +129,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: () => stopped.promise,
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, owner)
 
     await handle.terminate()
 
@@ -156,7 +154,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: () => stopped.promise,
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 100, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 100, owner)
 
     const terminating = handle.terminate()
     await vi.advanceTimersByTimeAsync(1)
@@ -183,7 +181,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: () => stopped.promise,
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, owner)
 
     const terminating = handle.terminate()
     await vi.advanceTimersByTimeAsync(10)
@@ -204,7 +202,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit,
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, owner)
 
     await expect(handle.terminate()).rejects.toBe(failure)
     expect(signals).toEqual(['SIGTERM', 'SIGKILL'])
@@ -223,7 +221,7 @@ describe('LocalTerminalHandle', () => {
         .mockRejectedValueOnce(finalFailure),
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, owner)
 
     await expect(handle.terminate()).rejects.toMatchObject({
       errors: [firstFailure, finalFailure],
@@ -238,7 +236,7 @@ describe('LocalTerminalHandle', () => {
     const signal = vi.fn()
     const terminateForHostExit = vi.fn()
     const owner: BoundProcessOwner = { signal, waitForExit: async () => {}, terminateForHostExit }
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, owner)
 
     handle.terminateForHostExit()
 
@@ -262,7 +260,6 @@ describe('LocalTerminalHandle', () => {
       pty.asPty(),
       new FakeInspector(),
       10,
-      'linux',
       owner,
       () => { throw failure },
     )
@@ -284,7 +281,7 @@ describe('LocalTerminalHandle', () => {
       terminateForHostExit: vi.fn(),
       cleanup,
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, owner)
 
     await expect(handle.terminate()).rejects.toThrow('terminal managed-range cleanup failed')
     await expect(handle.terminate()).rejects.toThrow('terminal managed-range cleanup failed')
@@ -294,14 +291,14 @@ describe('LocalTerminalHandle', () => {
     await vi.waitFor(() => { expect(cleanup).toHaveBeenCalledOnce() })
   })
 
-  it('waits for the node-pty exit event after the managed range becomes empty', async () => {
+  it('waits for the adapter exit event after the managed range becomes empty', async () => {
     const pty = new FakePty()
     const owner: BoundProcessOwner = {
       signal: vi.fn(),
       waitForExit: async () => {},
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 100, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 100, owner)
     let settled = false
 
     const terminating = handle.terminate().then(() => { settled = true })
@@ -312,7 +309,7 @@ describe('LocalTerminalHandle', () => {
     await terminating
   })
 
-  it('rejects when a managed range stops but node-pty never publishes exit', async () => {
+  it('rejects when a managed range stops but the adapter never publishes exit', async () => {
     vi.useFakeTimers()
     const pty = new FakePty()
     const signals: Array<'SIGTERM' | 'SIGKILL'> = []
@@ -321,7 +318,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: async () => {},
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, 'linux', owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, owner)
 
     const terminating = handle.terminate()
     const rejected = expect(terminating).rejects.toThrow('terminal cleanup failed; surviving pid: 123')
@@ -378,7 +375,7 @@ describe('LocalTerminalHandle', () => {
     expect(pty.kills).toEqual([])
   })
 
-  it('uses node-pty only when the shell start identity was unavailable', () => {
+  it('uses the adapter kill only when the shell start identity was unavailable', () => {
     const pty = new FakePty()
     const inspector = new FakeInspector()
     inspector.root = undefined
@@ -659,96 +656,7 @@ describe('LocalTerminalHandle', () => {
   })
 })
 
-describe('LocalTerminalHandle on Windows', () => {
-  const win32 = 'win32' as NodeJS.Platform
 
-  it('delivers SIGINT as a Ctrl-C input write without inspector signalling', async () => {
-    const pty = new FakePty()
-    const inspector = new FakeInspector()
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
-    await expect(handle.signalForeground('SIGINT')).resolves.toBe(456)
-    expect(pty.writes).toEqual(['\x03'])
-    expect(inspector.groups).toEqual([])
-  })
-
-  it('rejects SIGTSTP and SIGHUP as unavailable on Windows', async () => {
-    const handle = new LocalTerminalHandle(new FakePty().asPty(), new FakeInspector(), 10, win32)
-    await expect(handle.signalForeground('SIGTSTP')).rejects.toThrow('unsupported on Windows')
-    await expect(handle.signalForeground('SIGHUP')).rejects.toThrow('unsupported on Windows')
-  })
-
-  it('routes SIGTERM through the inspector tree with the pseudo foreground group', async () => {
-    const pty = new FakePty()
-    const inspector = new FakeInspector()
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
-    await expect(handle.signalForeground('SIGTERM')).resolves.toBe(456)
-    expect(inspector.groups).toEqual([[456, 'SIGTERM']])
-    expect(pty.writes).toEqual([])
-  })
-
-  it('still refuses to SIGKILL the terminal shell on Windows', async () => {
-    const pty = new FakePty()
-    const inspector = new FakeInspector()
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
-    inspector.pgid = handle.pid
-    await expect(handle.signalForeground('SIGKILL')).rejects.toThrow('terminate the terminal session')
-  })
-
-  it('escalates the shell through taskkill tiers instead of node-pty signal kills', async () => {
-    vi.useFakeTimers()
-    const pty = new FakePty()
-    const inspector = new FakeInspector()
-    inspector.alive.add(123)
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
-    const quiescent = handle.terminate()
-    await vi.advanceTimersByTimeAsync(5)
-    expect(inspector.processes).toEqual([[123, 'SIGTERM']])
-    expect(pty.kills).toEqual([])
-
-    pty.emitExit()
-    await quiescent
-    expect(inspector.processes).toEqual([[123, 'SIGTERM']])
-    expect(pty.kills).toEqual([])
-  })
-
-  it('reports a shell that survives both taskkill tiers', async () => {
-    vi.useFakeTimers()
-    const pty = new FakePty()
-    const inspector = new FakeInspector()
-    inspector.alive.add(123)
-    inspector.removeOnSignal = false
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
-    const failed = expect(handle.terminate()).rejects.toThrow('surviving pid: 123')
-    await vi.advanceTimersByTimeAsync(25)
-    await failed
-    expect(inspector.processes).toEqual([[123, 'SIGTERM'], [123, 'SIGKILL']])
-    expect(pty.kills).toEqual([])
-
-    pty.emitExit()
-    await handle.terminate()
-  })
-
-  it('skips taskkill escalation entirely when the shell already exited', async () => {
-    const pty = new FakePty()
-    const inspector = new FakeInspector()
-    inspector.alive.add(123)
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
-    pty.emitExit()
-    await handle.terminate()
-    expect(inspector.processes).toEqual([])
-    expect(pty.kills).toEqual([])
-  })
-
-  it('falls back to the bare node-pty kill when the shell identity was never observable', async () => {
-    const pty = new FakePty()
-    const inspector = new FakeInspector()
-    inspector.root = undefined
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, win32)
-    await handle.terminate()
-    expect(pty.kills).toHaveLength(1)
-    expect(inspector.processes).toEqual([])
-  })
-})
 
 describe('signalling freshness and containment', () => {
   it('keeps synchronous host exit going when the process table cannot be captured', () => {
@@ -820,7 +728,7 @@ describe('process-table read amplification', () => {
   async function tableReadsForOnePoll(descendants: number): Promise<number> {
     const { internals, tableReads } = darwinInternals(shellTable(descendants))
     const inspector = createProcessInspector('darwin', 'arm64', internals)
-    const handle = new LocalTerminalHandle(new FakePty().asPty(), inspector, 10, 'darwin')
+    const handle = new LocalTerminalHandle(new FakePty().asPty(), inspector, 10)
     tableReads.length = 0
     const foreground = await handle.inspectForeground()
     expect(foreground).toEqual({ processGroupId: 456, inputWaiting: false })

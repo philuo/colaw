@@ -31,6 +31,13 @@ import css from './SidebarRoot.module.css'
 const COLLAPSE_SETTLE_MS = 150
 
 /**
+ * Key equivalents the desktop menu answers. Shown beside the matching control's
+ * tooltip; the menu, not this component, is what listens for the keystroke.
+ */
+const NEW_SESSION_SHORTCUT = '⌘N'
+const SIDEBAR_SHORTCUT = '⌘B'
+
+/**
  * Desktop chrome is announced by the native host (`window.__DSH_DESKTOP__`).
  * In that shell the sidebar toggle lives in the title-bar strip, to the right
  * of the traffic lights, and a collapsed sidebar is really hidden.
@@ -171,7 +178,7 @@ export function SidebarRoot({
           hover-peek panel floats out, `collapsed` flips false to render it, but
           the column still holds no width — the icon keeps the expand
           affordance so peeking cannot flip the control. */}
-      <Tooltip label={collapsedInLayout ? t('toggle.open') : t('toggle.collapse')} delayMs={500}>
+      <Tooltip label={collapsedInLayout ? t('toggle.open') : t('toggle.collapse')} delayMs={500} shortcut={SIDEBAR_SHORTCUT}>
         <button
           type="button"
           className={css.iconButton}
@@ -181,7 +188,7 @@ export function SidebarRoot({
           <IconPanelLeftOutline16 className={collapsedInLayout ? css.panelIconFlipped : undefined} size={16} />
         </button>
       </Tooltip>
-      <Tooltip label={t('session.new.label')} delayMs={500}>
+      <Tooltip label={t('session.new.label')} delayMs={500} shortcut={NEW_SESSION_SHORTCUT}>
         <button
           type="button"
           className={css.iconButton}
@@ -219,7 +226,7 @@ export function SidebarRoot({
         <div className={css.logoRow} />
 
         {/* Expanded, the button carries its own label — tooltip only on the rail. */}
-        <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide}>
+        <Tooltip label={t('session.new.label')} delayMs={500} disabled={wide} shortcut={NEW_SESSION_SHORTCUT}>
           <button
             type="button"
             className={css.newSession}

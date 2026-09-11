@@ -18,9 +18,6 @@
       "path": "../subprocess"
     },
     {
-      "path": "../win32-process"
-    },
-    {
       "path": "../../util/timeout"
     }
   ]

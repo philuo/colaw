@@ -60,10 +60,11 @@
     "clsx": "^2.0.0"
   },
   "files": [
+    "lib",
+    "lib",
     "lib/index.js",
     "lib/client.js",
-    "lib/styles",
-    "lib/types/**/*.d.ts"
+    "lib/styles"
   ],
   "scripts": {
     "bundle": "tsdown",

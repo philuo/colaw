@@ -10,7 +10,6 @@ overrides:
 
 patchedDependencies:
   '@yao-pkg/pkg@6.21.0': 28edd2180c36691c481522ef81f6f6614505f45e491aad542ac4663d4e6b3ff8
-  node-pty@1.2.0-beta.15: b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0
 
 importers:
 
@@ -516,8 +515,8 @@ importers:
         specifier: workspace:*
         version: link:../web
       electrobun:
-        specifier: ^2.0.1
-        version: 2.0.1
+        specifier: 2.0.2-beta.17
+        version: 2.0.2-beta.17
     devDependencies:
       '@types/bun':
         specifier: latest
@@ -1518,9 +1517,9 @@ importers:
       '@deepseek-ai/dsh-web-fetch-http':
         specifier: workspace:^
         version: link:../../web/web-fetch-http
-      '@deepseek-ai/dsh-web-search-deepseek':
+      '@deepseek-ai/dsh-web-search-anysearch':
         specifier: workspace:^
-        version: link:../../web/web-search-deepseek
+        version: link:../../web/web-search-anysearch
       '@deepseek-ai/dsh-workflow-worker-thread':
         specifier: workspace:^
         version: link:../../workflow/workflow-worker-thread
@@ -3383,7 +3382,7 @@ importers:
         version: 18.3.7(@types/react@18.3.31)
       '@types/use-sync-external-store':
         specifier: ^1.5.0
-        version: 1.5.0
+        version: 1.7.0
       react:
         specifier: ^18.2.0
         version: 18.3.1
@@ -6551,16 +6550,10 @@ importers:
       '@deepseek-ai/dsh-native-command':
         specifier: workspace:^
         version: link:../../util/native-command
-      koffi:
-        specifier: ^3.1.0
-        version: 3.1.1
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
         version: link:../../../vendor/cordis
-      tsx:
-        specifier: ^4.19.2
-        version: 4.22.4
 
   packages/host/frontend-static:
     dependencies:
@@ -7487,9 +7480,6 @@ importers:
 
   packages/sandbox/sandbox-local:
     dependencies:
-      '@deepseek-ai/dsh-sandbox-windows-acl':
-        specifier: workspace:^
-        version: link:../sandbox-windows-acl
       '@deepseek-ai/dsh-util-values':
         specifier: workspace:^
         version: link:../../util/values
@@ -7543,25 +7533,6 @@ importers:
       '@deepseek-ai/dsh-system-prompt':
         specifier: workspace:^
         version: link:../../core/system-prompt
-
-  packages/sandbox/sandbox-windows-acl:
-    dependencies:
-      '@deepseek-ai/dsh-win32-process':
-        specifier: workspace:^
-        version: link:../../subprocess/win32-process
-      koffi:
-        specifier: ^3.1.0
-        version: 3.1.1
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
-      '@deepseek-ai/dsh-pwsh-local':
-        specifier: workspace:^
-        version: link:../../shell/pwsh-local
-      '@deepseek-ai/dsh-sandbox-local':
-        specifier: workspace:^
-        version: link:../sandbox-local
 
   packages/schedule/schedule:
     dependencies:
@@ -9714,16 +9685,6 @@ importers:
         version: link:../../util/launch-environment
 
   packages/subprocess/subprocess-local:
-    dependencies:
-      '@deepseek-ai/dsh-win32-process':
-        specifier: workspace:^
-        version: link:../win32-process
-      koffi:
-        specifier: ^3.1.0
-        version: 3.1.1
-      node-pty:
-        specifier: 1.2.0-beta.15
-        version: 1.2.0-beta.15(patch_hash=b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -9737,16 +9698,6 @@ importers:
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout
-
-  packages/subprocess/win32-process:
-    dependencies:
-      koffi:
-        specifier: ^3.1.0
-        version: 3.1.1
-    devDependencies:
-      '@deepseek-ai/cordis':
-        specifier: workspace:^
-        version: link:../../../vendor/cordis
 
   packages/terminal/terminal:
     devDependencies:
@@ -10398,6 +10349,22 @@ importers:
       '@deepseek-ai/dsh-timeout':
         specifier: workspace:^
         version: link:../../util/timeout
+      '@deepseek-ai/dsh-web':
+        specifier: workspace:^
+        version: link:../web
+
+  packages/web/web-search-anysearch:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-launch-environment':
+        specifier: workspace:^
+        version: link:../../util/launch-environment
       '@deepseek-ai/dsh-web':
         specifier: workspace:^
         version: link:../web
@@ -13963,8 +13930,8 @@ packages:
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
 
-  '@types/use-sync-external-store@1.5.0':
-    resolution: {integrity: sha512-5dyB8nLC/qogMrlCizZnYWQTA4lnb/v+It+sqNl5YnSRAPMlIqY/X0Xn+gZw8vOL+TgTTr28VEbn3uf8fUtAkw==}
+  '@types/use-sync-external-store@1.7.0':
+    resolution: {integrity: sha512-v8435kzWm3FuxyUa4r8o4sG6b0D+r+uOrzF5MXHxZKW4Haoo6txu/lq56Vio45e2i1nkmFPA+R7myWcmV7Z7Bg==}
 
   '@types/web-bluetooth@0.0.21':
     resolution: {integrity: sha512-oIQLCGWtcFZy2JW77j9k8nHzAOpqMHLQejDA48XXMWH6tjCQHz5RCFz1bzsmROyL6PUm+LLnUiI4BCn221inxA==}
@@ -14529,10 +14496,6 @@ packages:
     resolution: {integrity: sha512-nTjqfcBFEipKdXCv4YDQWCfmcLZKm81ldF0pAopTvyrFGVbcR6P/VAAd5G7N+0tTr8QqiU0tFadD6FK4NtJwOA==}
     engines: {node: '>= 0.6'}
 
-  content-type@2.0.0:
-    resolution: {integrity: sha512-j/O/d7GcZCyNl7/hwZAb606rzqkyvaDctLmckbxLzHvFBzTJHuGEdodATcP3yIRoDrLHkIATJuvzbFlp/ki2cQ==}
-    engines: {node: '>=18'}
-
   content-type@2.1.0:
     resolution: {integrity: sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag==}
     engines: {node: '>=18'}
@@ -14848,8 +14811,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  electrobun@2.0.1:
-    resolution: {integrity: sha512-1+OjJ0tMemjVrUEsh/AhmxnqUNpyCfJslCbcWOvkogFJuNVMmTlWMzyZem/Ts/7lg8f7ULWu8uuQBsKeGQsu7A==}
+  electrobun@2.0.2-beta.17:
+    resolution: {integrity: sha512-bb0kY74lvK2PA3HQ0sC6ZPcZA9bypY+KKrAIDIwK2nV3caM7+CxYStMEDDLk3VX6wBoDPFl0GHA/dG2wB4TD/g==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -15995,9 +15958,6 @@ packages:
     resolution: {integrity: sha512-rebQ/lz7i0EkoLzUVSrKRzA69zMkwLp95kKMWoMDkkM00Suxz0D7zEQPwRml5fQum24mj7bPvmlgLAmu2JCiYg==}
     engines: {node: '>=10'}
 
-  node-addon-api@7.1.1:
-    resolution: {integrity: sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ==}
-
   node-addon-native-custom-loader@0.1.4:
     resolution: {integrity: sha512-DreegO6EoC1JHWYBv3j8Miwp2Zl/CyBeNyoeyCbnEdjyYFEulR4Gcb3wj9fXF7KMDY0ZJ5MWwHcXP8GVNyScnA==}
     engines: {node: '>=20'}
@@ -16061,9 +16021,6 @@ packages:
 
   node-int64@0.4.0:
     resolution: {integrity: sha512-O5lz91xSOeoXP6DulyHfllpq+Eg00MWitZIbtPfoSEvqIHdl5gfcY6hYzDWnj0qD5tz52PI08u9qUvSVeUBeHw==}
-
-  node-pty@1.2.0-beta.15:
-    resolution: {integrity: sha512-vORSzHXi4Ofl7HemVWpuudLqCPdaQb4LfpRCUpE5HPxhp4JYscl8zZwxh11p26v2wvW24WMwnMfLjhRLixrfxA==}
 
   node-releases@2.0.51:
     resolution: {integrity: sha512-wRNIrw4DmVLKQlbgOMdkMx27Wrpzes2hh5Jtbi2bjPd+4wJstWIqP5A+lscnqbm0xxmT5Bpg8Lec5ItEBwx6BQ==}
@@ -19647,7 +19604,7 @@ snapshots:
 
   '@types/unist@3.0.3': {}
 
-  '@types/use-sync-external-store@1.5.0': {}
+  '@types/use-sync-external-store@1.7.0': {}
 
   '@types/web-bluetooth@0.0.21': {}
 
@@ -20109,7 +20066,7 @@ snapshots:
   body-parser@2.3.0:
     dependencies:
       bytes: 3.1.2
-      content-type: 2.0.0
+      content-type: 2.1.0
       debug: 4.4.3(supports-color@9.4.0)
       http-errors: 2.0.1
       iconv-lite: 0.7.3
@@ -20250,8 +20207,6 @@ snapshots:
   content-disposition@1.1.0: {}
 
   content-type@1.0.5: {}
-
-  content-type@2.0.0: {}
 
   content-type@2.1.0: {}
 
@@ -20583,7 +20538,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  electrobun@2.0.1: {}
+  electrobun@2.0.2-beta.17: {}
 
   electron-to-chromium@1.5.393: {}
 
@@ -22010,8 +21965,6 @@ snapshots:
     dependencies:
       semver: 7.8.5
 
-  node-addon-api@7.1.1: {}
-
   node-addon-native-custom-loader@0.1.4: {}
 
   node-addon-require-builtin-darwin-arm64@0.1.4:
@@ -22070,10 +22023,6 @@ snapshots:
       formdata-polyfill: 4.0.10
 
   node-int64@0.4.0: {}
-
-  node-pty@1.2.0-beta.15(patch_hash=b40ae545608897914bd25fb009c97eeac478c34e8a910298ddcb01b746534bb0):
-    dependencies:
-      node-addon-api: 7.1.1
 
   node-releases@2.0.51: {}
 
@@ -22995,7 +22944,7 @@ snapshots:
 
   type-is@2.1.0:
     dependencies:
-      content-type: 2.0.0
+      content-type: 2.1.0
       media-typer: 1.1.1
       mime-types: 3.0.2
 

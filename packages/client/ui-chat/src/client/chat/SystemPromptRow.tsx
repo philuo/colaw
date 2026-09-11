@@ -35,7 +35,9 @@ export function SystemPromptRow({ text, update = false, t }: SystemPromptRowProp
       expandOnRowClick
       onToggle={() => { setOpen(value => !value) }}
     >
-      <div className={css.body} data-system-prompt-body>
+      {/* The prompt is the model-facing text a reader copies; opt its body back
+          into selection the same way the context disclosures do. */}
+      <div className={css.body} data-system-prompt-body data-dsh-selectable="">
         <OpaqueBody content={[{ type: 'text', text }]} source={null} t={t} />
       </div>
     </DisclosureRow>

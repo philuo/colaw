@@ -28,10 +28,12 @@ type TooltipLabel = string | (() => string)
  * toggling never remounts it (which would cut its CSS transitions).
  * @param props.maxWidth - bubble width cap in pixels, for labels long enough that the default
  * half-viewport cap would render a slab wider than the surface the anchor sits on.
+ * @param props.shortcut - key equivalent the action also answers to, rendered as a keycap
+ * beside the label (e.g. '⌘N'). Absent for actions with no shortcut.
  * @param props.children - a single anchor element; its own ref (callback or object) is forwarded alongside the tooltip's.
  * @returns the cloned anchor plus a fixed-position bubble while hovered/focused.
  */
-export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, maxWidth, children }: { label: TooltipLabel; side?: TooltipSide; delayMs?: number; disabled?: boolean; maxWidth?: number; children: ReactElement<AnchorProps> }) {
+export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, maxWidth, shortcut, children }: { label: TooltipLabel; side?: TooltipSide; delayMs?: number; disabled?: boolean; maxWidth?: number; shortcut?: string; children: ReactElement<AnchorProps> }) {
   const anchor = useRef<HTMLElement | null>(null)
   // React 18 keeps the element's ref outside props; forward it so wrapping an
   // anchor in Tooltip never silently severs the owner's ref.
@@ -154,6 +156,7 @@ export function Tooltip({ label, side = 'right', delayMs = 0, disabled = false, 
           role="tooltip"
         >
           {resolvedLabel}
+          {shortcut !== undefined && <kbd className={css.shortcut}>{shortcut}</kbd>}
         </span>
       )}
     </>
