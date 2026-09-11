@@ -76,6 +76,7 @@ export class EntryGroup {
       const failures = outcomes
         .filter((outcome): outcome is PromiseRejectedResult => outcome.status === 'rejected')
         .map(outcome => outcome.reason)
+      for (const reason of failures) console.error('[loader-apply-failure]', reason instanceof Error ? `${reason.name}: ${reason.message}` : String(reason))
       if (failures.length === 1) throw failures[0]
       if (failures.length > 1) throw new AggregateError(failures, 'loader entries failed to apply')
       for (const id of Object.keys(oldMap)) {
