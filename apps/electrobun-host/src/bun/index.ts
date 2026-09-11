@@ -616,6 +616,18 @@ async function main(): Promise<void> {
   // needed runs now instead of ahead of it.
   migrateLegacyDshHome()
   mkdirSync(projectDir, { recursive: true })
+  // The agent's shells must run THIS package's Bun — never the host's node or
+  // bun (a desktop app owes its own runtime; the ambient installs are not part
+  // of the product). Amend PATH before the launch environment snapshots it:
+  // the snapshot is immutable and everything downstream (bash tool, scripts,
+  // subprocesses) inherits the amended value.
+  const bundledBinDir = dirname(process.execPath)
+  const nodeish = /(^|\/)(\.?nvm|\.?volta|\.bun|nodenv|fnm|node|npm|npx|pnpm|yarn|bun|bunx)(\/|$)/i
+  const sanitizedPath = [
+    bundledBinDir,
+    ...(process.env.PATH ?? '').split(':').filter(entry => entry !== '' && !nodeish.test(entry)),
+  ].join(':')
+  process.env.PATH = sanitizedPath
   const environment = loadLayeredEnv('colaw')
   // Use dsh repo's apps/cli as install anchor so that bundle packages
   // (dsh-base, dsh-web-app) can be resolved from its node_modules.
