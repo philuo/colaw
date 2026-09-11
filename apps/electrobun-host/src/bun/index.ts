@@ -487,6 +487,9 @@ async function main(): Promise<void> {
   let mainWindow!: BrowserWindow
   let lastAppUrl: string | undefined
   let windowHidden = false
+  // Zoom/fullscreen transitions report intermediate frames; both the frame
+  // writer (attachFrameTracking) and the zoom toggle hold off until it clears.
+  let geometryTransition = false
   const openWindowOnUrl = (url: string, hidden = false): void => {
     lastAppUrl = url
     const rememberedFrame = readWindowFrame(windowStatePath) ?? DEFAULT_WINDOW_FRAME
@@ -890,7 +893,6 @@ async function main(): Promise<void> {
     // the two states never have to share one gesture. The transition reports
     // intermediate frames, so the frame writer is held off until it settles.
     const ZOOM_SETTLE_MS = 400
-    let geometryTransition = false
     const toggleWindowZoom = (): void => {
       geometryTransition = true
       if (mainWindow.isMaximized()) mainWindow.unmaximize()
