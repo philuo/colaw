@@ -511,8 +511,14 @@ async function main(): Promise<void> {
   // the splash for the real URL the moment both services exist; everything
   // else keeps loading behind that page.
   let frontendLoaded = false
+  // The client manifest is a snapshot of the registry's table at index-serve
+  // time: swapping the URL in while the deferred tree is still mounting hands
+  // the page a partial manifest whose entries wait forever on client services
+  // whose providers are not in the snapshot (the boot page sticks at a partial
+  // progress arc). The tree settles in ~1s; the URL follows it.
+  let treeMounted = false
   const loadFrontendIntoWindow = (): void => {
-    if (frontendLoaded) return
+    if (frontendLoaded || !treeMounted) return
     const hostCtx = current
     if (hostCtx === undefined) return
     const webServer = hostCtx.get('webServer') as { port: number } | undefined
@@ -639,6 +645,8 @@ async function main(): Promise<void> {
       await ctx.loader.await()
       composition?.suspendComposition?.(false)
       console.log(`[electrobun-host] ${bootMs()} full plugin tree mounted`)
+      treeMounted = true
+      loadFrontendIntoWindow()
       bootProfileStop?.()
       bootProfileStop = undefined
     } catch (error) {
@@ -742,7 +750,7 @@ async function main(): Promise<void> {
       } catch { /* not ours */ }
     }
     electrobunEventEmitter.on('host-message', probeListener)
-    const probe = '(() => {try{const n=performance.getEntriesByType("navigation")[0];const r=performance.getEntriesByType("resource");let t=0,mt=0,mf="";for(const e of r){t+=e.duration;if(e.duration>mt){mt=e.duration;mf=e.name}}__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",dcl:Math.round(n?.domContentLoadedEventEnd??-1),load:Math.round(n?.loadEventEnd??-1),res:r.length,resMs:Math.round(t),worstMs:Math.round(mt),worst:mf.slice(0,80),page:document.querySelector("[data-dsh-boot]")?"boot":"shell",t:Math.round(performance.now())}))}catch(e){__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",err:String(e)}))}})()'
+    const probe = '(() => {try{const n=performance.getEntriesByType("navigation")[0];const r=performance.getEntriesByType("resource");let t=0,mt=0,mf="";const f404=[];for(const e of r){t+=e.duration;if(e.duration>mt){mt=e.duration;mf=e.name}if(e.responseStatus===404&&f404.length<3)f404.push(e.name.slice(0,90))}const b=document.querySelector("[data-dsh-boot]");__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",dcl:Math.round(n?.domContentLoadedEventEnd??-1),res:r.length,resMs:Math.round(t),worstMs:Math.round(mt),worst:mf.slice(0,80),page:b?"boot":"shell",bootText:(b?.textContent??"").slice(0,160),nf404:r.filter(e=>e.responseStatus===404).length,e404:f404,t:Math.round(performance.now())}))}catch(e){__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",err:String(e)}))}})()'
     for (const at of [600, 1500, 3000, 6000]) {
       setTimeout(() => {
         const view = BrowserView.getById(mainWindow.webviewId)
