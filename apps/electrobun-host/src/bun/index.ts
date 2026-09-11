@@ -334,12 +334,21 @@ async function main(): Promise<void> {
     appearance === 'system' ? (systemIsDark() ? 'dark' : 'light') : appearance
 
   /** The icon for a preference follows the same resolution as the page
-   * appearance: the Dock shows what the current selection asks for. The light
-   * variant ships as its own file — the bundle's own icon is the dark one, so
-   * a dark-preference quit leaves the Dock (and Launchpad) consistent too. */
+   * appearance: the Dock shows what the current selection asks for. The
+   * stable layout ships exactly two icons at the Resources level — the
+   * bundle's default AppIcon.icns (light) and AppIconDark.icns for the
+   * runtime switch; dev builds still carry the cat5_* pair beside the host.
+   * The first candidate that exists wins. */
+  const resolveIcon = (candidates: readonly string[]): string => {
+    for (const candidate of candidates) {
+      const path = fileURLToPath(new URL(candidate, import.meta.url))
+      if (existsSync(path)) return path
+    }
+    return fileURLToPath(new URL(candidates[candidates.length - 1]!, import.meta.url))
+  }
   const iconPaths: Record<'light' | 'dark', string> = {
-    light: fileURLToPath(new URL('../cat5_light.icns', import.meta.url)),
-    dark: fileURLToPath(new URL('../cat5_dark.icns', import.meta.url)),
+    light: resolveIcon(['../../AppIcon.icns', '../cat5_light.icns']),
+    dark: resolveIcon(['../../AppIconDark.icns', '../cat5_dark.icns']),
   }
   let iconInUse: 'light' | 'dark' | undefined
   /** Show the icon the current selection asks for; a matching one is a no-op. */

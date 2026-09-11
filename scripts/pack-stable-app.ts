@@ -38,7 +38,8 @@
 
 import {
   chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync,
-  readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync,
+  readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync,
+  writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -1074,7 +1075,7 @@ function ensureBuilds(): void {
   // build. With --skip-build the previous derivation under build/ is reused.
   const derivedIconset = join(repoRoot, 'apps', 'electrobun-host', 'build', 'cat5-dark.iconset')
   rmSync(derivedIconset, { recursive: true, force: true })
-  run('/usr/bin/iconutil', ['-c', 'iconset', join(repoRoot, 'apps', 'electrobun-host', 'cat5_dark.icns'), '-o', derivedIconset], repoRoot)
+  run('/usr/bin/iconutil', ['-c', 'iconset', join(repoRoot, 'apps', 'electrobun-host', 'cat5_light.icns'), '-o', derivedIconset], repoRoot)
   run(process.execPath, [join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc'), '-b', 'tsconfig.host.json'], repoRoot)
   run(process.execPath, [join(repoRoot, 'node_modules', 'tsdown', 'dist', 'run.mjs'), '--env.DSH_BUILD_FACE', 'host'], repoRoot)
   // Client bundles build from the client face's compiled lib, never src.
@@ -1106,6 +1107,26 @@ function publishStableApp(): void {
     }
   })(builtApp, stableApp)
   rewriteDevMarkers()
+  rewriteIconLayout()
+}
+
+/**
+ * The icon layout ships exactly two icons at the Resources level: the
+ * bundle's default AppIcon.icns (light) that Info.plist names, and
+ * AppIconDark.icns for the runtime dark switch. The copies the config left
+ * under app/ are surplus — the light one IS AppIcon, the dark one moves up.
+ */
+function rewriteIconLayout(): void {
+  const resources = join(stableApp, 'Contents', 'Resources')
+  const appDir = join(resources, 'app')
+  const dark = join(appDir, 'cat5_dark.icns')
+  if (existsSync(dark)) {
+    renameSync(dark, join(resources, 'AppIconDark.icns'))
+  }
+  for (const surplus of ['cat5_light.icns', 'cat5_dark.icns']) {
+    const path = join(appDir, surplus)
+    if (existsSync(path)) rmSync(path)
+  }
 }
 
 /**
