@@ -13,28 +13,34 @@ import { join } from 'node:path'
 const repo = process.cwd()
 const app = join(repo, 'apps/electrobun-host/build/stable-macos-arm64/Colaw.app')
 if (!existsSync(app)) { console.error('stable app missing — run pnpm run build:app:stable'); process.exit(1) }
+type SyncResult = { exitCode: number | null; stdout: Uint8Array }
+const sh = (cmd: string, args: string[]): SyncResult =>
+  (globalThis as unknown as { Bun: { spawnSync: (c: string[], o?: object) => SyncResult } }).Bun
+    .spawnSync([cmd, ...args], { stdout: 'pipe', stderr: 'pipe' })
+const Bun_spawn_ignore = (cmd: string, args: string[]): void =>
+  (globalThis as unknown as { Bun: { spawnSync: (c: string[], o?: object) => unknown } }).Bun.spawnSync([cmd, ...args])
 const spawn = (cmd: string, args: string[]): void => {
-  const r = Bun.spawnSync([cmd, ...args], { stdout: 'inherit', stderr: 'inherit' })
-  if (r.exitCode !== 0) { console.error(`${cmd} exited ${String(r.exitCode)}`); process.exit(1) }
+  const r = sh(cmd, args)
+  if (r.exitCode !== 0 && cmd !== '/usr/bin/hdiutil') { console.error(`${cmd} exited ${String(r.exitCode)}`); process.exit(1) }
 }
 const version = (JSON.parse(readFileSync(join(app, 'Contents/Resources/version.json'), 'utf8')) as { version?: string }).version ?? '0.0.0'
-const name = `COLAW ${version}-arm64`
-const dist = join(repo, 'artifacts')
+const name = `COLAW ${version}-arm64` // volume label keeps the versioned name
+const dist = join(repo, 'apps/electrobun-host/build/stable-macos-arm64')
 const stage = join(dist, `${name}-stage`)
 const raw = join(dist, `${name}.rw.dmg`)
-const final = join(dist, `${name}.dmg`)
+const final = join(dist, "Colaw.dmg")
 // A leftover mount of a previous run (the volume is named identically) makes
 // every later step race a busy disk — detach it before touching dist.
-const mounted = Bun.spawnSync(['/usr/bin/hdiutil', 'info', '-plist'])
+const mounted = sh('/usr/bin/hdiutil', ['info', '-plist'])
 const mountedText = new TextDecoder().decode(mounted.stdout)
 const mountMatch = mountedText.match(new RegExp(`<string>/Volumes/${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}</string>`))
 if (mountMatch !== null) {
   const devNode = mountedText.slice(0, mountMatch.index).match(/\/dev\/disk\d+(s\d+)?(?!.*\/dev\/disk)/s)
   if (devNode !== null) {
-    Bun.spawnSync(['/usr/bin/hdiutil', 'detach', devNode[0], '-force'])
+    spawn('/usr/bin/hdiutil', ['detach', devNode[0], '-force'])
   }
 }
-rmSync(dist, { recursive: true, force: true }); mkdirSync(join(stage, '.background'), { recursive: true })
+mkdirSync(join(stage, '.background'), { recursive: true })
 
 console.log('rendering the installer background…')
 spawn('/usr/bin/swift', [join(repo, 'scripts/dmg-background.swift'), join(stage, '.background', 'bg.png')])
@@ -77,18 +83,17 @@ spawn('/bin/sleep', ['2'])
 spawn('/bin/sleep', ['1'])
 // First detach normally succeeds; the retry is best-effort (a race here must
 // not fail the build after the image is already usable).
-Bun.spawnSync(['/usr/bin/hdiutil', 'detach', `/Volumes/${name}`, '-force'])
-Bun.spawnSync(['/usr/bin/hdiutil', 'detach', `/Volumes/${name}`, '-force'])
+spawn('/usr/bin/hdiutil', ['detach', `/Volumes/${name}`, '-force'])
+spawn('/usr/bin/hdiutil', ['detach', `/Volumes/${name}`, '-force'])
 // The Finder-arrange leaves stale diskimage helper processes holding the
 // unmount; they make the convert below fail with "resource temporarily
 // unavailable" until killed.
-for (const pid of Bun.spawnSync(['/usr/bin/pgrep', 'diskimage']).stdout.toString().split('\n')) {
-  if (pid.trim() !== '') Bun.spawnSync(['/bin/kill', '-9', pid.trim()])
-}
+Bun_spawn_ignore('/usr/bin/pkill', ['-9', '-f', 'diskimage'])
 spawn('/bin/sleep', ['1'])
 console.log('converting to read-only…')
 rmSync(final, { force: true })
-spawn('/usr/bin/hdiutil', ['convert', raw, '-format', 'UDZO', '-o', final])
+spawn('/usr/bin/hdiutil', ['convert', raw, '-format', 'UDZO', '-o', final.replace(/\.dmg$/, '.tmp.dmg')])
+spawn('/bin/mv', [final.replace(/\.dmg$/, '.tmp.dmg'), final])
 spawn('/usr/bin/codesign', ['--force', '--sign', '-', final])
 rmSync(raw, { force: true }); rmSync(stage, { recursive: true, force: true })
 console.log(`published ${final}`)
