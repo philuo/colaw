@@ -260,8 +260,10 @@ export function setBundleIcon(iconPath: string, bundlePath: string): boolean {
  * alive, the Dock keeps the running dot, and the next activation shows it
  * again instantly. The standard AppKit route: the close button is a plain
  * NSButton whose target/action default to performClose:; repointing them at
- * the window and performHide: turns the X into a hide with no close event,
- * no teardown, and nothing to race.
+ * the window and orderOut: turns the X into a hide with no close event, no
+ * teardown, and nothing to race. (orderOut: is the real NSWindow method —
+ * performHide: does not exist, and the button grays itself out when its
+ * target fails to respond to the action.)
  * @param title - The window's title, to find it among the app's windows.
  * @returns true once the button has been repointed.
  */
@@ -282,7 +284,7 @@ export function retargetCloseButtonToHide(title: string): boolean {
       const button = api.sendObject(window, api.selector('standardWindowButton:'), 0 as never)
       if (button === null) return false
       api.sendObjectVoid(button, api.selector('setTarget:'), window)
-      api.sendObjectVoid(button, api.selector('setAction:'), api.selector('performHide:'))
+      api.sendObjectVoid(button, api.selector('setAction:'), api.selector('orderOut:'))
       return true
     }
     return false
