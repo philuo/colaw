@@ -8,7 +8,7 @@
  * @module @deepseek-ai/dsh-electrobun-host
  */
 
-import { BrowserView, BrowserWindow } from 'electrobun/bun'
+import { BrowserView, BrowserWindow, Tray } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
 import {
@@ -422,6 +422,7 @@ async function main(): Promise<void> {
     dark: resolveIcon(['../../AppIconDark.icns', '../cat5_dark.icns']),
   }
   let iconInUse: 'light' | 'dark' | undefined
+  let trayIcon: Tray | undefined
   /** Show the icon the current selection asks for; a matching one is a no-op.
    * Both surfaces update: the Dock's runtime tile, and — through the
    * workspace's custom-icon attribute — Finder, Launchpad, and the Dock's
@@ -433,6 +434,7 @@ async function main(): Promise<void> {
     setApplicationIcon(iconPaths[wanted])
     const bundle = ownAppBundlePath()
     if (bundle !== undefined) setBundleIcon(iconPaths[wanted], bundle)
+    trayIcon?.setImage(iconPaths[wanted])
   }
   /** This app's .app directory, walked up from the running bundle. */
   const ownAppBundlePath = (): string | undefined => {
@@ -909,6 +911,17 @@ async function main(): Promise<void> {
     }
     mainWindow.on('resize', syncFullscreen)
     mainWindow.on('move', syncFullscreen)
+
+    // The menu-bar tray: same reveal gesture as the Dock tile — a click
+    // shows (and activates) the window whether it was hidden by the X or
+    // just buried. The image follows the theme like every other icon.
+    const tray = new Tray({ image: iconPaths[pageAppearanceFor(readAppearancePreferenceEarly())], template: false, width: 18, height: 18 })
+    tray.on('tray-clicked', () => {
+      // show() activates as well, so a buried or hidden window comes back
+      // frontmost — the same gesture as clicking the Dock tile.
+      mainWindow.show()
+    })
+    trayIcon = tray
 
     // Zoom — the green button's behaviour, and what macOS itself runs on a
     // title-bar double-click — is what the shell's own double-click toggles.

@@ -163,8 +163,17 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       : undefined
     const target = workspaceId ?? currentWorkspaceId ?? recent
     if (target === undefined) {
-      this.sessions.clear()
-      this.ctx.layout.selectPanel(null)
+      // Working without a workspace: the host's session create defaults the
+      // cwd on its own, so a chat can start with no directory attached — the
+      // composer only ever waited on a session existing, never on a workspace.
+      void this.sessions.create({}).then(
+        (sessionId) => { if (!this.lifetime.signal.aborted) this.openSession(sessionId) },
+        (reason) => {
+          console.warn('workspace-free session failed:', reason)
+          this.sessions.clear()
+          this.ctx.layout.selectPanel(null)
+        },
+      )
       return
     }
     void this.openWorkspace(target).catch(

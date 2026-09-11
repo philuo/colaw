@@ -408,9 +408,15 @@ describe('UiWorkspaceService', () => {
       expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-recent-home'))
     })
 
+    // No workspace anywhere: the session is still created — workspace-free —
+    // and opened; only a create failure falls back to the empty shell.
     const empty = bench()
     empty.uiWorkspace.startSession()
-    expect(empty.sessions.clear).toHaveBeenCalledOnce()
+    await vi.waitFor(() => {
+      expect(empty.sessions.create).toHaveBeenCalledWith({})
+      expect(empty.sessions.open).toHaveBeenLastCalledWith(sid('created-none'))
+    })
+    expect(empty.sessions.clear).not.toHaveBeenCalled()
 
     const warning = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     b.sessions.create.mockRejectedValueOnce(new Error('create failed'))
