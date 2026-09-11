@@ -21,6 +21,7 @@ import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/s
 import css from './WorkspacePicker.module.css'
 
 const ADD_WORKSPACE = '::add-workspace'
+const NO_WORKSPACE = '::no-workspace'
 
 /** Core flow props: the owner supplies popover control and pick semantics. */
 export interface WorkspacePickFlowProps {
@@ -40,6 +41,8 @@ export interface WorkspacePickFlowProps {
   renderDirectoryFlow: (owner: DirectoryFlowOwnerProps) => ReactNode
   /** A real Workspace was picked or created. */
   onPick: (workspaceId: WorkspaceId) => void
+  /** Start with no workspace attached; absent hides the detached entry. */
+  startDetached?: () => void
   /** Close the popover (outside click / Escape / post-pick). */
   onClose: () => void
   /** Only offer the add action, hide existing workspaces. */
@@ -64,6 +67,7 @@ export function WorkspacePickFlow({
   useDirectoryFlow,
   renderDirectoryFlow,
   onPick,
+  startDetached,
   onClose,
   addOnly = false,
   side = 'bottom',
@@ -105,12 +109,22 @@ export function WorkspacePickFlow({
   // (divider + always visible); otherwise it IS the menu.
   const pinAdd = !addOnly && workspaces.length > 0
   const items: MenuEntry[] = pinAdd
-    ? workspaces.map(workspace => ({
-      id: workspace.workspaceId,
-      label: workspace.title,
-      icon: <IconFolderClose16 size={16} />,
-      disabled: flowBusy,
-    }))
+    ? [
+      // Chatting without a directory is a first-class choice, not a fallback:
+      // the entry heads the list wherever the picker offers workspaces.
+      ...(startDetached === undefined ? [] : [{
+        id: NO_WORKSPACE,
+        label: t('menu.noWorkspace'),
+        icon: <IconFolderClose16 size={16} />,
+        disabled: flowBusy,
+      }]),
+      ...workspaces.map(workspace => ({
+        id: workspace.workspaceId,
+        label: workspace.title,
+        icon: <IconFolderClose16 size={16} />,
+        disabled: flowBusy,
+      })),
+    ]
     : addEntries
   // Nothing listed and nothing to add with (a composition that mounts this
   // package without any directory-picker): an empty popover would claim a
@@ -177,6 +191,11 @@ export function WorkspacePickFlow({
       openDirectoryFlow()
       return
     }
+    if (id === NO_WORKSPACE) {
+      onClose()
+      startDetached?.()
+      return
+    }
     onPick(id as WorkspaceId)
   }
 
@@ -228,6 +247,7 @@ export function WorkspacePicker({
   useWorkspaces,
   selectedId,
   onPick,
+  startDetached,
   onClose,
   createWorkspace,
   useDirectoryFlow,
@@ -245,6 +265,7 @@ export function WorkspacePicker({
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       selectedId={selectedId}
       onPick={onPick}
+      startDetached={startDetached}
       onClose={onClose}
     />
   )

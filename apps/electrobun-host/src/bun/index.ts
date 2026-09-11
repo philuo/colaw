@@ -434,7 +434,7 @@ async function main(): Promise<void> {
     setApplicationIcon(iconPaths[wanted])
     const bundle = ownAppBundlePath()
     if (bundle !== undefined) setBundleIcon(iconPaths[wanted], bundle)
-    trayIcon?.setImage(iconPaths[wanted])
+    trayIcon?.setImage(iconPaths[inverse(wanted)])
   }
   /** This app's .app directory, walked up from the running bundle. */
   const ownAppBundlePath = (): string | undefined => {
@@ -915,7 +915,11 @@ async function main(): Promise<void> {
     // The menu-bar tray: same reveal gesture as the Dock tile — a click
     // shows (and activates) the window whether it was hidden by the X or
     // just buried. The image follows the theme like every other icon.
-    const tray = new Tray({ image: iconPaths[pageAppearanceFor(readAppearancePreferenceEarly())], template: false, width: 18, height: 18 })
+    // The tray sits ON the menu bar, whose chrome follows the system — the
+    // inverse of the app icon: a dark bar shows the light cat and vice versa,
+    // or the icon disappears into the bar (exactly what happened first try).
+    const inverse = (appearance: 'light' | 'dark'): 'light' | 'dark' => appearance === 'dark' ? 'light' : 'dark'
+    const tray = new Tray({ image: iconPaths[inverse(pageAppearanceFor(readAppearancePreferenceEarly()))], template: false, width: 18, height: 18 })
     tray.on('tray-clicked', () => {
       // show() activates as well, so a buried or hidden window comes back
       // frontmost — the same gesture as clicking the Dock tile.
