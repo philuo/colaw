@@ -897,7 +897,13 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
       const source = join(pkgDir, ...rel.split('/'))
       const code = readFileSync(source, 'utf8')
       const minified = await buildUnit(source, 'browser', 'esm', clientBundleExternals(code))
-      writeFileSync(destination, minified ?? code)
+      // The browser build injects the build machine's absolute __filename;
+      // ship an empty string instead of leaking the checkout path.
+      const sanitized = (minified ?? code).replace(
+        /var __filename="[^"]*"/gu,
+        'var __filename=""',
+      )
+      writeFileSync(destination, sanitized)
       continue
     }
     const sourceFile = join(pkgDir, ...rel.split('/'))
