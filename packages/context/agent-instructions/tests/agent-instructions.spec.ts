@@ -619,7 +619,7 @@ describe('workspace context instruction discovery', () => {
     // Isolate the default-home fallback: blank DSH_HOME is treated as unset, and
     // the home dirs point at an empty dir so the default ~/.dsh holds no global
     // scope. Windows homedir() reads USERPROFILE (not HOME), so both must be
-    // stubbed or a real ~/.dsh/AGENTS.md would otherwise leak in.
+    // stubbed or a real ~/.colaw/AGENTS.md would otherwise leak in.
     vi.stubEnv('DSH_HOME', '')
     vi.stubEnv('HOME', emptyHome)
     if (process.platform === 'win32') vi.stubEnv('USERPROFILE', emptyHome)
@@ -661,7 +661,7 @@ describe('workspace context instruction discovery', () => {
     const root = await tempRepo()
     const home = await tempRepo()
     try {
-      await write(join(home, '.dsh/AGENTS.md'), 'global default rule')
+      await write(join(home, '.colaw/AGENTS.md'), 'global default rule')
 
       // A set DSH_HOME would override the homedir default and relabel the home.
       vi.stubEnv('DSH_HOME', '')
@@ -670,7 +670,7 @@ describe('workspace context instruction discovery', () => {
       const isolated = await import('@deepseek-ai/dsh-agent-instructions')
       const files = await isolated.discoverBaselineInstructionFiles({ cwd: root })
 
-      expect(files.map(file => file.displayPath)).toEqual(['~/.dsh/AGENTS.md'])
+      expect(files.map(file => file.displayPath)).toEqual(['~/.colaw/AGENTS.md'])
     } finally {
       vi.unstubAllEnvs()
       vi.doUnmock('node:os')
@@ -680,18 +680,18 @@ describe('workspace context instruction discovery', () => {
     }
   })
 
-  it('expands a configured ~/.dsh home to the operating-system home directory', async () => {
+  it('expands a configured ~/.colaw home to the operating-system home directory', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
     try {
-      await write(join(home, '.dsh/AGENTS.md'), 'global tilde rule')
+      await write(join(home, '.colaw/AGENTS.md'), 'global tilde rule')
 
       vi.resetModules()
       vi.doMock('node:os', () => ({ homedir: () => home }))
       const isolated = await import('@deepseek-ai/dsh-agent-instructions')
-      const files = await isolated.discoverBaselineInstructionFiles({ cwd: root, dshHome: '~/.dsh' })
+      const files = await isolated.discoverBaselineInstructionFiles({ cwd: root, dshHome: '~/.colaw' })
 
-      expect(files).toEqual([{ absolutePath: join(home, '.dsh/AGENTS.md'), displayPath: '~/.dsh/AGENTS.md' }])
+      expect(files).toEqual([{ absolutePath: join(home, '.colaw/AGENTS.md'), displayPath: '~/.colaw/AGENTS.md' }])
     } finally {
       vi.doUnmock('node:os')
       vi.resetModules()

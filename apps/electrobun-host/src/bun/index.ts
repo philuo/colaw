@@ -14,6 +14,7 @@ import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } fro
 import {
   setAppearance, setApplicationIcon, systemIsDark, type AppearancePreference,
 } from './app-appearance.ts'
+import { dshHomePath, migrateLegacyDshHome } from '@deepseek-ai/dsh-home-paths'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -285,13 +286,14 @@ interface DesktopInjectionRow {
  */
 async function main(): Promise<void> {
   // Use a dedicated directory as the dsh project/profile root
-  const projectDir = join(process.env.DSH_HOME ?? join(process.env.HOME ?? '/tmp', '.dsh'), 'profiles', 'electrobun')
+  migrateLegacyDshHome()
+  const projectDir = dshHomePath('profiles', 'electrobun')
   mkdirSync(projectDir, { recursive: true })
   const rootConfig = join(projectDir, ROOT_CONFIG_FILENAME)
   writeFileSync(rootConfig, ROOT_CONFIG)
 
   console.log('[electrobun-host] Booting dsh core (web profile)...')
-  const environment = loadLayeredEnv('dsh electrobun')
+  const environment = loadLayeredEnv('colaw')
   // Use dsh repo's apps/cli as install anchor so that bundle packages
   // (dsh-base, dsh-web-app) can be resolved from its node_modules.
   // The globally cached @deepseek-ai/dsh package has no node_modules.
@@ -308,7 +310,7 @@ async function main(): Promise<void> {
     ? bundledAnchor
     : join(dshRepoRoot, 'apps', 'cli', 'package.json')
   console.log(`[electrobun-host] install anchor: ${cliPackageJson}`)
-  const profile = loadProfile('dsh electrobun', 'web', cliPackageJson)
+  const profile = loadProfile('colaw', 'web', cliPackageJson)
   // Self-contained stable installs own their module fallback: client-modules
   // resolves browser plugin packages by name from the loader tree base (the
   // profile directory), whose node_modules walk must reach the in-app closure.
@@ -322,12 +324,12 @@ async function main(): Promise<void> {
   const patches: PatchOptions[] = [
     ...profile.layers.flatMap(layer => layer.patches),
     ...profile.patches,
-    ...loadOverlayPatches('dsh electrobun', ELECTROBUN_PATCH),
+    ...loadOverlayPatches('colaw', ELECTROBUN_PATCH),
   ]
 
   let current: Context | undefined
   const ctx = await boot(
-    'dsh electrobun',
+    'colaw',
     rootConfig,
     structuredClone(patches),
     (hostCtx) => {

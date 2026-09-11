@@ -1,23 +1,54 @@
 /**
- * Shared filesystem path helpers for DeepSeek Harness user data.
+ * Shared filesystem path helpers for Colaw user data.
  *
  * @module @deepseek-ai/dsh-home-paths
  */
 
+import { existsSync, renameSync } from 'node:fs'
 import { opendir, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
 export { watch, type Watcher, type WatchOptions, type WatchEvent } from './chokidar-adapter'
 
-/** Directory name for the default DeepSeek Harness home under the OS home. */
-export const DSH_HOME_DIR_NAME = '.dsh'
+/** Directory name for the default Colaw home under the OS home. */
+export const DSH_HOME_DIR_NAME = '.colaw'
 
-/** Stable user-facing display form for the default DeepSeek Harness home. */
+/** Directory name the product shipped under before the Colaw rename. */
+export const LEGACY_DSH_HOME_DIR_NAME = '.dsh'
+
+/** Stable user-facing display form for the default Colaw home. */
 export const DEFAULT_DSH_HOME_DISPLAY = `~/${DSH_HOME_DIR_NAME}`
 
-/** Environment variable that overrides the default DeepSeek Harness home. */
+/** Environment variable that overrides the default Colaw home. */
 export const DSH_HOME_ENV = 'DSH_HOME'
+
+/**
+ * Move a pre-rename `~/.dsh` under the default `~/.colaw` once, in place.
+ *
+ * The rename is a same-volume `rename`, so it is atomic: either the whole
+ * legacy tree moves or nothing does. An explicit `$DSH_HOME` (or configured
+ * path) means the user owns the location and no migration runs; a legacy home
+ * beside an existing current one is left untouched for the user to reconcile.
+ * @param env - environment mapping used to read `DSH_HOME`.
+ * @returns the absolute legacy path that was moved, or undefined when nothing migrated.
+ */
+export function migrateLegacyDshHome(env: Record<string, string | undefined> = process.env): string | undefined {
+  const fromEnv = env[DSH_HOME_ENV]
+  if (fromEnv !== undefined && fromEnv.trim().length > 0) return undefined
+  const legacy = join(homedir(), LEGACY_DSH_HOME_DIR_NAME)
+  const current = defaultDshHome()
+  if (legacy === current) return undefined
+  try {
+    if (!existsSync(legacy) || existsSync(current)) return undefined
+    renameSync(legacy, current)
+    return legacy
+  } catch {
+    // A migration that cannot complete must never block the boot that would
+    // create the new home fresh; the legacy tree stays where it was.
+    return undefined
+  }
+}
 
 /**
  * Give a native filesystem watcher one canonical spelling of a path, even
@@ -57,8 +88,8 @@ export async function canonicalizeWatchPath(path: string): Promise<string> {
 }
 
 /**
- * Resolve the default DeepSeek Harness home using Node's platform path rules.
- * @returns the absolute default harness home path.
+ * Resolve the default Colaw home using Node's platform path rules.
+ * @returns the absolute default Colaw home path.
  */
 export function defaultDshHome(): string {
   return join(homedir(), DSH_HOME_DIR_NAME)
@@ -79,7 +110,7 @@ export function expandHomePath(path: string): string {
  * Resolve the single-root DeepSeek Harness home.
  *
  * Precedence, highest first: an explicit configured path, `$DSH_HOME`, then
- * `~/.dsh`. The harness keeps all user data under one root. An empty or
+ * `~/.colaw`. The harness keeps all user data under one root. An empty or
  * whitespace-only `$DSH_HOME` is treated as unset, so a blank override never
  * resolves the home to the current working directory.
  * @param configured - explicit harness-home override, which has highest precedence.
@@ -116,9 +147,9 @@ export function dshCachePath(optionsOrSegment: { dshHome?: string } | string = {
  * Describe a resolved harness home symbolically for user-facing display.
  *
  * It never returns an absolute machine path: the default home is labelled
- * `~/.dsh`, and any configured home is labelled `$DSH_HOME`.
+ * `~/.colaw`, and any configured home is labelled `$DSH_HOME`.
  * @param resolvedHome - the absolute path returned by {@link resolveDshHome}.
- * @returns `~/.dsh` for the default home, otherwise `$DSH_HOME`.
+ * @returns `~/.colaw` for the default home, otherwise `$DSH_HOME`.
  */
 export function dshHomeDisplay(resolvedHome: string): string {
   return resolvedHome === resolve(defaultDshHome()) ? DEFAULT_DSH_HOME_DISPLAY : `$${DSH_HOME_ENV}`

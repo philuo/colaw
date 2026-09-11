@@ -11,6 +11,7 @@
  * 7. JSON-RPC API initialize works with auth
  */
 
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,7 +34,7 @@ async function main() {
 
   // 1. Boot dsh core
   console.log("[1/7] Booting dsh core (web profile)...");
-  const projectDir = join(process.env.DSH_HOME ?? join(process.env.HOME ?? "/tmp", ".dsh"), "electrobun-e2e");
+  const projectDir = join(dshHomePath(), "electrobun-e2e");
   mkdirSync(projectDir, { recursive: true });
   const rootConfig = join(projectDir, ROOT_CONFIG_FILENAME);
   writeFileSync(rootConfig, ROOT_CONFIG);

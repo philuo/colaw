@@ -1,3 +1,4 @@
+import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -5,12 +6,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_DSH_HOME_DISPLAY,
   DSH_HOME_DIR_NAME,
+  LEGACY_DSH_HOME_DIR_NAME,
   canonicalizeWatchPath,
   defaultDshHome,
   dshCachePath,
   dshHomeDisplay,
   dshHomePath,
   expandHomePath,
+  migrateLegacyDshHome,
   resolveDshHome,
 } from '@deepseek-ai/dsh-home-paths'
 
@@ -19,10 +22,11 @@ afterEach(() => {
 })
 
 describe('dsh path helpers', () => {
-  it('owns the shared default DSH home directory name', () => {
-    expect(DSH_HOME_DIR_NAME).toBe('.dsh')
-    expect(DEFAULT_DSH_HOME_DISPLAY).toBe('~/.dsh')
-    expect(defaultDshHome()).toBe(join(homedir(), '.dsh'))
+  it('owns the shared default Colaw home directory name', () => {
+    expect(DSH_HOME_DIR_NAME).toBe('.colaw')
+    expect(DEFAULT_DSH_HOME_DISPLAY).toBe('~/.colaw')
+    expect(defaultDshHome()).toBe(join(homedir(), '.colaw'))
+    expect(LEGACY_DSH_HOME_DIR_NAME).toBe('.dsh')
   })
 
   it('expands tilde paths without changing non-tilde paths', () => {
@@ -53,14 +57,47 @@ describe('dsh path helpers', () => {
   })
 
   it('labels a resolved home by whether it is the default root', () => {
-    expect(dshHomeDisplay(resolve(defaultDshHome()))).toBe('~/.dsh')
+    expect(dshHomeDisplay(resolve(defaultDshHome()))).toBe('~/.colaw')
     expect(dshHomeDisplay('/some/other/root')).toBe('$DSH_HOME')
   })
 
+  describe('legacy home migration', () => {
+    it('moves a legacy ~/.dsh to the current home when the current one is absent', () => {
+      vi.stubEnv('DSH_HOME', '')
+      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      const legacy = join(homedir(), LEGACY_DSH_HOME_DIR_NAME)
+      const current = defaultDshHome()
+      const legacyExisted = existsSync(legacy)
+      const currentExisted = existsSync(current)
+      if (legacyExisted && currentExisted) return
+      if (!legacyExisted) mkdirSync(legacy, { recursive: true })
+      if (currentExisted) rmSync(current, { recursive: true, force: true })
+      try {
+        expect(migrateLegacyDshHome()).toBe(legacy)
+        expect(existsSync(current)).toBe(true)
+        expect(existsSync(legacy)).toBe(false)
+        expect(migrateLegacyDshHome()).toBeUndefined()
+      } finally {
+        if (!legacyExisted && existsSync(current)) {
+          renameSync(current, legacy)
+        } else if (legacyExisted && currentExisted) {
+          // Both existed before the test ran, which the guard above skipped.
+        } else if (legacyExisted && !currentExisted) {
+          renameSync(current, legacy)
+        }
+      }
+    })
+
+    it('never migrates when the environment owns the home location', () => {
+      vi.stubEnv('DSH_HOME', '~/env-dsh')
+      expect(migrateLegacyDshHome({ DSH_HOME: '~/env-dsh' })).toBeUndefined()
+    })
+  })
+
   it.each([
-    [undefined, join(homedir(), '.dsh')],
-    ['', join(homedir(), '.dsh')],
-    ['   ', join(homedir(), '.dsh')],
+    [undefined, join(homedir(), '.colaw')],
+    ['', join(homedir(), '.colaw')],
+    ['   ', join(homedir(), '.colaw')],
     ['~/env-dsh', join(homedir(), 'env-dsh')],
     ['./relative-dsh', resolve('./relative-dsh')],
   ] as const)('resolves cache paths with DSH_HOME=%j', (home, expectedHome) => {
