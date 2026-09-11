@@ -97,7 +97,14 @@ export class AgentPresetSeatController {
       // an applied stage was consumed — the chip mounts (and loads) only
       // once the flow's session is current, so the reply can arrive after
       // apply() already composed it.
-      current: this.staged ?? (session === undefined ? this.fallback : presetOf(session) ?? ''),
+      // A blank session follows the current default: its composition has not
+      // run yet, so the settings page changing the default retro-fits every
+      // session the user has not started talking in (the host's blank-swap
+      // path permits it, and the projection catches up through select()).
+      current: this.staged
+        ?? (session === undefined || (session.blank && session.projectionValues?.agentPreset === undefined)
+          ? this.fallback
+          : presetOf(session) ?? ''),
       error: null,
       ...modeSelectionEnabled ? {} : { introduce: false },
     })
