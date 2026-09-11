@@ -53,7 +53,6 @@ const ELECTROBUN_PATCH = process.env.ELECTROBUN_INSTALL_ROOT_NAME === 'dev'
     ? join(BUNDLED_APP_DIR, 'config', 'electrobun.cordis.patch.yml')
     : fileURLToPath(new URL('../config/electrobun.cordis.patch.yml', import.meta.url))
 
-const ROOT_CONFIG = '# Electrobun desktop composition root.\n[]\n'
 const ROOT_CONFIG_FILENAME = 'electrobun.cordis.yml'
 
 /** File the window frame is remembered in, beside the profile's composition root. */
@@ -336,16 +335,24 @@ border-top-color:${dim};animation:spin 1s linear infinite}
 </style></head><body><div class="wordmark">Colaw</div><div class="spinner"></div></body></html>`
 }
 
+// Boot phases and (with COLAW_BOOT_PROFILE=1) every plugin mount land in the
+// log with elapsed milliseconds, so a slow boot can be attributed on a real
+// packaged run instead of being one opaque 9-second block.
+const bootT0 = Date.now()
+const bootMs = (): string => `+${String(Date.now() - bootT0).padStart(5)}ms`
+const bootProfile = process.env.COLAW_BOOT_PROFILE === '1'
+
 /**
  * Boot dsh core and open the Electrobun window.
  */
 async function main(): Promise<void> {
-  // Use a dedicated directory as the dsh project/profile root
-  migrateLegacyDshHome()
+  // Use a dedicated directory as the dsh project/profile root. The legacy-home
+  // migration and the profile directory only matter to the boot below; the
+  // window must not wait on filesystem work it does not need.
   const projectDir = dshHomePath('profiles', 'electrobun')
-  mkdirSync(projectDir, { recursive: true })
   const rootConfig = join(projectDir, ROOT_CONFIG_FILENAME)
-  writeFileSync(rootConfig, ROOT_CONFIG)
+  const windowStatePath = join(projectDir, WINDOW_STATE_FILENAME)
+  if (bootProfile) console.log(`[electrobun-host] ${performance.now().toFixed(0)}ms main() entered (worker start → first line)`)
 
   /** The color scheme the page should paint: an explicit selection is itself,
    * `system` is what macOS is set to right now — read from the system
@@ -389,7 +396,6 @@ async function main(): Promise<void> {
   // lights on the shell's 42px unified top bar). The frame is where the user
   // left it — passing x/y at all is what pins the window instead of letting
   // the system choose a spot.
-  const windowStatePath = join(projectDir, WINDOW_STATE_FILENAME)
   const rememberedFrame = readWindowFrame(windowStatePath) ?? DEFAULT_WINDOW_FRAME
   const mainWindow = new BrowserWindow({
     title: 'Colaw',
@@ -405,6 +411,10 @@ async function main(): Promise<void> {
     },
   })
   console.log('[electrobun-host] Window opened on splash; booting dsh core (web profile)...')
+  // The splash is on screen: the profile-directory work the window never
+  // needed runs now instead of ahead of it.
+  migrateLegacyDshHome()
+  mkdirSync(projectDir, { recursive: true })
   const environment = loadLayeredEnv('colaw')
   // Use dsh repo's apps/cli as install anchor so that bundle packages
   // (dsh-base, dsh-web-app) can be resolved from its node_modules.
@@ -476,13 +486,6 @@ async function main(): Promise<void> {
   const restConfig = join(projectDir, 'rest.cordis.json')
   writeFileSync(restConfig, `${JSON.stringify(ofStage('rest'))}\n`)
 
-  // Boot phases and (with COLAW_BOOT_PROFILE=1) every plugin mount land in the
-  // log with elapsed milliseconds, so a slow boot can be attributed on a real
-  // packaged run instead of being one opaque 9-second block.
-  const bootT0 = Date.now()
-  const bootMs = (): string => `+${String(Date.now() - bootT0).padStart(5)}ms`
-  const bootProfile = process.env.COLAW_BOOT_PROFILE === '1'
-
   // The frontend does not wait for the whole plugin tree: the webserver and
   // the auth service come up early in it, and the web index is itself a
   // loading page that keeps polling until the client modules are ready. Swap
@@ -514,7 +517,7 @@ async function main(): Promise<void> {
     view.loadURL(url)
     console.log(`[electrobun-host] ${bootMs()} frontend loading into the open window: ${url}`)
   }
-  const earlyUrlWatch = setInterval(loadFrontendIntoWindow, 50)
+  const earlyUrlWatch = setInterval(loadFrontendIntoWindow, 5)
 
   let current: Context | undefined
   let bootProfileStop: (() => void) | undefined
