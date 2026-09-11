@@ -12,8 +12,8 @@ import { BrowserView, BrowserWindow } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
 import {
-  applicationIsActive, setAppearance, setApplicationIcon, setBundleIcon, systemIsDark,
-  type AppearancePreference,
+  applicationIsActive, retargetCloseButtonToHide, setAppearance, setApplicationIcon,
+  setBundleIcon, systemIsDark, type AppearancePreference,
 } from './app-appearance.ts'
 import { spawnSync } from 'node:child_process'
 
@@ -486,7 +486,6 @@ async function main(): Promise<void> {
   // at all is what pins the window instead of letting the system choose.
   let mainWindow!: BrowserWindow
   let lastAppUrl: string | undefined
-  let windowHidden = false
   // Zoom/fullscreen transitions report intermediate frames; both the frame
   // writer (attachFrameTracking) and the zoom toggle hold off until it clears.
   let geometryTransition = false
@@ -509,6 +508,15 @@ async function main(): Promise<void> {
     wireMainWindow()
     attachFrameTracking()
     ensureKeepAliveWindow()
+    retargetCloseToHide()
+  }
+
+  // The NSWindow appears asynchronously after BrowserWindow construction, so
+  // the retarget retries until it lands; once it does, the X hides the window
+  // and this whole fallback path goes quiet.
+  const retargetCloseToHide = (tries = 0): void => {
+    if (retargetCloseButtonToHide('Colaw')) return
+    if (tries < 40) setTimeout(() => { retargetCloseToHide(tries + 1) }, 150)
   }
 
   // The core quits the process when its last window closes, which races (and
@@ -550,37 +558,43 @@ async function main(): Promise<void> {
     mainWindow.on('move', rememberWindowFrame)
   }
 
-  // The red X keeps the app — and every session — running: the closed window
-  // is reborn immediately, hidden, with the same URL; the next time the app
-  // activates (a Dock or Launchpad click) it comes back.
+  // The red X keeps the app — and every session — running. No window is
+  // pre-recreated: a hidden reborn races the app's own activation state
+  // (creation can re-activate the app and macOS can show a new key window of
+  // an active app even when asked to hide), which turned the close into an
+  // instant reload of a visible window. Instead the window is created only
+  // when the reveal actually happens — the next activation after a
+  // deactivation — so there is never a hidden window to surface by accident.
+  let windowGone = false
   electrobunEventEmitter.on('close', (event: { data: { id: number } }) => {
+    if (bootProfile) console.log(`[profile] close event id=${String(event.data.id)} main=${String(mainWindow?.id)} keep=${String(keepAlive?.id)} all=[${BrowserWindow.getAll().map(w => String(w.id)).join(',')}]`)
     if (mainWindow === undefined || event.data.id !== mainWindow.id) return
     if (lastAppUrl === undefined) return
-    console.log('[electrobun-host] window closed; the app keeps running, the window reborns hidden')
-    // A tick later, outside the close event's teardown: creating inside the
-    // event itself lands in a half-torn-down window world and the window
-    // never reaches the screen. The keepalive window holds the process open
-    // across the gap. The reveal starts disarmed — the app is still active
-    // from the click that closed the window.
-    setTimeout(() => {
-      windowHidden = true
-      openWindowOnUrl(lastAppUrl, true)
-    }, 100)
+    console.log('[electrobun-host] window closed; the app keeps running (reveal on next activation)')
+    windowGone = true
   })
-  // The reveal is armed by deactivation: right after the X the app is still
-  // active (the click happened inside it), so an active-and-hidden check
-  // would unhide the reborn window immediately — the close would visibly
-  // reload a new window instead of hiding. Only a tick that has seen the app
-  // inactive at least once after the hide may show it again, which also
-  // covers the close event arriving after the deactivation.
+  // The reveal needs the app to have gone inactive once since the close:
+  // right after the X it is still active (the click happened inside it), and
+  // an active check alone would reopen immediately. Armed by a deactivation,
+  // fired by the next activation — the Dock or Launchpad click — which is
+  // also the moment the window is created, visible, at the remembered frame.
   let revealArmed = false
   setInterval(() => {
     const active = applicationIsActive()
-    if (!active) revealArmed = true
-    if (revealArmed && active && windowHidden) {
-      windowHidden = false
-      revealArmed = false
-      mainWindow?.show()
+    if (!active) {
+      revealArmed = true
+      return
+    }
+    if (!revealArmed) return
+    revealArmed = false
+    // The common path: the X hid a live window — show it back, instantly,
+    // nothing reloaded. The fallback path: a real close slipped through
+    // before the retarget landed — recreate at the remembered URL.
+    if (windowGone) {
+      windowGone = false
+      if (lastAppUrl !== undefined) openWindowOnUrl(lastAppUrl)
+    } else if (!mainWindow.isVisible()) {
+      mainWindow.show()
     }
   }, 300)
   console.log('[electrobun-host] Window opened on splash; booting dsh core (web profile)...')

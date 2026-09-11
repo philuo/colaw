@@ -253,3 +253,38 @@ export function setBundleIcon(iconPath: string, bundlePath: string): boolean {
     return true
   })
 }
+
+/**
+ * Make the red traffic light hide the window instead of closing it — the
+ * ChatGPT-class behavior: the window (and everything running in it) stays
+ * alive, the Dock keeps the running dot, and the next activation shows it
+ * again instantly. The standard AppKit route: the close button is a plain
+ * NSButton whose target/action default to performClose:; repointing them at
+ * the window and performHide: turns the X into a hide with no close event,
+ * no teardown, and nothing to race.
+ * @param title - The window's title, to find it among the app's windows.
+ * @returns true once the button has been repointed.
+ */
+export function retargetCloseButtonToHide(title: string): boolean {
+  return attempt(false, (api, app) => {
+    const list = api.send(app, api.selector('windows'))
+    if (list === null) return false
+    const count = Number(api.send(list, api.selector('count')) ?? 0)
+    for (let index = 0; index < count; index += 1) {
+      const window = api.sendObject(list, api.selector('objectAtIndex:'), index as never)
+      if (window === null) continue
+      // `title` returns an NSString object; only UTF8String yields a C string
+      // the text binding can read.
+      const titleObject = api.send(window, api.selector('title'))
+      if (titleObject === null) continue
+      if (api.textOf(titleObject, api.selector('UTF8String')) !== title) continue
+      // NSWindowCloseButton is the first standard button (tag 0).
+      const button = api.sendObject(window, api.selector('standardWindowButton:'), 0 as never)
+      if (button === null) return false
+      api.sendObjectVoid(button, api.selector('setTarget:'), window)
+      api.sendObjectVoid(button, api.selector('setAction:'), api.selector('performHide:'))
+      return true
+    }
+    return false
+  })
+}
