@@ -198,3 +198,19 @@ export function setApplicationIcon(path: string): void {
     return undefined
   })
 }
+
+/**
+ * Whether the app is frontmost right now — the signal that the user clicked
+ * the Dock (or Launchpad) tile. A hidden window is not shown by macOS on
+ * reopen, so the host watches this flip and shows it itself.
+ * @returns true when the application is active; false outside AppKit.
+ */
+export function applicationIsActive(): boolean {
+  const api = open()
+  if (api === undefined) return false
+  const app = application(api)
+  if (app === null) return false
+  const result = api.send(app, api.selector('isActive'))
+  // A BOOL returns its register widened; a null pointer reads as false.
+  return result !== null && Number(result) !== 0
+}

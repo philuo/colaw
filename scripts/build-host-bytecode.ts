@@ -4,9 +4,14 @@
 //
 // The repo's node_modules copy of `electrobun` is a stub that throws on import
 // (Electrobun 2.x ships its API through the Hutch devkit projection), and Bun
-// 1.4's bundler has no alias option — so the build runs from a scratch root
-// whose node_modules links `electrobun` at the devkit, with the host's own
-// sources copied in beside the entry.
+// 1.4's bundler has no alias option — so the build needs a node_modules whose
+// `electrobun` links the devkit. The scratch root is the OUTPUT directory
+// itself: JSC bytecode embeds the source path it was compiled from and hands
+// it back as the module's `__filename` at runtime, so building from anywhere
+// else freezes that location into every relative resolution (icons, the
+// overlay config) and silently points copied apps at the build machine's
+// checkout. Building beside the final index.js keeps them the same directory;
+// the scaffolding is removed afterwards, leaving index.js and its sidecar.
 import { copyFileSync, mkdirSync, readdirSync, rmSync, symlinkSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -15,21 +20,23 @@ if (entryDir === undefined || outdir === undefined || devkit === undefined) {
   console.error('build-host-bytecode: usage <entry-dir> <outdir> <devkit-dir> [externals...]')
   process.exit(1)
 }
-const root = `${outdir}.buildroot`
-rmSync(root, { recursive: true, force: true })
-mkdirSync(join(root, 'node_modules'), { recursive: true })
-symlinkSync(devkit, join(root, 'node_modules', 'electrobun'))
+const sources: string[] = []
 for (const name of readdirSync(entryDir)) {
-  if (name.endsWith('.ts')) copyFileSync(join(entryDir, name), join(root, name))
+  if (!name.endsWith('.ts')) continue
+  copyFileSync(join(entryDir, name), join(outdir, name))
+  sources.push(name)
 }
+const modules = join(outdir, 'node_modules')
 try {
+  mkdirSync(modules)
+  symlinkSync(devkit, join(modules, 'electrobun'))
   // Same globalThis cast idiom as pack-stable-app.ts: the scripts' tsconfig
   // has no @types/bun, but this file always runs under the app's Bun.
   const bunBuild = (globalThis as unknown as {
     Bun: { build: (options: Record<string, unknown>) => Promise<{ success: boolean; logs: unknown[] }> }
   }).Bun.build
   const result = await bunBuild({
-    entrypoints: [join(root, 'index.ts')],
+    entrypoints: [join(outdir, 'index.ts')],
     target: 'bun',
     format: 'cjs',
     minify: true,
@@ -42,5 +49,6 @@ try {
     process.exit(1)
   }
 } finally {
-  rmSync(root, { recursive: true, force: true })
+  for (const name of sources) rmSync(join(outdir, name))
+  rmSync(modules, { recursive: true, force: true })
 }

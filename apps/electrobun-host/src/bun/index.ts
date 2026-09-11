@@ -12,8 +12,26 @@ import { BrowserView, BrowserWindow } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
 import {
-  setAppearance, setApplicationIcon, systemIsDark, type AppearancePreference,
+  applicationIsActive, setAppearance, setApplicationIcon, systemIsDark, type AppearancePreference,
 } from './app-appearance.ts'
+import { spawnSync } from 'node:child_process'
+
+/**
+ * This bundle's own URL at runtime. The bytecode CJS build freezes
+ * `import.meta.url` at the scratch-root path it was built from (an absolute
+ * path inside the build machine's checkout), which silently points every
+ * relative resolution at that location in copied apps — icons, the overlay
+ * config — instead of the running bundle. A CJS bundle has `__filename`; the
+ * dev/source module keeps `import.meta.url`.
+ */
+declare const __filename: string | undefined
+const bundleUrl = (): string => {
+  // `Bun.main` is this entry's real runtime path (the worker's own script),
+  // immune to the paths frozen into the bytecode cache.
+  const main = (globalThis as { Bun?: { main?: string } }).Bun?.main
+  if (main !== undefined) return pathToFileURL(main).href
+  return typeof __filename === 'string' ? pathToFileURL(__filename).href : import.meta.url
+}
 import { dshHomePath, migrateLegacyDshHome } from '@deepseek-ai/dsh-home-paths'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
@@ -48,10 +66,10 @@ const BUNDLED_APP_DIR = (() => {
  * so the app never depends on the build machine's checkout.
  */
 const ELECTROBUN_PATCH = process.env.ELECTROBUN_INSTALL_ROOT_NAME === 'dev'
-  ? fileURLToPath(new URL('../config/electrobun.cordis.patch.yml', import.meta.url))
+  ? fileURLToPath(new URL('../config/electrobun.cordis.patch.yml', bundleUrl()))
   : BUNDLED_APP_DIR !== undefined && existsSync(join(BUNDLED_APP_DIR, 'config', 'electrobun.cordis.patch.yml'))
     ? join(BUNDLED_APP_DIR, 'config', 'electrobun.cordis.patch.yml')
-    : fileURLToPath(new URL('../config/electrobun.cordis.patch.yml', import.meta.url))
+    : fileURLToPath(new URL('../config/electrobun.cordis.patch.yml', bundleUrl()))
 
 const ROOT_CONFIG_FILENAME = 'electrobun.cordis.yml'
 
@@ -122,7 +140,7 @@ let devWatcher: DevWatcher | undefined
  * @returns the repository root, or undefined when neither start reaches it.
  */
 function findRepoRoot(): string | undefined {
-  const starts = [process.cwd(), fileURLToPath(new URL('.', import.meta.url))]
+  const starts = [process.cwd(), fileURLToPath(new URL('.', bundleUrl()))]
   for (const start of starts) {
     let dir = resolve(start)
     for (;;) {
@@ -251,8 +269,35 @@ interface ShellPreferences {
  */
 function menuLocale(preference: unknown): MenuLocale {
   if (preference === 'zh' || preference === 'en') return preference
+  return systemMenuLocale()
+}
+
+/** The system's UI language. Bun's ICU default is always en-US and never
+ * consults macOS, so the menu would open in English on a Chinese Mac until a
+ * preference exists — read the system's own record instead. */
+function systemMenuLocale(): MenuLocale {
+  try {
+    const record = spawnSync('/usr/bin/defaults', ['read', '-g', 'AppleLanguages'], { encoding: 'utf8' })
+    if (record.status === 0 && /zh/i.test(record.stdout)) return 'zh'
+  } catch { /* defaults unavailable: fall back to ICU's guess */ }
   const system = new Intl.DateTimeFormat().resolvedOptions().locale
   return system.startsWith('zh') ? 'zh' : 'en'
+}
+
+/** The menu language at launch: the saved preference when there is one, else
+ * the system language — read before boot so the first menu bar is already
+ * right (a first install has no settings document at all). */
+function readLocalePreferenceEarly(): MenuLocale {
+  try {
+    const document = readFileSync(dshHomePath('settings.yaml'), 'utf8')
+    const section = document.split(/^locale:\s*$/mu)[1]
+    if (section !== undefined) {
+      const block = section.split(/^\S/mu)[0] ?? ''
+      if (/\bzh\b/u.test(block)) return 'zh'
+      if (/\ben\b/u.test(block)) return 'en'
+    }
+  } catch { /* first run: the system language decides */ }
+  return systemMenuLocale()
 }
 
 /**
@@ -315,6 +360,31 @@ const bootT0 = Date.now()
 const bootMs = (): string => `+${String(Date.now() - bootT0).padStart(5)}ms`
 const bootProfile = process.env.COLAW_BOOT_PROFILE === '1'
 
+/** The webserver port the overlay patch will pin, read the same way boot will. */
+function readOverlayWebserverPort(): number | undefined {
+  for (const candidate of ['../../config/electrobun.cordis.patch.yml', '../config/electrobun.cordis.patch.yml']) {
+    try {
+      const path = fileURLToPath(new URL(candidate, bundleUrl()))
+      if (!existsSync(path)) continue
+      const found = /port:\s*(\d+)/u.exec(readFileSync(path, 'utf8'))
+      if (found !== null) return Number(found[1])
+    } catch { /* try the next layout */ }
+  }
+  return undefined
+}
+
+/** Whether something already listens on the app's webserver port. */
+async function webserverAlive(port: number): Promise<boolean> {
+  try {
+    // Any HTTP answer (401/403 included) means an app is there. Bun throws a
+    // non-TypeError for a refused connection, so only a real response counts.
+    await fetch(`http://127.0.0.1:${String(port)}/`, { method: 'HEAD', signal: AbortSignal.timeout(500) })
+    return true
+  } catch {
+    return false
+  }
+}
+
 /**
  * Boot dsh core and open the Electrobun window.
  */
@@ -341,10 +411,10 @@ async function main(): Promise<void> {
    * The first candidate that exists wins. */
   const resolveIcon = (candidates: readonly string[]): string => {
     for (const candidate of candidates) {
-      const path = fileURLToPath(new URL(candidate, import.meta.url))
+      const path = fileURLToPath(new URL(candidate, bundleUrl()))
       if (existsSync(path)) return path
     }
-    return fileURLToPath(new URL(candidates[candidates.length - 1]!, import.meta.url))
+    return fileURLToPath(new URL(candidates[candidates.length - 1]!, bundleUrl()))
   }
   const iconPaths: Record<'light' | 'dark', string> = {
     light: resolveIcon(['../../AppIcon.icns', '../cat5_light.icns']),
@@ -370,6 +440,23 @@ async function main(): Promise<void> {
   const earlyAppearance = readAppearancePreferenceEarly()
   setAppearance(earlyAppearance)
   followAppearance(earlyAppearance)
+  // The menu bar is native and follows the shell's language; installing it
+  // here (preference, else the system language) keeps the first menu right
+  // even on a first install, instead of waiting for the settings tick.
+  installApplicationMenu(readLocalePreferenceEarly())
+
+  // One app at a time: a second launch must find the running instance's
+  // webserver, activate it, and leave. The probe reads the same overlay that
+  // decides the port below, so test builds on another port never collide.
+  const overlayPort = readOverlayWebserverPort()
+  if (bootProfile) console.log(`[profile] single-instance probe port=${String(overlayPort)} alive=${String(overlayPort !== undefined && await webserverAlive(overlayPort))}`)
+  if (overlayPort !== undefined && await webserverAlive(overlayPort)) {
+    console.log('[electrobun-host] another instance holds the webserver; activating it')
+    // Buffered stdout is dropped by exit(); give the line a beat to land.
+    await new Promise(resolve => setTimeout(resolve, 50))
+    spawnSync('/usr/bin/osascript', ['-e', 'tell application id "ai.deepseek.harness" to activate'])
+    process.exit(0)
+  }
 
   // The window is created only when the authenticated URL exists (~1s: the
   // deferred tree settles first, so the client manifest the index serves is
@@ -381,13 +468,17 @@ async function main(): Promise<void> {
   // 42px unified top bar). The frame is where the user left it — passing x/y
   // at all is what pins the window instead of letting the system choose.
   let mainWindow!: BrowserWindow
-  const openWindowOnUrl = (url: string): void => {
+  let lastAppUrl: string | undefined
+  let windowHidden = false
+  const openWindowOnUrl = (url: string, hidden = false): void => {
+    lastAppUrl = url
     const rememberedFrame = readWindowFrame(windowStatePath) ?? DEFAULT_WINDOW_FRAME
     mainWindow = new BrowserWindow({
       title: 'Colaw',
       url,
       titleBarStyle: 'hiddenInset',
       trafficLightOffset: { x: 6, y: 7 },
+      hidden,
       frame: {
         x: rememberedFrame.x,
         y: rememberedFrame.y,
@@ -396,7 +487,75 @@ async function main(): Promise<void> {
       },
     })
     wireMainWindow()
+    attachFrameTracking()
+    ensureKeepAliveWindow()
   }
+
+  // The core quits the process when its last window closes, which races (and
+  // beats) any window the close handler recreates. A permanent hidden 1x1
+  // window keeps the count from ever reaching zero: the X then leaves the
+  // app — and every session — running, the reborn hidden window has a
+  // process to live in, and Quit tears it down with everything else.
+  let keepAlive: BrowserWindow | undefined
+  const ensureKeepAliveWindow = (): void => {
+    if (keepAlive !== undefined) return
+    keepAlive = new BrowserWindow({
+      title: '',
+      html: '<!doctype html><html><body></body></html>',
+      hidden: true,
+      frame: { x: 0, y: 0, width: 1, height: 1 },
+    })
+  }
+
+  /** Remember the frame of the current window: a recreated window opens
+   * where the closed one was (wireMainWindow is once-only for the global
+   * listeners; frame tracking belongs to each window instance). */
+  const attachFrameTracking = (): void => {
+    let settledFrame = mainWindow.getFrame()
+    const frameIsSettled = (): boolean =>
+      !geometryTransition && !mainWindow.isFullScreen() && !mainWindow.isMaximized()
+    let frameWriteTimer: ReturnType<typeof setTimeout> | undefined
+    const flushWindowFrame = (): void => {
+      clearTimeout(frameWriteTimer)
+      frameWriteTimer = undefined
+      writeWindowFrame(windowStatePath, settledFrame)
+    }
+    const rememberWindowFrame = (): void => {
+      if (!frameIsSettled()) return
+      settledFrame = mainWindow.getFrame()
+      clearTimeout(frameWriteTimer)
+      frameWriteTimer = setTimeout(flushWindowFrame, WINDOW_STATE_WRITE_MS)
+    }
+    mainWindow.on('resize', rememberWindowFrame)
+    mainWindow.on('move', rememberWindowFrame)
+  }
+
+  // The red X keeps the app — and every session — running: the closed window
+  // is reborn immediately, hidden, with the same URL; the next time the app
+  // activates (a Dock or Launchpad click) it comes back.
+  electrobunEventEmitter.on('close', (event: { data: { id: number } }) => {
+    if (mainWindow === undefined || event.data.id !== mainWindow.id) return
+    if (lastAppUrl === undefined) return
+    console.log('[electrobun-host] window closed; the app keeps running, the window reborns hidden')
+    // A tick later, outside the close event's teardown: creating inside the
+    // event itself lands in a half-torn-down window world and the window
+    // never reaches the screen. The keepalive window holds the process open
+    // across the gap.
+    setTimeout(() => {
+      windowHidden = true
+      openWindowOnUrl(lastAppUrl, true)
+    }, 100)
+  })
+  // State-based, not edge-based: the close event can arrive out of order
+  // with the activation that should reveal the reborn window (observed:
+  // reborn logging after the activate), so any tick that sees the app active
+  // with a hidden window shows it — whatever the ordering was.
+  setInterval(() => {
+    if (applicationIsActive() && windowHidden) {
+      windowHidden = false
+      mainWindow?.show()
+    }
+  }, 300)
   console.log('[electrobun-host] Window opened on splash; booting dsh core (web profile)...')
   // The Dock tile can re-take the bundle icon while LaunchServices finishes
   // registering the launched app — seconds after the pin above, the Dock
@@ -417,7 +576,7 @@ async function main(): Promise<void> {
   // Use dsh repo's apps/cli as install anchor so that bundle packages
   // (dsh-base, dsh-web-app) can be resolved from its node_modules.
   // The globally cached @deepseek-ai/dsh package has no node_modules.
-  const dshRepoRoot = fileURLToPath(new URL('../../../..', import.meta.url))
+  const dshRepoRoot = fileURLToPath(new URL('../../../..', bundleUrl()))
   // Dev builds start the client-bundle watcher and let its initial pass finish
   // before the window loads, so the first page reads settled artifacts instead
   // of racing a half-written dist.
@@ -638,7 +797,10 @@ async function main(): Promise<void> {
 
   // Everything below wires the window and its commands; it runs the moment
   // the window is created with the URL (see openWindowOnUrl).
+  let globalChromeWired = false
   const wireMainWindow = (): void => {
+    if (globalChromeWired) return
+    globalChromeWired = true
     console.log(`[electrobun-host] Window frame: ${JSON.stringify(mainWindow.getFrame())}`)
     console.log(`[electrobun-host] Window state file: ${windowStatePath}`)
 
@@ -744,30 +906,8 @@ async function main(): Promise<void> {
       }
     }
 
-    // Remember the frame the user settles on: a drag moves it, an edge drag sizes
-    // it, and the next launch opens where they left it. Writes are coalesced —
-    // a drag emits at pointer cadence. A zoomed or fullscreen window reports the
-    // screen's frame, which is never the size to restore the user to; the zoom
-    // transition reports intermediate frames besides. So what is kept is the last
-    // frame that was neither, which also means quitting while zoomed still
-    // restores the size the user was working at.
-    let settledFrame = mainWindow.getFrame()
-    const frameIsSettled = (): boolean =>
-      !geometryTransition && !mainWindow.isFullScreen() && !mainWindow.isMaximized()
-    let frameWriteTimer: ReturnType<typeof setTimeout> | undefined
-    const flushWindowFrame = (): void => {
-      clearTimeout(frameWriteTimer)
-      frameWriteTimer = undefined
-      writeWindowFrame(windowStatePath, settledFrame)
-    }
-    const rememberWindowFrame = (): void => {
-      if (!frameIsSettled()) return
-      settledFrame = mainWindow.getFrame()
-      clearTimeout(frameWriteTimer)
-      frameWriteTimer = setTimeout(flushWindowFrame, WINDOW_STATE_WRITE_MS)
-    }
-    mainWindow.on('resize', rememberWindowFrame)
-    mainWindow.on('move', rememberWindowFrame)
+
+
 
   }
 
