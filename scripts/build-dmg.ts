@@ -7,7 +7,7 @@
  *
  * Usage: bun scripts/build-dmg.ts   (expects the stable app already packed)
  */
-import { existsSync, mkdirSync, readFileSync, rmSync, copyFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 const repo = process.cwd()
@@ -16,7 +16,7 @@ if (!existsSync(app)) { console.error('stable app missing — run pnpm run build
 type SyncResult = { exitCode: number | null; stdout: Uint8Array }
 const sh = (cmd: string, args: string[]): SyncResult =>
   (globalThis as unknown as { Bun: { spawnSync: (c: string[], o?: object) => SyncResult } }).Bun
-    .spawnSync([cmd, ...args], { stdout: 'pipe', stderr: 'pipe' })
+    .spawnSync([cmd, ...args], { stdout: 'pipe', stderr: 'inherit' })
 const Bun_spawn_ignore = (cmd: string, args: string[]): void =>
   (globalThis as unknown as { Bun: { spawnSync: (c: string[], o?: object) => unknown } }).Bun.spawnSync([cmd, ...args])
 const spawn = (cmd: string, args: string[]): void => {
@@ -40,14 +40,23 @@ if (mountMatch !== null) {
     spawn('/usr/bin/hdiutil', ['detach', devNode[0], '-force'])
   }
 }
+rmSync(stage, { recursive: true, force: true })
 mkdirSync(join(stage, '.background'), { recursive: true })
 
 console.log('rendering the installer background…')
 spawn('/usr/bin/swift', [join(repo, 'scripts/dmg-background.swift'), join(stage, '.background', 'bg.png')])
 copyFileSync(join(app, 'Contents/Resources/AppIcon.icns'), join(stage, '.VolumeIcon.icns'))
 
-mkdirSync(join(stage, 'Applications'))
-spawn('/bin/ln', ['-s', '/Applications', join(stage, 'Applications')])
+// The drop target MUST be the symlink to /Applications: a real folder on
+// this read-only volume makes the drag a same-volume move — Finder shows the
+// no-entry cursor and the drop silently does nothing.
+const applicationsLink = join(stage, 'Applications')
+rmSync(applicationsLink, { recursive: true, force: true })
+spawn('/bin/ln', ['-s', '/Applications', applicationsLink])
+if (!lstatSync(applicationsLink).isSymbolicLink()) {
+  console.error('Applications link was not created as a symlink')
+  process.exit(1)
+}
 spawn('/bin/cp', ['-R', app, join(stage, 'Colaw.app')])
 // The runtime writes a resource-fork custom icon into the running app
 // (setBundleIcon); a sealed bundle must not carry one, so the staged copy is
