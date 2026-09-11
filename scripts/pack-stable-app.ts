@@ -654,7 +654,7 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     // Vite-built shell, so seeding its subpaths would pull browser-only
     // dependency trees (shiki languages, katex, pdf workers) into the app.
     const dsh = manifest.dsh
-    if (dsh !== null && typeof dsh === 'object' && (dsh as Record<string, unknown>).client !== undefined) return []
+    const browserDeclared = dsh !== null && typeof dsh === 'object' && (dsh as Record<string, unknown>).client !== undefined
     const specs: string[] = []
     for (const [key, value] of Object.entries(exports as Record<string, unknown>)) {
       if (key === '.' || key === './package.json' || key.includes('*')) continue
@@ -662,6 +662,13 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
       if (target === undefined || !target.startsWith('./')) continue
       if (!/\.(?:js|mjs|cjs|ts|mts|cts|tsx)$/u.test(target)) continue
       if (!isFile(resolve(pkgDir, target))) continue
+      // `./typert` is the typert-loader's host-side convention and stays
+      // seeded even for browser-declared packages: the gateway's wire
+      // descriptors (parameter wires, cancellation) come from that manifest,
+      // and a silently skipped one degrades every RPC of the package to
+      // signature derivation — mismatched argument fields and a lost abort
+      // signal. The package's other subpaths keep the browser exclusion.
+      if (browserDeclared && key !== './typert') continue
       specs.push(`${name}${key.slice(1)}`)
     }
     return specs

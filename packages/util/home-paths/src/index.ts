@@ -31,13 +31,19 @@ export const DSH_HOME_ENV = 'DSH_HOME'
  * path) means the user owns the location and no migration runs; a legacy home
  * beside an existing current one is left untouched for the user to reconcile.
  * @param env - environment mapping used to read `DSH_HOME`.
+ * @param home - OS home directory the two candidate paths hang off; callers
+ * with a non-process home (tests) pass it explicitly so migration can never
+ * reach outside an isolated root.
  * @returns the absolute legacy path that was moved, or undefined when nothing migrated.
  */
-export function migrateLegacyDshHome(env: Record<string, string | undefined> = process.env): string | undefined {
+export function migrateLegacyDshHome(
+  env: Record<string, string | undefined> = process.env,
+  home: string = homedir(),
+): string | undefined {
   const fromEnv = env[DSH_HOME_ENV]
   if (fromEnv !== undefined && fromEnv.trim().length > 0) return undefined
-  const legacy = join(homedir(), LEGACY_DSH_HOME_DIR_NAME)
-  const current = defaultDshHome()
+  const legacy = join(home, LEGACY_DSH_HOME_DIR_NAME)
+  const current = join(home, DSH_HOME_DIR_NAME)
   if (legacy === current) return undefined
   try {
     if (!existsSync(legacy) || existsSync(current)) return undefined

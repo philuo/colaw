@@ -1,8 +1,8 @@
-import { existsSync, mkdirSync, renameSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_DSH_HOME_DISPLAY,
   DSH_HOME_DIR_NAME,
@@ -62,35 +62,50 @@ describe('dsh path helpers', () => {
   })
 
   describe('legacy home migration', () => {
-    it('moves a legacy ~/.dsh to the current home when the current one is absent', () => {
-      vi.stubEnv('DSH_HOME', '')
+    // Every case passes an explicit temp home. The function reads `homedir()`
+    // by default, so a test that relies on the ambient home would create,
+    // rename, and — in the legacy-absent/current-present case — delete the
+    // real `~/.colaw`. That happened once; injecting the root keeps the suite
+    // physically incapable of repeating it (stubbing HOME is not enough:
+    // `os.homedir()` ignores it under Bun).
+    let home: string
+
+    beforeEach(async () => {
+      home = await mkdtemp(join(tmpdir(), 'dsh-legacy-home-'))
       vi.spyOn(console, 'warn').mockImplementation(() => {})
-      const legacy = join(homedir(), LEGACY_DSH_HOME_DIR_NAME)
-      const current = defaultDshHome()
-      const legacyExisted = existsSync(legacy)
-      const currentExisted = existsSync(current)
-      if (legacyExisted && currentExisted) return
-      if (!legacyExisted) mkdirSync(legacy, { recursive: true })
-      if (currentExisted) rmSync(current, { recursive: true, force: true })
-      try {
-        expect(migrateLegacyDshHome()).toBe(legacy)
-        expect(existsSync(current)).toBe(true)
-        expect(existsSync(legacy)).toBe(false)
-        expect(migrateLegacyDshHome()).toBeUndefined()
-      } finally {
-        if (!legacyExisted && existsSync(current)) {
-          renameSync(current, legacy)
-        } else if (legacyExisted && currentExisted) {
-          // Both existed before the test ran, which the guard above skipped.
-        } else if (legacyExisted && !currentExisted) {
-          renameSync(current, legacy)
-        }
-      }
+    })
+
+    afterEach(async () => {
+      vi.restoreAllMocks()
+      await rm(home, { recursive: true, force: true })
+    })
+
+    it('moves a legacy ~/.dsh to the current home when the current one is absent', () => {
+      const legacy = join(home, LEGACY_DSH_HOME_DIR_NAME)
+      const current = join(home, DSH_HOME_DIR_NAME)
+      mkdirSync(legacy, { recursive: true })
+
+      expect(migrateLegacyDshHome({}, home)).toBe(legacy)
+      expect(existsSync(current)).toBe(true)
+      expect(existsSync(legacy)).toBe(false)
+      expect(migrateLegacyDshHome({}, home)).toBeUndefined()
+    })
+
+    it('leaves both homes alone when the current one already exists', () => {
+      const legacy = join(home, LEGACY_DSH_HOME_DIR_NAME)
+      const current = join(home, DSH_HOME_DIR_NAME)
+      mkdirSync(legacy, { recursive: true })
+      mkdirSync(current, { recursive: true })
+      const marker = join(current, 'settings.yaml')
+      writeFileSync(marker, 'kept\n')
+
+      expect(migrateLegacyDshHome({}, home)).toBeUndefined()
+      expect(existsSync(legacy)).toBe(true)
+      expect(readFileSync(marker, 'utf8')).toBe('kept\n')
     })
 
     it('never migrates when the environment owns the home location', () => {
-      vi.stubEnv('DSH_HOME', '~/env-dsh')
-      expect(migrateLegacyDshHome({ DSH_HOME: '~/env-dsh' })).toBeUndefined()
+      expect(migrateLegacyDshHome({ DSH_HOME: '~/env-dsh' }, home)).toBeUndefined()
     })
   })
 
