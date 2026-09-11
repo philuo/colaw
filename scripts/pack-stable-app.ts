@@ -70,6 +70,8 @@ const bun = (globalThis as unknown as { Bun: {
 
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const hostDir = join(repoRoot, 'apps', 'electrobun-host')
+/** The Hutch devkit projection backing every `electrobun/*` specifier. */
+const devkitDir = join(hostDir, '.hutch', 'devkit')
 const builtApp = join(hostDir, 'build', 'dev-macos-arm64', 'Colaw-dev.app')
 const stableApp = join(hostDir, 'build', 'stable-macos-arm64', 'Colaw.app')
 const appResourcesApp = join(stableApp, 'Contents', 'Resources', 'app')
@@ -296,7 +298,6 @@ function resolveBareFile(spec: string, fromFile: string): { file: string; wildca
  * bootstrap package; resolve its specifiers against the devkit manifest.
  */
 function resolveDevkitFile(spec: string): string {
-  const devkitDir = join(hostDir, '.hutch', 'devkit')
   const manifest = JSON.parse(readFileSync(join(devkitDir, 'package.json'), 'utf8')) as Record<string, unknown>
   const subpath = spec === 'electrobun' ? '' : spec.slice('electrobun'.length)
   const resolved = entryOfManifest(devkitDir, manifest, subpath)
@@ -858,6 +859,20 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
   const verbatimOutRels = new Set([...closure.verbatim.values()].filter(file => file.pkg === pkg).map(file => file.outRel))
   const externals = externalsFor(closure, pkg)
 
+  // The Electrobun devkit projection ships whole, as TypeScript, exactly as
+  // `electrobun dev` runs it. Its native layer (proc/native.ts) registers
+  // process-global FFI callbacks and a module-singleton event emitter; one
+  // bundled unit per exports subpath would inline that layer into every unit,
+  // so the webview's event dispatch would fire one copy's emitter while the
+  // host listens on another's — every webview→host event (the title-bar
+  // double-click command among them) silently lost while the SDK-internal
+  // paths (window drag) kept working. The Bun main process executes the
+  // devkit's TypeScript natively, so the projection needs no build step.
+  if (pkgDir === devkitDir) {
+    emitDevkitPackage(pkgDir, outDir)
+    return
+  }
+
   // A CommonJS package ships as-is. Bundling it to ESM would drop its named
   // exports (Bun's CJS→ESM output carries only `default`), breaking every
   // `import { x } from 'cjs-pkg'` at load; and stamping the emitted manifest
@@ -963,6 +978,33 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
     shipped.main = rootUnit
   }
   writeFileSync(join(outDir, 'package.json'), `${JSON.stringify(shipped, undefined, 2)}\n`)
+}
+
+/**
+ * Ship the Hutch devkit projection verbatim: its manifest (whose exports name
+ * the TypeScript entries) plus the `api/` runtime tree, minus its own test
+ * files. Nothing is bundled — see {@link emitPackage} for why the projection
+ * must stay one module graph — and the Bun main process executes the
+ * TypeScript directly, exactly as the dev loop does.
+ */
+function emitDevkitPackage(pkgDir: string, outDir: string): void {
+  copyFileSync(join(pkgDir, 'package.json'), join(outDir, 'package.json'))
+  const apiDir = join(pkgDir, 'api')
+  const walk = (dir: string, rel: string[]): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isDirectory()) {
+        walk(join(dir, entry.name), [...rel, entry.name])
+        continue
+      }
+      if (!entry.isFile()) continue
+      if (/\.(?:test|spec)\.tsx?$/u.test(entry.name)) continue
+      const outRel = [...rel, entry.name].join('/')
+      const destination = join(outDir, 'api', outRel)
+      mkdirSync(dirname(destination), { recursive: true })
+      copyFileSync(join(dir, entry.name), destination)
+    }
+  }
+  walk(apiDir, [])
 }
 
 /**
@@ -1073,8 +1115,12 @@ function auditApp(closure: Closure): void {
       }
       if (entry.isFile()) {
         // Product packages keep their runtime TypeScript (loader-mounted by
-        // name through string references; Bun executes it natively).
-        const productSource = path.includes(`${sep}node_modules${sep}@deepseek-ai${sep}`) && path.includes(`${sep}src${sep}`)
+        // name through string references; Bun executes it natively), and the
+        // Electrobun devkit ships its TypeScript projection whole for the
+        // same reason — the Bun main process executes it, and bundling it
+        // would split its process-global native layer across units.
+        const productSource = (path.includes(`${sep}node_modules${sep}@deepseek-ai${sep}`) && path.includes(`${sep}src${sep}`))
+          || path.includes(`${sep}node_modules${sep}electrobun${sep}api${sep}`)
         if (/\.(?:ts|tsx|map)$/u.test(entry.name) && !productSource) offending.push(`source artifact ${path}`)
         if (entry.name.startsWith('tsconfig') || entry.name.startsWith('README.')) offending.push(`metadata ${path}`)
       }
