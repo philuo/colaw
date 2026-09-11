@@ -25,8 +25,9 @@ export default {
       bundleCEF: false,
       // App icon: the dark set — the product's resting identity in the Dock
       // and Launchpad; a light-theme preference swaps it at runtime from the
-      // copied cat5_light.icns (.iconset converted via iconutil at build).
-      icons: "cat5_dark.iconset",
+      // copied cat5_light.icns. The iconset is not tracked: pack-stable-app
+      // derives it from cat5_dark.icns with iconutil ahead of this build.
+      icons: "build/cat5-dark.iconset",
     },
     linux: {
       bundleCEF: false,

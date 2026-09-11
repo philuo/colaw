@@ -1069,6 +1069,12 @@ function ensureBuilds(): void {
     process.exit(1)
   }
   if (skipBuild) return
+  // The repo tracks only the two .icns files; the devkit's mac build wants an
+  // .iconset, so derive it from the dark icns (the bundle icon) on every full
+  // build. With --skip-build the previous derivation under build/ is reused.
+  const derivedIconset = join(repoRoot, 'apps', 'electrobun-host', 'build', 'cat5-dark.iconset')
+  rmSync(derivedIconset, { recursive: true, force: true })
+  run('/usr/bin/iconutil', ['-c', 'iconset', join(repoRoot, 'apps', 'electrobun-host', 'cat5_dark.icns'), '-o', derivedIconset], repoRoot)
   run(process.execPath, [join(repoRoot, 'node_modules', 'typescript', 'bin', 'tsc'), '-b', 'tsconfig.host.json'], repoRoot)
   run(process.execPath, [join(repoRoot, 'node_modules', 'tsdown', 'dist', 'run.mjs'), '--env.DSH_BUILD_FACE', 'host'], repoRoot)
   // Client bundles build from the client face's compiled lib, never src.
