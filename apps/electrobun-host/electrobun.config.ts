@@ -20,6 +20,7 @@ export default {
       "config/electrobun.cordis.patch.yml": "config/electrobun.cordis.patch.yml",
       "cat5_dark.icns": "cat5_dark.icns",
       "cat5_light.icns": "cat5_light.icns",
+      "tray-cat.png": "tray-cat.png",
     },
     mac: {
       bundleCEF: false,

@@ -14,7 +14,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
   Button, IconBrowseOutline16, IconCopyOutline16, IconFolderOpenOutline16,
-  IconPlusOutline16, IconTrashOutline16, Modal, Switch, Tag, Tooltip,
+  IconPlusOutline16, IconTrashOutline16, Modal, Tag, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
@@ -236,21 +236,6 @@ export function AgentPresetSection(props: AgentPresetSectionProps): ReactNode {
     <div className={css.section}>
       <h2 className={css.title}>{t('nav')}</h2>
       <p className={css.intro}>{t('sectionIntro')}</p>
-      <div className={css.pickerPreference}>
-        <div className={css.pickerPreferenceCopy}>
-          <span className={css.pickerPreferenceTitleRow}>
-            <span className={css.pickerPreferenceTitle}>{t('showPicker')}</span>
-            <Tag>{t('showPickerBeta')}</Tag>
-          </span>
-          <p className={css.pickerPreferenceDescription}>{t('showPickerDescription')}</p>
-        </div>
-        <Switch
-          checked={state.showPicker}
-          label={t('showPicker')}
-          disabled={state.status !== 'ready' || state.policySaving}
-          onChange={(next) => { void props.setPickerVisible(next) }}
-        />
-      </div>
       {state.error === null ? null : <p className={css.error} role="alert">{state.error}</p>}
       {([['system', t('builtInGroup')], ['user', t('customGroup')]] as const).map(([trust, heading]) => {
         const group = state.rows

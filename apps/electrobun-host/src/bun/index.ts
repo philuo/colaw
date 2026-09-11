@@ -421,11 +421,11 @@ async function main(): Promise<void> {
     light: resolveIcon(['../../AppIcon.icns', '../cat5_light.icns']),
     dark: resolveIcon(['../../AppIconDark.icns', '../cat5_dark.icns']),
   }
-  /** The tray sits ON the menu bar, whose chrome follows the system — the
-   * inverse of the app icon: a dark bar shows the light cat and vice versa,
-   * or the icon disappears into the bar (exactly what happened first try). */
-  const inverse = (appearance: 'light' | 'dark'): 'light' | 'dark' =>
-    appearance === 'dark' ? 'light' : 'dark'
+  /** The menu-bar tray image: the app's transparent cat head (the same PNG
+   * the sidebar renders), shipped beside the host. Template mode turns it
+   * into an alpha mask, so macOS paints it black on a light bar and white on
+   * a dark one — no background, no manual theme pairing. */
+  const trayCatPath = (): string => resolveIcon(['../tray-cat.png'])
   let iconInUse: 'light' | 'dark' | undefined
   let trayIcon: Tray | undefined
   /** Show the icon the current selection asks for; a matching one is a no-op.
@@ -439,7 +439,6 @@ async function main(): Promise<void> {
     setApplicationIcon(iconPaths[wanted])
     const bundle = ownAppBundlePath()
     if (bundle !== undefined) setBundleIcon(iconPaths[wanted], bundle)
-    trayIcon?.setImage(iconPaths[inverse(wanted)])
   }
   /** This app's .app directory, walked up from the running bundle. */
   const ownAppBundlePath = (): string | undefined => {
@@ -905,10 +904,16 @@ async function main(): Promise<void> {
     // controls re-anchor. The native window is the only authority — a maximized
     // window covers the screen but is NOT fullscreen — so push its state into the
     // page on every geometry change instead of guessing from the viewport size.
+    // Geometry events arrive at pointer cadence during a drag; pushing JS
+    // into the webview on every one of them stutters the drag loop. The
+    // fullscreen state changes rarely — push only when it actually flips.
+    let pushedFullscreen: boolean | undefined
     const syncFullscreen = (): void => {
+      const full = mainWindow.isFullScreen()
+      if (full === pushedFullscreen) return
+      pushedFullscreen = full
       const view = BrowserView.getById(mainWindow.webviewId)
       if (view === undefined) return
-      const full = mainWindow.isFullScreen()
       view.executeJavascript(
         `window.__DSH_DESKTOP_FULLSCREEN__=${full ? 'true' : 'false'};`
         + "window.dispatchEvent(new Event('dsh:desktop-fullscreen'))",
@@ -920,8 +925,7 @@ async function main(): Promise<void> {
     // The menu-bar tray: same reveal gesture as the Dock tile — a click
     // shows (and activates) the window whether it was hidden by the X or
     // just buried. The image follows the theme like every other icon.
-    // The tray uses the inverse chrome (see `inverse` beside the icon paths).
-    const tray = new Tray({ image: iconPaths[inverse(pageAppearanceFor(readAppearancePreferenceEarly()))], template: false, width: 18, height: 18 })
+    const tray = new Tray({ image: trayCatPath(), template: true, width: 18, height: 18 })
     tray.on('tray-clicked', () => {
       // show() activates as well, so a buried or hidden window comes back
       // frontmost — the same gesture as clicking the Dock tile.
