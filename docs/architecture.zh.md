@@ -48,9 +48,9 @@ Python SDK 遵循相同的应用架构。其运行时 wheel 把普通 `dsh` CLI 
 
 ## 桌面应用
 
-Electrobun 桌面应用位于 `apps/electrobun-host`，由 Hutch 本地组装，不发布到 npm。它持有保留的 `$DSH_HOME/profiles/electrobun` 项目，以 `apps/cli` 作为安装锚点启动随附的 `web` profile，并与 CLI profile 共用 `$DSH_HOME` 下受支持的产品数据。
+[Electron 桌面应用](../apps/desktop/README.zh.md)在签名应用资源中携带精确版本的 dsh 生产运行时。保留的 `$DSH_HOME/profiles/desktop` 保存外部插件和指向宿主拥有包的链接；兼容升级保留插件文件并刷新这些链接，无需安装核心依赖。CLI profile 共享 `$DSH_HOME` 下受支持的产品数据，而可执行包、插件激活、锁文件和包管理器状态保持独立。
 
-主进程是 Bun：它在**进程内**启动 dsh 组合，而不是拉起子运行时，因此桌面产物只携带一个 Bun 运行时、不含 Node.js。dsh 自带的 web server 仍在 loopback 端口上、以每次启动生成的 token 提供前端与 JSON-RPC API，原生 `BrowserWindow` 在内嵌标题栏下加载该带认证的 URL。宿主再通过 index 注入的全局变量把桌面 chrome 通告给外壳，使标题栏控件与原生红绿灯并排。
+Electron 通过内置的上游 Node.js 进程启动私有 Desktop Host 包；该包加载内置 dsh 后端、匹配的客户端图和已启用的 profile 插件。一元 RPC、Remote stream 与版本匹配的客户端资源经带版本的分帧字节管道传输，Node IPC 只保留生命周期控制，再通过安全的 `dsh-app://` 协议到达渲染进程；因此桌面组合不会开放 Web server 或 loopback 端口。只有壳自有 UI 能通过内置 pnpm 及其私有 `$DSH_HOME/desktop/pnpm/store` 执行插件事务。
 
 ## 核心包
 

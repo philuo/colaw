@@ -48,9 +48,9 @@ The Python SDK follows the same application architecture. Its runtime wheel pack
 
 ## Desktop application
 
-The Electrobun desktop application lives in `apps/electrobun-host` and is assembled locally by Hutch rather than published to npm. It owns a reserved `$DSH_HOME/profiles/electrobun` project, boots the shipped `web` profile with `apps/cli` as its install anchor, and shares the supported product data under `$DSH_HOME` that the CLI profiles read.
+The [Electron desktop application](../apps/desktop/README.md) carries its exact dsh production runtime in signed application resources. The reserved `$DSH_HOME/profiles/desktop` contains external plugins and links to host-owned packages; compatible upgrades retain plugin files and refresh these links without installing core dependencies. CLI profiles share supported product data under `$DSH_HOME`, while executable packages, plugin activation, lockfiles, and package-manager state remain separate.
 
-Bun is the main process: it boots the dsh composition in-process instead of spawning a child runtime, so a desktop build carries one Bun runtime and no Node.js. dsh's own Web server still serves the frontend and the JSON-RPC API on a loopback port behind a per-launch token, and the native `BrowserWindow` loads that authenticated URL under an inset title bar. The host announces the desktop chrome to the shell through an index-injected global, so the title-bar controls sit beside the native traffic lights.
+Electron starts the private Desktop Host package under its bundled upstream Node.js process; that package loads the bundled dsh backend and matching client graph together with enabled profile plugins. Unary RPC, Remote streams, and version-matched client assets cross versioned framed byte pipes with Node IPC reserved for lifecycle control, then reach the renderer through the secure `dsh-app://` protocol; the desktop composition opens no Web server or loopback port. Only shell-owned UI can run plugin transactions through the bundled pnpm and its private `$DSH_HOME/desktop/pnpm/store`.
 
 ## Core packages
 
