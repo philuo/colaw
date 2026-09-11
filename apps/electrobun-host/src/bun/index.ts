@@ -12,7 +12,7 @@ import { BrowserView, BrowserWindow, Tray } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
 import {
-  applicationIsActive, hideApplication, setAppearance, setApplicationIcon,
+  applicationIsActive, hideApplication, openExternalUrl, setAppearance, setApplicationIcon,
   setBundleIcon, systemIsDark, type AppearancePreference,
 } from './app-appearance.ts'
 import { spawnSync } from 'node:child_process'
@@ -964,6 +964,17 @@ async function main(): Promise<void> {
     }
     desktopCommands.set('toggle-window-zoom', toggleWindowZoom)
     electrobunEventEmitter.on('host-message', runWindowCommand)
+    // Links leave through the default browser, never this webview: the page
+    // forwards external anchor clicks over the bridge, the host keeps the
+    // http(s)-only allowlist (an http page opener is a phishing primitive).
+    electrobunEventEmitter.on('host-message', (payload: unknown) => {
+      try {
+        const message = JSON.parse(String(payload)) as { kind?: string, url?: string }
+        if (message.kind !== 'open-url' || typeof message.url !== 'string') return
+        const protocol = new URL(message.url).protocol
+        if (protocol === 'http:' || protocol === 'https:') openExternalUrl(message.url)
+      } catch { /* not ours */ }
+    })
     // Zero-invasive boot evidence: the page reports its own timeline (resource
     // totals, DOM milestones, whether the shell or the boot page owns the mount
     // point) through the same bridge the window controls use. COLAW_BOOT_PROFILE

@@ -304,3 +304,25 @@ export function hideApplication(): void {
     return undefined
   })
 }
+
+/**
+ * Hand one http(s) URL to the user's default browser — the desktop shell's
+ * only sanctioned navigation exit. Callers validate the protocol; a URL that
+ * fails to parse simply does not open.
+ * @param url - The absolute http(s) URL to open.
+ * @returns true when the workspace accepted it.
+ */
+export function openExternalUrl(url: string): boolean {
+  return attempt(false, (api) => {
+    const urlClass = api.classOf('NSURL')
+    if (urlClass === null) return false
+    const destination = api.sendObject(urlClass, api.selector('URLWithString:'), text(api, url))
+    if (destination === null) return false
+    const workspaceClass = api.classOf('NSWorkspace')
+    if (workspaceClass === null) return false
+    const workspace = api.send(workspaceClass, api.selector('sharedWorkspace'))
+    if (workspace === null) return false
+    api.sendObjectVoid(workspace, api.selector('openURL:'), destination)
+    return true
+  })
+}

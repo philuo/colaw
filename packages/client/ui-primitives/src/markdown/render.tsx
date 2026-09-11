@@ -17,7 +17,7 @@
  */
 
 import { Fragment, createElement, useState } from 'react'
-import type { Key, ReactNode } from 'react'
+import type { Key, MouseEvent, ReactNode } from 'react'
 import clsx from 'clsx'
 import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
@@ -530,11 +530,31 @@ function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = t
   const safeHref = sanitizeUrl(href)
   if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
   const external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
+  // In the desktop shell an external link must leave through the host to the
+  // default browser (the webview never navigates away); in a plain browser
+  // the default target=_blank behaviour stands. Right-click copies the URL
+  // itself — the text stays selectable for the ordinary copy path.
+  const desktop = (globalThis as { __electrobunSendToHost?: (message: string) => void }).__electrobunSendToHost
+  const onClick = external && desktop !== undefined
+    ? (event: MouseEvent) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        desktop(JSON.stringify({ kind: 'open-url', url: safeHref }))
+      }
+    : undefined
+  const onContextMenu = external
+    ? (event: MouseEvent) => {
+        event.preventDefault()
+        void navigator.clipboard?.writeText(safeHref)
+      }
+    : undefined
   return (
     <a
       key={key}
       href={safeHref}
       {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
+      {...(onClick !== undefined ? { onClick } : {})}
+      {...(onContextMenu !== undefined ? { onContextMenu } : {})}
     >
       {glyph && <LinkIcon kind="url" className={css.linkIcon} />}
       {children}
