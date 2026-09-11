@@ -17,8 +17,31 @@
 import type { ReactNode } from 'react'
 import clsx from 'clsx'
 import { ReferenceIcon } from './ReferenceIcon.tsx'
+import { copyExternal, openExternal } from './external-link.ts'
 import css from './user-text.module.css'
 import markdownCss from './markdown/MarkdownText.module.css'
+
+/** A bare http(s) URL in sent text — clickable, VSCode-style, like every other surface. */
+const URL_RE = /https?:\/\/[^\s<>"')\]]+/gu
+
+/** Render one URL anchor: opens externally, right-click copies. */
+function ExternalUrlAnchor({ url }: { url: string }): ReactNode {
+  return (
+    <a
+      href={url}
+      className={markdownCss.link}
+      onClick={(event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        openExternal(url)
+      }}
+      onContextMenu={(event) => {
+        event.preventDefault()
+        copyExternal(url)
+      }}
+    >{url}</a>
+  )
+}
 
 /** The wire form a session chip serializes to; label is the display text. */
 const SESSION_WIRE_RE = /@\[([^\]\n]+)\]\(dsh-session:[^)\s]+\)/gu
@@ -31,7 +54,7 @@ interface DecorationRange {
   readonly end: number
   /** Matched source text (hover title). */
   readonly label: string
-  readonly kind: 'session' | 'plain'
+  readonly kind: 'session' | 'plain' | 'url'
   /** Pre-resolved display text (wire folds); derived from label when absent. */
   readonly display?: string
 }
@@ -82,6 +105,15 @@ export function projectUserText(
       start = text.indexOf(label, start + label.length)
     }
   }
+  URL_RE.lastIndex = 0
+  let urlMatch: RegExpExecArray | null
+  while ((urlMatch = URL_RE.exec(text)) !== null) {
+    // URLs shed sentence punctuation like @tokens do, so "see https://x.y." keeps its period plain.
+    const raw = urlMatch[0]
+    const trimmed = raw.replace(TRAILING_PUNCTUATION_RE, '')
+    if (trimmed.length === 0) continue
+    ranges.push({ start: urlMatch.index, end: urlMatch.index + trimmed.length, label: trimmed, kind: 'url' })
+  }
   // A `/` token ends at whitespace or the text end like the host skill
   // gesture; only `@` tokens shed sentence punctuation below.
   const re = /(^|\s)(\/[\w-]+(?=\s|$)|@"[^"\n]+"|@[^\s]+)/gu
@@ -96,7 +128,7 @@ export function projectUserText(
     if (label.startsWith('/') && !slashNames.includes(label.slice(1))) continue
     ranges.push({ start: tokenStart, end: tokenStart + label.length, label, kind: 'plain' })
   }
-  const rankOf = (range: DecorationRange): number => range.kind === 'session' ? 0 : 1
+  const rankOf = (range: DecorationRange): number => range.kind === 'session' ? 0 : range.kind === 'url' ? 1 : 2
   ranges.sort((a, b) => a.start - b.start || rankOf(a) - rankOf(b) || b.end - a.end)
   const parts: ReactNode[] = []
   let cursor = 0
@@ -107,6 +139,11 @@ export function projectUserText(
     if (range.start < cursor) continue
     const { start: tokenStart, end, label, kind } = range
     if (tokenStart > cursor) pushPlain(cursor, tokenStart)
+    if (kind === 'url') {
+      parts.push(<ExternalUrlAnchor key={`u${tokenStart}`} url={label} />)
+      cursor = end
+      continue
+    }
     const referenceKind = kind === 'session'
       ? 'session'
       : label.startsWith('@')

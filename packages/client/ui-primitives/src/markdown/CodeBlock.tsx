@@ -2,6 +2,8 @@ import { Fragment, useCallback, useMemo, useRef, useState, useSyncExternalStore 
 import type { CSSProperties, ReactNode, Ref } from 'react'
 import clsx from 'clsx'
 import { writeClipboard } from '../clipboard.ts'
+import { copyExternal, openExternal } from '../external-link.ts'
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import {
   StreamingHighlightSession, grammarLoadCount, highlightToHtml, subscribeGrammarLoaded,
 } from './highlight.ts'
@@ -59,6 +61,35 @@ function renderLine(line: readonly HighlightSpan[], index: number): ReactNode {
       </span>
     </Fragment>
   )
+}
+
+/** URL tokens a code surface recognizes — kept conservative (http/https only). */
+const CODE_URL_RE = /https?:\/\/[^\s<>"')\]]+/gu
+
+/** Split one plain-text code line into text runs and external anchors. */
+function linkifyCodeText(line: string): ReactNode {
+  const parts: ReactNode[] = []
+  let cursor = 0
+  CODE_URL_RE.lastIndex = 0
+  for (let match = CODE_URL_RE.exec(line); match !== null; match = CODE_URL_RE.exec(line)) {
+    const url = match[0].replace(/[.,;:!?]+$/u, '')
+    if (url === '') continue
+    if (match.index > cursor) parts.push(line.slice(cursor, match.index))
+    parts.push(<a key={match.index} data-ext-link href={url}>{url}</a>)
+    cursor = match.index + url.length
+  }
+  if (parts.length === 0) return line
+  parts.push(line.slice(cursor))
+  return parts
+}
+
+/** Wrap URL text inside shiki's span HTML with inert anchors (delegation activates them). */
+function linkifyCodeHtml(html: string): string {
+  return html.replace(/(https?:\/\/[^\s<>"')\]]+)/gu, (url) => {
+    const trimmed = url.replace(/[.,;:!?]+$/u, '')
+    if (trimmed === '') return url
+    return `<a data-ext-link href="${trimmed}">${url}</a>`
+  })
 }
 
 export function CodeBlock({ code, lang, streaming, className, contentRef, lineNumbers = false, copyLabel, copiedLabel }: CodeBlockProps) {
@@ -146,6 +177,23 @@ export function CodeBlock({ code, lang, streaming, className, contentRef, lineNu
   )
   const [copied, setCopied] = useState(false)
 
+  // VSCode-style: URLs stay plain-looking code but open on click (anywhere in
+  // a block: highlighted HTML got real anchors, plain text got React ones) —
+  // one delegated listener on the block root covers both shapes.
+  const onBlockClick = useCallback((event: ReactMouseEvent<HTMLElement>): void => {
+    const anchor = (event.target as HTMLElement | null)?.closest?.('a[data-ext-link]')
+    if (anchor === null || anchor === undefined) return
+    event.preventDefault()
+    openExternal((anchor as HTMLAnchorElement).href)
+  }, [])
+
+  const onBlockContextMenu = useCallback((event: ReactMouseEvent<HTMLElement>): void => {
+    const anchor = (event.target as HTMLElement | null)?.closest?.('a[data-ext-link]')
+    if (anchor === null || anchor === undefined) return
+    event.preventDefault()
+    copyExternal((anchor as HTMLAnchorElement).href)
+  }, [])
+
   const onCopy = useCallback(() => {
     if (copied) return
     /* v8 ignore next -- both arms always mount a <pre>; trimmed is the
@@ -165,17 +213,19 @@ export function CodeBlock({ code, lang, streaming, className, contentRef, lineNu
     ? streamedBody
     : html === undefined
       ? (
-        <pre className={css.plain}><code>{sourceLines === undefined ? trimmed : sourceLines.map((line, index) => (
-          <Fragment key={index}>{index > 0 && '\n'}<span className="line">{line}</span></Fragment>
+        <pre className={css.plain}><code>{sourceLines === undefined ? linkifyCodeText(trimmed) : sourceLines.map((line, index) => (
+          <Fragment key={index}>{index > 0 && '\n'}<span className="line">{linkifyCodeText(line)}</span></Fragment>
         ))}</code></pre>
       )
       : (
-        <div dangerouslySetInnerHTML={{ __html: html }} />
+        <div dangerouslySetInnerHTML={{ __html: linkifyCodeHtml(html) }} />
       )
 
   return (
     <div ref={rootRef} className={clsx(css.block, 'md-code-block', lineNumbers && css.numbered, className)}
       data-line-numbers={lineNumbers || undefined}
+      onClick={onBlockClick}
+      onContextMenu={onBlockContextMenu}
       style={sourceLines === undefined ? undefined : {
         '--dsl-code-block-line-number-width': `${Math.max(2, String(sourceLines.length).length)}ch`,
       } as CSSProperties}>

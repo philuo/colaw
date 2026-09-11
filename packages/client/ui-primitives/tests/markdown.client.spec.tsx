@@ -123,12 +123,14 @@ describe('MarkdownText', () => {
     const { container } = render(<MarkdownText text={source} />)
 
     const links = screen.getAllByRole('link')
-    expect(links.map(link => link.getAttribute('href'))).toEqual([localUrl, remoteUrl])
+    // The fenced URL is a link too now (VSCode-style openable code), so the
+    // fence contributes the third anchor; inline promotion rules are unchanged.
+    expect(links.map(link => link.getAttribute('href'))).toEqual([localUrl, remoteUrl, localUrl])
     for (const link of links) {
       expect(link.closest('code')).not.toBeNull()
-      expect(link.getAttribute('target')).toBe('_blank')
-      expect(link.getAttribute('rel')).toBe('noopener noreferrer')
     }
+    expect(links[0]?.getAttribute('target')).toBe('_blank')
+    expect(links[0]?.getAttribute('rel')).toBe('noopener noreferrer')
     links[0]?.focus()
     expect(document.activeElement).toBe(links[0])
     expect(screen.getByText('curl http://127.0.0.1:3199/?demo=1').closest('a')).toBeNull()
@@ -137,7 +139,8 @@ describe('MarkdownText', () => {
     const paddedCode = [...container.querySelectorAll('code')]
       .find(code => code.textContent === ` ${localUrl} `)
     expect(paddedCode?.querySelector('a')).toBeNull()
-    expect(container.querySelector('pre code a')).toBeNull()
+    // The fence's URL anchor is the sanctioned code-block link surface.
+    expect(container.querySelector('pre code a')?.getAttribute('href')).toBe(localUrl)
   })
 
   it('links inline code through the file-mention resolver: URL first, settled only, never inside links', () => {

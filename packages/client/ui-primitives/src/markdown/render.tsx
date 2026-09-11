@@ -22,6 +22,7 @@ import clsx from 'clsx'
 import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
+import { copyExternal, openExternal } from '../external-link.ts'
 import { CodeBlock } from './CodeBlock.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
@@ -534,18 +535,17 @@ function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = t
   // default browser (the webview never navigates away); in a plain browser
   // the default target=_blank behaviour stands. Right-click copies the URL
   // itself — the text stays selectable for the ordinary copy path.
-  const desktop = (globalThis as { __electrobunSendToHost?: (message: string) => void }).__electrobunSendToHost
-  const onClick = external && desktop !== undefined
+  const onClick = external && (globalThis as { __electrobunSendToHost?: unknown }).__electrobunSendToHost !== undefined
     ? (event: MouseEvent) => {
         if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
         event.preventDefault()
-        desktop(JSON.stringify({ kind: 'open-url', url: safeHref }))
+        openExternal(safeHref)
       }
     : undefined
   const onContextMenu = external
     ? (event: MouseEvent) => {
         event.preventDefault()
-        void navigator.clipboard?.writeText(safeHref)
+        copyExternal(safeHref)
       }
     : undefined
   return (
