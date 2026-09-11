@@ -560,19 +560,26 @@ async function main(): Promise<void> {
     // A tick later, outside the close event's teardown: creating inside the
     // event itself lands in a half-torn-down window world and the window
     // never reaches the screen. The keepalive window holds the process open
-    // across the gap.
+    // across the gap. The reveal starts disarmed — the app is still active
+    // from the click that closed the window.
     setTimeout(() => {
       windowHidden = true
       openWindowOnUrl(lastAppUrl, true)
     }, 100)
   })
-  // State-based, not edge-based: the close event can arrive out of order
-  // with the activation that should reveal the reborn window (observed:
-  // reborn logging after the activate), so any tick that sees the app active
-  // with a hidden window shows it — whatever the ordering was.
+  // The reveal is armed by deactivation: right after the X the app is still
+  // active (the click happened inside it), so an active-and-hidden check
+  // would unhide the reborn window immediately — the close would visibly
+  // reload a new window instead of hiding. Only a tick that has seen the app
+  // inactive at least once after the hide may show it again, which also
+  // covers the close event arriving after the deactivation.
+  let revealArmed = false
   setInterval(() => {
-    if (applicationIsActive() && windowHidden) {
+    const active = applicationIsActive()
+    if (!active) revealArmed = true
+    if (revealArmed && active && windowHidden) {
       windowHidden = false
+      revealArmed = false
       mainWindow?.show()
     }
   }, 300)
