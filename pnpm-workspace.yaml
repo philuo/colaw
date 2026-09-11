@@ -39,8 +39,6 @@ peerDependencyRules:
 allowBuilds:
   esbuild: true
   lefthook: true
-  # Cross-platform boundary for the persistent PTY backend, including ConPTY on Windows.
-  node-pty: true
   # Pulled in by @earendil-works/pi-ai (optional LLM API backend). pnpm lists
   # them only because they ship lifecycle scripts, but those are no-ops we don't
   # need, so we deny them — install still succeeds.
@@ -48,10 +46,9 @@ allowBuilds:
   protobufjs: false
   node-addon-require-builtin: false
   # JSONL durability calls MoveFileExW with write-through publication on Windows.
+  # koffi also serves the macOS native directory picker; only the JSONL
+  # durability call below is Windows-shaped.
   koffi: true
-  # The Python runtime deploy includes the reviewed workspace postinstall that
-  # restores the executable bit on node-pty's macOS spawn helper.
-  '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
   # Store-index rewriting only needs msgpackr's portable JavaScript codec.
   msgpackr-extract: false
 
@@ -83,7 +80,7 @@ minimumReleaseAgeExclude:
   # All platform aliases resolve to the @openai/codex package name, so their
   # reviewed exact versions must share one version-union policy entry.
   - '@openai/codex@0.153.4||0.153.4-darwin-arm64||0.153.4-darwin-x64||0.153.4-linux-arm64||0.153.4-linux-x64||0.153.4-win32-arm64||0.153.4-win32-x64'
+  - electrobun@2.0.2-beta.17
 
 patchedDependencies:
   '@yao-pkg/pkg@6.21.0': patches/@yao-pkg__pkg@6.21.0.patch
-  node-pty@1.2.0-beta.15: patches/node-pty@1.2.0-beta.15.patch

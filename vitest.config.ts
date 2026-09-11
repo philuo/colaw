@@ -79,7 +79,6 @@ const windowsUnsupportedCoveragePackages = process.platform === 'win32'
 // per-file 100% gate must not fail on their Linux-uncovered paths.
 const windowsOnlyCoverageExclusions = process.platform !== 'win32'
   ? [
-      'packages/sandbox/sandbox-windows-acl/src/**/*.ts',
       // The koffi-backed Win32 table (Toolhelp32/GetProcessTimes/taskkill)
       // executes only on win32; its decision logic is unit-pinned on every
       // host through the injected-internals suites.
@@ -94,7 +93,6 @@ const windowsOnlyCoverageExclusions = process.platform !== 'win32'
 // tests/runner.spec.ts, which spawns the real entry through tsx.
 const windowsRunnerCoverageExclusions = process.platform === 'win32'
   ? [
-      'packages/sandbox/sandbox-windows-acl/src/runner.ts',
       // The session write lock's POSIX face (fs-ext flock plus inode
       // verification) executes only off-Windows: the Linux lanes hold its
       // per-file 100%, while the Windows branch is unit-pinned by
