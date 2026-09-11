@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context, Service } from '@deepseek-ai/cordis'
-import { access, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import LlmRuntime, { createUserMessage, INVALID_CREDENTIAL_CODE } from '@deepseek-ai/dsh-llm'
@@ -156,18 +157,17 @@ describe('request-level dynamic configuration', () => {
   })
 
   it('starts keyless and serves the next request once the key arrives', async () => {
-    vi.stubEnv('DEEPSEEK_API_KEY', '')
     const dir = await home()
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx } = await boot(dir, { baseURL: server.url })
 
     const keyless = await prompt(ctx)
     expect(keyless.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
-    await expect(access(join(dir, '.anonymous-user-id'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(existsSync(join(dir, '.anonymous-user-id'))).toBe(false)
     await ctx.credentials.set(KEY_REF, 'sk-arrived')
     await prompt(ctx)
     expect(server.headers[0]?.authorization).toBe('Bearer sk-arrived')
-    await expect(access(join(dir, '.anonymous-user-id'))).resolves.toBeUndefined()
+    expect(existsSync(join(dir, '.anonymous-user-id'))).toBe(true)
   })
 
   it('rejects a stored credential no header can carry, never echoing it in the failure', async () => {

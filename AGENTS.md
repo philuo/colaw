@@ -1,5 +1,7 @@
 # AGENTS.md
 
+**Runtime rule (mandatory).** This fork runs on Bun. Use `bun` / `bunx` for everything — installing, downloading, running tests, builds, scripts, and one-off binaries. Never invoke `node`, `npx`, `npm exec`, or `pnpm exec <bin>` as the runtime. A Node-tool CLI is still launched as `bunx <tool>` (or `bun run <script>`), never `npx <tool>`. Running the suite under Node produces false failures (`Bun is not defined`, missing DOM globals) and makes the result worthless: when a failure looks environment-shaped, first confirm the command actually ran under Bun.
+
 DeepSeek Harness is an all-plugin Cordis agent harness. Read [docs/architecture.md](docs/architecture.md) before changing `packages/`; follow [docs/AGENTS.md](docs/AGENTS.md) for documentation.
 
 ## Pre-stable APIs and released Session data
