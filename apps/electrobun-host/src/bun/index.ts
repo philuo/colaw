@@ -552,15 +552,18 @@ async function main(): Promise<void> {
       if (bootProfile) {
         // The vendored Cordis mangles its plugin event name, so the profiler
         // polls the loader's entry table instead: every tick records each
-        // plugin's first observed active state, which attributes a slow boot
-        // to the plugins that arrived late.
-        const seen = new Set<string>()
+        // plugin's state transitions (not just first sight — the tree mounts
+        // as one unit, so the interesting signal is which plugins flip to
+        // active late). The poller runs through the deferred stage-two mount
+        // and is stopped when that tree finishes.
+        const seen = new Map<string, string>()
         const poll = setInterval(() => {
           for (const entry of hostCtx.loader?.entries() ?? []) {
             const name = entry.options.name
-            if (seen.has(name)) continue
-            seen.add(name)
-            console.log(`[profile] ${bootMs()} ${name} state=${String(entry.fiber?.state)}`)
+            const state = String(entry.fiber?.state)
+            if (seen.get(name) === state) continue
+            seen.set(name, state)
+            console.log(`[profile] ${bootMs()} ${name} state=${state}`)
           }
         }, 10)
         bootProfileStop = () => clearInterval(poll)
@@ -568,8 +571,6 @@ async function main(): Promise<void> {
     },
   )
   current = ctx
-  bootProfileStop?.()
-  bootProfileStop = undefined
   if (bootProfile) console.log(`[profile] ${bootMs()} boot() returned`)
 
   // Verify required services (the early loader cleared the interval when it
@@ -598,6 +599,8 @@ async function main(): Promise<void> {
       })
       await ctx.loader.await()
       console.log(`[electrobun-host] ${bootMs()} full plugin tree mounted`)
+      bootProfileStop?.()
+      bootProfileStop = undefined
     } catch (error) {
       console.error(`[electrobun-host] deferred tree mount failed: ${String(error)}`)
     }
