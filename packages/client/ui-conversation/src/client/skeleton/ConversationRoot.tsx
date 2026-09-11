@@ -316,12 +316,14 @@ export function ConversationRoot({
     </div>
   )
 
-  // The placeholder chip ("Choose workspace") and the Workspace-trigger input travel
-  // together: no workspace picked yet (cold start, no session at all), or a
-  // blank session whose workspace vanished (deleted from the sidebar). The
-  // bar is ONE session-maybe slot rendered unconditionally — inert is a prop,
-  // not a different tree, so the textarea DOM survives the transition.
-  const inert = sessionId === undefined || (hero && chipTitle === undefined)
+  // The placeholder chip ("Choose workspace") and the Workspace-trigger input
+  // travel together on the true cold start: no session at all. A session that
+  // EXISTS is editable whatever it is bound to — workspace-less chat is a
+  // first-class mode ("start without a workspace" in the picker), and a blank
+  // session whose workspace vanished simply keeps chatting unbound. The bar is
+  // ONE session-maybe slot rendered unconditionally — inert is a prop, not a
+  // different tree, so the textarea DOM survives the transition.
+  const inert = sessionId === undefined
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
   // when both hold — picking a workspace is the earlier prerequisite.
