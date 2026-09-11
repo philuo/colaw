@@ -512,8 +512,8 @@ importers:
         specifier: workspace:*
         version: link:../web
       electrobun:
-        specifier: 2.0.2-beta.17
-        version: 2.0.2-beta.17
+        specifier: 2.0.2-beta.19
+        version: 2.0.2-beta.19
     devDependencies:
       '@types/bun':
         specifier: latest
@@ -14905,8 +14905,8 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
-  electrobun@2.0.2-beta.17:
-    resolution: {integrity: sha512-bb0kY74lvK2PA3HQ0sC6ZPcZA9bypY+KKrAIDIwK2nV3caM7+CxYStMEDDLk3VX6wBoDPFl0GHA/dG2wB4TD/g==}
+  electrobun@2.0.2-beta.19:
+    resolution: {integrity: sha512-xSVyFN/MMNOPxiPNroTSc1mwwZDrVXkKU2dg+WvQrTeX1FyOb44/3xV5hBwlkdHXy3dlaB//0haT5kL+t77r9w==}
     engines: {node: '>=18'}
     hasBin: true
 
@@ -20632,7 +20632,7 @@ snapshots:
 
   ee-first@1.1.1: {}
 
-  electrobun@2.0.2-beta.17: {}
+  electrobun@2.0.2-beta.19: {}
 
   electron-to-chromium@1.5.393: {}
 
