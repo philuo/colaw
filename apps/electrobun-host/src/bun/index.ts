@@ -12,7 +12,7 @@ import { BrowserView, BrowserWindow } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
 import {
-  applicationIsActive, retargetCloseButtonToHide, setAppearance, setApplicationIcon,
+  applicationIsActive, hideApplication, setAppearance, setApplicationIcon,
   setBundleIcon, systemIsDark, type AppearancePreference,
 } from './app-appearance.ts'
 import { spawnSync } from 'node:child_process'
@@ -508,15 +508,17 @@ async function main(): Promise<void> {
     wireMainWindow()
     attachFrameTracking()
     ensureKeepAliveWindow()
-    retargetCloseToHide()
-  }
-
-  // The NSWindow appears asynchronously after BrowserWindow construction, so
-  // the retarget retries until it lands; once it does, the X hides the window
-  // and this whole fallback path goes quiet.
-  const retargetCloseToHide = (tries = 0): void => {
-    if (retargetCloseButtonToHide('Colaw')) return
-    if (tries < 40) setTimeout(() => { retargetCloseToHide(tries + 1) }, 150)
+    // The Electron-pattern close: Electrobun 2.0's will-close event is
+    // AppKit's windowShouldClose: veto point — answering allow:false skips
+    // the core's closeWindow entirely, so the X leaves the window (and every
+    // task in it) alive behind a hide. The app-level hide rides along because
+    // macOS pairs it natively with the Dock-click/Cmd+Tab unhide.
+    mainWindow.on('will-close', (event: { response?: { allow: boolean } }) => {
+      event.response = { allow: false }
+      console.log('[electrobun-host] will-close: hiding the live window')
+      mainWindow.hide()
+      hideApplication()
+    })
   }
 
   // The core quits the process when its last window closes, which races (and
@@ -587,9 +589,9 @@ async function main(): Promise<void> {
     }
     if (!revealArmed) return
     revealArmed = false
-    // The common path: the X hid a live window — show it back, instantly,
-    // nothing reloaded. The fallback path: a real close slipped through
-    // before the retarget landed — recreate at the remembered URL.
+    // Fallback: a real close slipped through (a path the veto did not cover)
+    // — recreate at the remembered URL. Otherwise the X hid a live window
+    // and the unhide may need the nudge on apps macOS did not pair.
     if (windowGone) {
       windowGone = false
       if (lastAppUrl !== undefined) openWindowOnUrl(lastAppUrl)

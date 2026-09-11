@@ -260,10 +260,11 @@ export function setBundleIcon(iconPath: string, bundlePath: string): boolean {
  * alive, the Dock keeps the running dot, and the next activation shows it
  * again instantly. The standard AppKit route: the close button is a plain
  * NSButton whose target/action default to performClose:; repointing them at
- * the window and orderOut: turns the X into a hide with no close event, no
- * teardown, and nothing to race. (orderOut: is the real NSWindow method —
- * performHide: does not exist, and the button grays itself out when its
- * target fails to respond to the action.)
+ * NSApp and hide: — the app-level hide behind Cmd+H. That choice matters:
+ * window-level hiding (orderOut:) leaves the reveal to us, and when macOS
+ * keeps the app active after the hide, a later Dock click produces no
+ * activation edge to catch — the window would strand. An app-level hide is
+ * paired by macOS itself with the Dock-click unhide, natively and always.
  * @param title - The window's title, to find it among the app's windows.
  * @returns true once the button has been repointed.
  */
@@ -283,10 +284,23 @@ export function retargetCloseButtonToHide(title: string): boolean {
       // NSWindowCloseButton is the first standard button (tag 0).
       const button = api.sendObject(window, api.selector('standardWindowButton:'), 0 as never)
       if (button === null) return false
-      api.sendObjectVoid(button, api.selector('setTarget:'), window)
-      api.sendObjectVoid(button, api.selector('setAction:'), api.selector('orderOut:'))
+      api.sendObjectVoid(button, api.selector('setTarget:'), app)
+      api.sendObjectVoid(button, api.selector('setAction:'), api.selector('hide:'))
       return true
     }
     return false
+  })
+}
+
+/**
+ * Hide the whole application (the Cmd+H path). Paired by macOS itself with
+ * the Dock-click and Cmd+Tab unhide, which is why the window-level hide goes
+ * through this too: the native pairing makes both reveal gestures reliable
+ * without any event the app has to catch.
+ */
+export function hideApplication(): void {
+  attempt(undefined, (api, app) => {
+    api.sendObjectVoid(app, api.selector('hide:'), null)
+    return undefined
   })
 }
