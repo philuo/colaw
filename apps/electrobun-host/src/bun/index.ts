@@ -308,33 +308,6 @@ function readAppearancePreferenceEarly(): AppearancePreference {
   return 'system'
 }
 
-/**
- * The splash painted while the core boots. The window opens in well under a
- * second; the plugin tree takes several more, and the authenticated URL only
- * exists once the webserver is up — until then this page is all the user
- * sees, so it matches the resolved theme exactly (no white flash in dark
- * mode) and stays framework-free.
- * @param scheme - The color scheme the saved preference resolves to.
- * @returns A complete HTML document for the loading window.
- */
-function splashDocument(scheme: 'light' | 'dark'): string {
-  const dark = scheme === 'dark'
-  const background = dark ? '#191a1b' : '#fafbfb'
-  const foreground = dark ? '#e8eaed' : '#2f3233'
-  const dim = dark ? '#9aa1a6' : '#8a9094'
-  const track = dark ? '#2e3032' : '#e4e7e8'
-  return `<!doctype html><html><head><meta charset="utf-8"><style>
-html,body{margin:0;height:100%;background:${background}}
-body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
-font:15px -apple-system,"SF Pro Text",system-ui,sans-serif;color:${foreground};
--webkit-user-select:none;cursor:default}
-.wordmark{font-size:22px;font-weight:650;letter-spacing:.4px}
-.spinner{width:22px;height:22px;border-radius:50%;border:2.5px solid ${track};
-border-top-color:${dim};animation:spin 1s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
-</style></head><body><div class="wordmark">Colaw</div><div class="spinner"></div></body></html>`
-}
-
 // Boot phases and (with COLAW_BOOT_PROFILE=1) every plugin mount land in the
 // log with elapsed milliseconds, so a slow boot can be attributed on a real
 // packaged run instead of being one opaque 9-second block.
@@ -389,27 +362,32 @@ async function main(): Promise<void> {
   setAppearance(earlyAppearance)
   followAppearance(earlyAppearance)
 
-  // The window opens now, on a themed splash, instead of waiting out the
-  // whole core boot for a first frame. hiddenInset keeps the transparent
-  // title bar with inset native traffic lights, so web content owns the full
-  // window height (the sidebar runs to the top; the y offset centres the
-  // lights on the shell's 42px unified top bar). The frame is where the user
-  // left it — passing x/y at all is what pins the window instead of letting
-  // the system choose a spot.
-  const rememberedFrame = readWindowFrame(windowStatePath) ?? DEFAULT_WINDOW_FRAME
-  const mainWindow = new BrowserWindow({
-    title: 'Colaw',
-    url: null,
-    html: splashDocument(pageAppearanceFor(earlyAppearance)),
-    titleBarStyle: 'hiddenInset',
-    trafficLightOffset: { x: 6, y: 7 },
-    frame: {
-      x: rememberedFrame.x,
-      y: rememberedFrame.y,
-      width: rememberedFrame.width,
-      height: rememberedFrame.height,
-    },
-  })
+  // The window is created only when the authenticated URL exists (~1s: the
+  // deferred tree settles first, so the client manifest the index serves is
+  // complete). No intermediate splash page: the app's own COLAW HARNESS boot
+  // page is the one and only loading page, and it paints with the appearance
+  // pinned above. hiddenInset keeps the transparent title bar with inset
+  // native traffic lights, so web content owns the full window height (the
+  // sidebar runs to the top; the y offset centres the lights on the shell's
+  // 42px unified top bar). The frame is where the user left it — passing x/y
+  // at all is what pins the window instead of letting the system choose.
+  let mainWindow!: BrowserWindow
+  const openWindowOnUrl = (url: string): void => {
+    const rememberedFrame = readWindowFrame(windowStatePath) ?? DEFAULT_WINDOW_FRAME
+    mainWindow = new BrowserWindow({
+      title: 'Colaw',
+      url,
+      titleBarStyle: 'hiddenInset',
+      trafficLightOffset: { x: 6, y: 7 },
+      frame: {
+        x: rememberedFrame.x,
+        y: rememberedFrame.y,
+        width: rememberedFrame.width,
+        height: rememberedFrame.height,
+      },
+    })
+    wireMainWindow()
+  }
   console.log('[electrobun-host] Window opened on splash; booting dsh core (web profile)...')
   // The Dock tile can re-take the bundle icon while LaunchServices finishes
   // registering the launched app — seconds after the pin above, the Dock
@@ -534,12 +512,7 @@ async function main(): Promise<void> {
     }
     frontendLoaded = true
     clearInterval(earlyUrlWatch)
-    const view = BrowserView.getById(mainWindow.webviewId)
-    if (view === undefined) {
-      console.error('[electrobun-host] splash window lost its webview before the frontend could load')
-      return
-    }
-    view.loadURL(url)
+    openWindowOnUrl(url)
     console.log(`[electrobun-host] ${bootMs()} frontend loading into the open window: ${url}`)
   }
   const earlyUrlWatch = setInterval(loadFrontendIntoWindow, 5)
@@ -654,135 +627,140 @@ async function main(): Promise<void> {
     }
   })()
 
-  console.log(`[electrobun-host] Window frame: ${JSON.stringify(mainWindow.getFrame())}`)
-  console.log(`[electrobun-host] Window state file: ${windowStatePath}`)
+  // Everything below wires the window and its commands; it runs the moment
+  // the window is created with the URL (see openWindowOnUrl).
+  const wireMainWindow = (): void => {
+    console.log(`[electrobun-host] Window frame: ${JSON.stringify(mainWindow.getFrame())}`)
+    console.log(`[electrobun-host] Window state file: ${windowStatePath}`)
 
-  // A menu command reaches the shell as a window event: the key equivalent is
-  // answered by the native menu, so the panel itself never sees the keydown.
-  const dispatchCommand = (command: string): void => {
-    const view = BrowserView.getById(mainWindow.webviewId)
-    if (view === undefined) return
-    view.executeJavascript(
-      `window.dispatchEvent(new CustomEvent(${JSON.stringify(DESKTOP_COMMAND_EVENT)},`
-      + ` { detail: { command: ${JSON.stringify(command)} } }))`,
-    )
-  }
-  onApplicationMenuClicked(dispatchCommand)
-
-  // The icon keeps following the selection for as long as the app runs — the
-  // Dock shows it, and the two ways it moves are a settings write from the UI
-  // and, while following the system, macOS switching under us. Only the first
-  // announces itself, so a slow tick re-reads the selection and shows whatever
-  // it now asks for; the settings event is kept only so a toggle does not have to
-  // wait for the tick. (The app-level appearance itself is not re-applied here —
-  // see the note where it is set before the window.)
-  //
-  // The page's color scheme follows the same tick: the webview's media query
-  // stays pinned to the launch appearance, so the host pushes the resolved
-  // scheme into the page (the index-injected global covers the first paint;
-  // this push covers every change after it — a settings write or macOS
-  // switching under a `system` preference).
-  const NATIVE_CHROME_POLL_MS = 2000
-  let appliedPreferences: ShellPreferences | undefined
-  let pushedAppearance: 'light' | 'dark' | undefined
-  const syncNativeChrome = (): void => {
-    const next = readShellPreferences(ctx)
-    if (appliedPreferences?.locale !== next.locale) installApplicationMenu(next.locale)
-    appliedPreferences = next
-    followAppearance(next.appearance)
-    const pageAppearance = pageAppearanceFor(next.appearance)
-    if (pageAppearance === pushedAppearance) return
-    pushedAppearance = pageAppearance
-    const view = BrowserView.getById(mainWindow.webviewId)
-    if (view === undefined) return
-    view.executeJavascript(
-      `window.__DSH_DESKTOP_APPEARANCE__=${JSON.stringify(pageAppearance)};`
-      + "window.dispatchEvent(new Event('dsh:desktop-appearance'))",
-    )
-  }
-  syncNativeChrome()
-  const nativeChromeWatch = setInterval(syncNativeChrome, NATIVE_CHROME_POLL_MS)
-  ctx.on('settings/updated', syncNativeChrome)
-
-  // macOS fullscreen hides the traffic lights, so the shell's title-bar
-  // controls re-anchor. The native window is the only authority — a maximized
-  // window covers the screen but is NOT fullscreen — so push its state into the
-  // page on every geometry change instead of guessing from the viewport size.
-  const syncFullscreen = (): void => {
-    const view = BrowserView.getById(mainWindow.webviewId)
-    if (view === undefined) return
-    const full = mainWindow.isFullScreen()
-    view.executeJavascript(
-      `window.__DSH_DESKTOP_FULLSCREEN__=${full ? 'true' : 'false'};`
-      + "window.dispatchEvent(new Event('dsh:desktop-fullscreen'))",
-    )
-  }
-  mainWindow.on('resize', syncFullscreen)
-  mainWindow.on('move', syncFullscreen)
-
-  // Zoom — the green button's behaviour, and what macOS itself runs on a
-  // title-bar double-click — is what the shell's own double-click toggles.
-  // Full screen stays on the menu's ⌃⌘F (the native `toggleFullScreen` role), so
-  // the two states never have to share one gesture. The transition reports
-  // intermediate frames, so the frame writer is held off until it settles.
-  const ZOOM_SETTLE_MS = 400
-  let geometryTransition = false
-  const toggleWindowZoom = (): void => {
-    geometryTransition = true
-    if (mainWindow.isMaximized()) mainWindow.unmaximize()
-    else mainWindow.maximize()
-    setTimeout(() => {
-      geometryTransition = false
-      syncFullscreen()
-    }, ZOOM_SETTLE_MS)
-  }
-  desktopCommands.set('toggle-window-zoom', toggleWindowZoom)
-  electrobunEventEmitter.on('host-message', runWindowCommand)
-  // Zero-invasive boot evidence: the page reports its own timeline (resource
-  // totals, DOM milestones, whether the shell or the boot page owns the mount
-  // point) through the same bridge the window controls use. COLAW_BOOT_PROFILE
-  // schedules the polls; the numbers land in the host log beside the phases.
-  if (bootProfile) {
-    const probeListener = (payload: unknown): void => {
-      try {
-        const message = JSON.parse(String(payload)) as { kind?: string }
-        if (message.kind === 'colaw-probe') console.log(`[profile] ${bootMs()} webview ${JSON.stringify(message)}`)
-      } catch { /* not ours */ }
+    // A menu command reaches the shell as a window event: the key equivalent is
+    // answered by the native menu, so the panel itself never sees the keydown.
+    const dispatchCommand = (command: string): void => {
+      const view = BrowserView.getById(mainWindow.webviewId)
+      if (view === undefined) return
+      view.executeJavascript(
+        `window.dispatchEvent(new CustomEvent(${JSON.stringify(DESKTOP_COMMAND_EVENT)},`
+        + ` { detail: { command: ${JSON.stringify(command)} } }))`,
+      )
     }
-    electrobunEventEmitter.on('host-message', probeListener)
-    const probe = '(() => {try{const n=performance.getEntriesByType("navigation")[0];const r=performance.getEntriesByType("resource");let t=0,mt=0,mf="";const f404=[];for(const e of r){t+=e.duration;if(e.duration>mt){mt=e.duration;mf=e.name}if(e.responseStatus===404&&f404.length<3)f404.push(e.name.slice(0,90))}const b=document.querySelector("[data-dsh-boot]");__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",dcl:Math.round(n?.domContentLoadedEventEnd??-1),res:r.length,resMs:Math.round(t),worstMs:Math.round(mt),worst:mf.slice(0,80),page:b?"boot":"shell",bootText:(b?.textContent??"").slice(0,160),nf404:r.filter(e=>e.responseStatus===404).length,e404:f404,t:Math.round(performance.now())}))}catch(e){__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",err:String(e)}))}})()'
-    for (const at of [600, 1500, 3000, 6000]) {
+    onApplicationMenuClicked(dispatchCommand)
+
+    // The icon keeps following the selection for as long as the app runs — the
+    // Dock shows it, and the two ways it moves are a settings write from the UI
+    // and, while following the system, macOS switching under us. Only the first
+    // announces itself, so a slow tick re-reads the selection and shows whatever
+    // it now asks for; the settings event is kept only so a toggle does not have to
+    // wait for the tick. (The app-level appearance itself is not re-applied here —
+    // see the note where it is set before the window.)
+    //
+    // The page's color scheme follows the same tick: the webview's media query
+    // stays pinned to the launch appearance, so the host pushes the resolved
+    // scheme into the page (the index-injected global covers the first paint;
+    // this push covers every change after it — a settings write or macOS
+    // switching under a `system` preference).
+    const NATIVE_CHROME_POLL_MS = 2000
+    let appliedPreferences: ShellPreferences | undefined
+    let pushedAppearance: 'light' | 'dark' | undefined
+    const syncNativeChrome = (): void => {
+      const next = readShellPreferences(ctx)
+      if (appliedPreferences?.locale !== next.locale) installApplicationMenu(next.locale)
+      appliedPreferences = next
+      followAppearance(next.appearance)
+      const pageAppearance = pageAppearanceFor(next.appearance)
+      if (pageAppearance === pushedAppearance) return
+      pushedAppearance = pageAppearance
+      const view = BrowserView.getById(mainWindow.webviewId)
+      if (view === undefined) return
+      view.executeJavascript(
+        `window.__DSH_DESKTOP_APPEARANCE__=${JSON.stringify(pageAppearance)};`
+        + "window.dispatchEvent(new Event('dsh:desktop-appearance'))",
+      )
+    }
+    syncNativeChrome()
+    const nativeChromeWatch = setInterval(syncNativeChrome, NATIVE_CHROME_POLL_MS)
+    ctx.on('settings/updated', syncNativeChrome)
+
+    // macOS fullscreen hides the traffic lights, so the shell's title-bar
+    // controls re-anchor. The native window is the only authority — a maximized
+    // window covers the screen but is NOT fullscreen — so push its state into the
+    // page on every geometry change instead of guessing from the viewport size.
+    const syncFullscreen = (): void => {
+      const view = BrowserView.getById(mainWindow.webviewId)
+      if (view === undefined) return
+      const full = mainWindow.isFullScreen()
+      view.executeJavascript(
+        `window.__DSH_DESKTOP_FULLSCREEN__=${full ? 'true' : 'false'};`
+        + "window.dispatchEvent(new Event('dsh:desktop-fullscreen'))",
+      )
+    }
+    mainWindow.on('resize', syncFullscreen)
+    mainWindow.on('move', syncFullscreen)
+
+    // Zoom — the green button's behaviour, and what macOS itself runs on a
+    // title-bar double-click — is what the shell's own double-click toggles.
+    // Full screen stays on the menu's ⌃⌘F (the native `toggleFullScreen` role), so
+    // the two states never have to share one gesture. The transition reports
+    // intermediate frames, so the frame writer is held off until it settles.
+    const ZOOM_SETTLE_MS = 400
+    let geometryTransition = false
+    const toggleWindowZoom = (): void => {
+      geometryTransition = true
+      if (mainWindow.isMaximized()) mainWindow.unmaximize()
+      else mainWindow.maximize()
       setTimeout(() => {
-        const view = BrowserView.getById(mainWindow.webviewId)
-        view?.executeJavascript(probe)
-      }, at)
+        geometryTransition = false
+        syncFullscreen()
+      }, ZOOM_SETTLE_MS)
     }
-  }
+    desktopCommands.set('toggle-window-zoom', toggleWindowZoom)
+    electrobunEventEmitter.on('host-message', runWindowCommand)
+    // Zero-invasive boot evidence: the page reports its own timeline (resource
+    // totals, DOM milestones, whether the shell or the boot page owns the mount
+    // point) through the same bridge the window controls use. COLAW_BOOT_PROFILE
+    // schedules the polls; the numbers land in the host log beside the phases.
+    if (bootProfile) {
+      const probeListener = (payload: unknown): void => {
+        try {
+          const message = JSON.parse(String(payload)) as { kind?: string }
+          if (message.kind === 'colaw-probe') console.log(`[profile] ${bootMs()} webview ${JSON.stringify(message)}`)
+        } catch { /* not ours */ }
+      }
+      electrobunEventEmitter.on('host-message', probeListener)
+      const probe = '(() => {try{const n=performance.getEntriesByType("navigation")[0];const r=performance.getEntriesByType("resource");let t=0,mt=0,mf="";const f404=[];for(const e of r){t+=e.duration;if(e.duration>mt){mt=e.duration;mf=e.name}if(e.responseStatus===404&&f404.length<3)f404.push(e.name.slice(0,90))}const b=document.querySelector("[data-dsh-boot]");__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",dcl:Math.round(n?.domContentLoadedEventEnd??-1),res:r.length,resMs:Math.round(t),worstMs:Math.round(mt),worst:mf.slice(0,80),page:b?"boot":"shell",bootText:(b?.textContent??"").slice(0,160),nf404:r.filter(e=>e.responseStatus===404).length,e404:f404,t:Math.round(performance.now())}))}catch(e){__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",err:String(e)}))}})()'
+      for (const at of [600, 1500, 3000, 6000]) {
+        setTimeout(() => {
+          const view = BrowserView.getById(mainWindow.webviewId)
+          view?.executeJavascript(probe)
+        }, at)
+      }
+    }
 
-  // Remember the frame the user settles on: a drag moves it, an edge drag sizes
-  // it, and the next launch opens where they left it. Writes are coalesced —
-  // a drag emits at pointer cadence. A zoomed or fullscreen window reports the
-  // screen's frame, which is never the size to restore the user to; the zoom
-  // transition reports intermediate frames besides. So what is kept is the last
-  // frame that was neither, which also means quitting while zoomed still
-  // restores the size the user was working at.
-  let settledFrame = mainWindow.getFrame()
-  const frameIsSettled = (): boolean =>
-    !geometryTransition && !mainWindow.isFullScreen() && !mainWindow.isMaximized()
-  let frameWriteTimer: ReturnType<typeof setTimeout> | undefined
-  const flushWindowFrame = (): void => {
-    clearTimeout(frameWriteTimer)
-    frameWriteTimer = undefined
-    writeWindowFrame(windowStatePath, settledFrame)
+    // Remember the frame the user settles on: a drag moves it, an edge drag sizes
+    // it, and the next launch opens where they left it. Writes are coalesced —
+    // a drag emits at pointer cadence. A zoomed or fullscreen window reports the
+    // screen's frame, which is never the size to restore the user to; the zoom
+    // transition reports intermediate frames besides. So what is kept is the last
+    // frame that was neither, which also means quitting while zoomed still
+    // restores the size the user was working at.
+    let settledFrame = mainWindow.getFrame()
+    const frameIsSettled = (): boolean =>
+      !geometryTransition && !mainWindow.isFullScreen() && !mainWindow.isMaximized()
+    let frameWriteTimer: ReturnType<typeof setTimeout> | undefined
+    const flushWindowFrame = (): void => {
+      clearTimeout(frameWriteTimer)
+      frameWriteTimer = undefined
+      writeWindowFrame(windowStatePath, settledFrame)
+    }
+    const rememberWindowFrame = (): void => {
+      if (!frameIsSettled()) return
+      settledFrame = mainWindow.getFrame()
+      clearTimeout(frameWriteTimer)
+      frameWriteTimer = setTimeout(flushWindowFrame, WINDOW_STATE_WRITE_MS)
+    }
+    mainWindow.on('resize', rememberWindowFrame)
+    mainWindow.on('move', rememberWindowFrame)
+
   }
-  const rememberWindowFrame = (): void => {
-    if (!frameIsSettled()) return
-    settledFrame = mainWindow.getFrame()
-    clearTimeout(frameWriteTimer)
-    frameWriteTimer = setTimeout(flushWindowFrame, WINDOW_STATE_WRITE_MS)
-  }
-  mainWindow.on('resize', rememberWindowFrame)
-  mainWindow.on('move', rememberWindowFrame)
 
   // Graceful shutdown
   const shutdown = async (): Promise<void> => {
