@@ -17,8 +17,9 @@ type SyncResult = { exitCode: number | null; stdout: Uint8Array }
 const sh = (cmd: string, args: string[]): SyncResult =>
   (globalThis as unknown as { Bun: { spawnSync: (c: string[], o?: object) => SyncResult } }).Bun
     .spawnSync([cmd, ...args], { stdout: 'pipe', stderr: 'inherit' })
-const Bun_spawn_ignore = (cmd: string, args: string[]): void =>
+const Bun_spawn_ignore = (cmd: string, args: string[]): void => {
   (globalThis as unknown as { Bun: { spawnSync: (c: string[], o?: object) => unknown } }).Bun.spawnSync([cmd, ...args])
+}
 const spawn = (cmd: string, args: string[]): void => {
   const r = sh(cmd, args)
   if (r.exitCode !== 0 && cmd !== '/usr/bin/hdiutil') { console.error(`${cmd} exited ${String(r.exitCode)}`); process.exit(1) }

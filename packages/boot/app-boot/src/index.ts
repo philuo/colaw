@@ -851,6 +851,30 @@ export const HARNESS_SOURCE_SECTION = 'harness:source'
  * @param sourceRoot - the absolute path to the harness checkout root.
  * @returns the section disposer, or `undefined` when no `systemPrompt` service is mounted.
  */
+/**
+ * Add a global prompt section steering the model toward the app's bundled
+ * Bun for script execution. Guidance, not a straitjacket: `bun` on PATH is
+ * the packaged runtime, `bun -e` covers quick inline scripts, `node`/`npx`
+ * must not be assumed to exist — but an explicit user request to use their
+ * own runtime wins.
+ * @param ctx - the settled boot context whose global system prompt to augment.
+ * @returns the section disposer, or `undefined` when no `systemPrompt` service is mounted.
+ */
+export function addRuntimeSection(ctx: Context): (() => void) | undefined {
+  const systemPrompt = ctx.get('systemPrompt')
+  if (systemPrompt === undefined) return undefined
+  return systemPrompt.section({
+    name: 'colaw:runtime',
+    order: systemPrompt.getSectionOrder('HARNESS_SOURCE') + 1,
+    text: [
+      'Script execution runtime: `bun` on PATH is the Bun runtime bundled with Colaw — prefer it for running scripts and one-off commands.',
+      'For quick inline JavaScript/TypeScript use `bun -e \'<code>\'` (no temp files, no install step).',
+      '`node`, `npx`, `npm` and global `python` tooling may not exist on the user\'s machine; do not assume them, and never tell the user to install a runtime — Colaw already ships one.',
+      'This is a default, not a ban: if the user explicitly asks to use their own node/bun/python, follow them.',
+    ].join(' '),
+  })
+}
+
 export function addHarnessSourceSection(ctx: Context, sourceRoot: string): (() => void) | undefined {
   const systemPrompt = ctx.get('systemPrompt')
   if (systemPrompt === undefined) return undefined
