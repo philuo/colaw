@@ -411,6 +411,17 @@ async function main(): Promise<void> {
     },
   })
   console.log('[electrobun-host] Window opened on splash; booting dsh core (web profile)...')
+  // The Dock tile can re-take the bundle icon while LaunchServices finishes
+  // registering the launched app — seconds after the pin above, the Dock
+  // reverts to the bundle's dark icon even though the window already follows
+  // the preference. Re-assert across that window; clearing iconInUse keeps
+  // the same-icon short-circuit from swallowing the re-assert.
+  for (const delay of [400, 1000, 1800, 2800]) {
+    setTimeout(() => {
+      iconInUse = undefined
+      followAppearance(readAppearancePreferenceEarly())
+    }, delay)
+  }
   // The splash is on screen: the profile-directory work the window never
   // needed runs now instead of ahead of it.
   migrateLegacyDshHome()
@@ -483,8 +494,16 @@ async function main(): Promise<void> {
     return [...kept].sort((a, b) => (rank.get(String(a.id)) ?? SPINE_ORDER.length) - (rank.get(String(b.id)) ?? SPINE_ORDER.length))
   }
   writeFileSync(rootConfig, `${JSON.stringify(ofStage('spine'))}\n`)
-  const restConfig = join(projectDir, 'rest.cordis.json')
-  writeFileSync(restConfig, `${JSON.stringify(ofStage('rest'))}\n`)
+  // The deferred entries mount in small interleaved groups (see the stage-two
+  // block below); session-family entries lead so the mounted shell's first
+  // data RPCs meet ready services.
+  const restRank = (id: string): number => /session|storage|settings/.test(id) ? 0 : 1
+  const restChunks: Record<string, unknown>[][] = []
+  for (const [index, entry] of ofStage('rest')
+    .sort((a, b) => restRank(String(a.id)) - restRank(String(b.id))).entries()) {
+    const chunkIndex = Math.floor(index / 8)
+    ;(restChunks[chunkIndex] ??= []).push(entry)
+  }
 
   // The frontend does not wait for the whole plugin tree: the webserver and
   // the auth service come up early in it, and the web index is itself a
@@ -588,15 +607,25 @@ async function main(): Promise<void> {
   // missed them (or a future ordering where they mount last).
   loadFrontendIntoWindow()
 
-  // Stage two: mount the rest of the tree in the background. The window has
-  // the URL already; every deferred plugin lands as it initializes and the
-  // client refreshes the surfaces it fills in.
+  // Stage two: mount the rest of the tree in the background, in small groups
+  // with a macrotask yield between them. One whole-tree include evaluates as
+  // a single multi-second synchronous block that saturates the main thread —
+  // the same thread that serves the webserver's /plugins bundle routes, which
+  // the still-booting client starves on (the boot page then sits frozen until
+  // the whole activation finishes). Small groups keep the loop breathing
+  // while the tree mounts; the window has the URL already, and every
+  // deferred plugin lands as it initializes.
   void (async () => {
     try {
-      await ctx.loader.create({
-        name: 'cordis:include',
-        config: { path: pathToFileURL(restConfig).href },
-      })
+      for (const [index, chunk] of restChunks.entries()) {
+        const chunkConfig = join(projectDir, `rest-${String(index)}.cordis.json`)
+        writeFileSync(chunkConfig, `${JSON.stringify(chunk)}\n`)
+        await ctx.loader.create({
+          name: 'cordis:include',
+          config: { path: pathToFileURL(chunkConfig).href },
+        })
+        await new Promise(resolve => setTimeout(resolve, 0))
+      }
       await ctx.loader.await()
       console.log(`[electrobun-host] ${bootMs()} full plugin tree mounted`)
       bootProfileStop?.()
