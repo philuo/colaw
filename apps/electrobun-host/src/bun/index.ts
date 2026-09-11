@@ -425,7 +425,7 @@ async function main(): Promise<void> {
    * the sidebar renders), shipped beside the host. Template mode turns it
    * into an alpha mask, so macOS paints it black on a light bar and white on
    * a dark one — no background, no manual theme pairing. */
-  const trayCatPath = (): string => resolveIcon(['../tray-cat.png'])
+  const trayCatPath = (): string => resolveIcon(['../views/tray-cat.png'])
   let iconInUse: 'light' | 'dark' | undefined
   let trayIcon: Tray | undefined
   /** Show the icon the current selection asks for; a matching one is a no-op.
@@ -925,13 +925,20 @@ async function main(): Promise<void> {
     // The menu-bar tray: same reveal gesture as the Dock tile — a click
     // shows (and activates) the window whether it was hidden by the X or
     // just buried. The image follows the theme like every other icon.
-    const tray = new Tray({ image: trayCatPath(), template: true, width: 18, height: 18 })
+    // width/height are not optional here: without them the native side sizes
+    // the status item to the image's intrinsic pixels (this PNG is 528x512)
+    // and macOS parks a too-tall item off-screen — an invisible tray with a
+    // healthy id. 18pt fits the menu bar.
+    const tray = new Tray({ image: 'views://tray-cat.png', template: true, width: 18, height: 18 })
+    // One button, no menu: a raw activation arrives as tray-clicked (the
+    // docs' macOS shape — an empty action), and show() both reveals and
+    // activates, so a buried or hidden window comes back frontmost — the
+    // Dock-tile gesture.
     tray.on('tray-clicked', () => {
-      // show() activates as well, so a buried or hidden window comes back
-      // frontmost — the same gesture as clicking the Dock tile.
       mainWindow.show()
     })
     trayIcon = tray
+    if (bootProfile) console.log(`[profile] tray created id=${String(tray.id)} bounds=${JSON.stringify(tray.getBounds())}`)
 
     // Zoom — the green button's behaviour, and what macOS itself runs on a
     // title-bar double-click — is what the shell's own double-click toggles.
