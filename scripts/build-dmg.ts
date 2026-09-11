@@ -78,13 +78,13 @@ spawn('/usr/bin/osascript', ['-e', `tell application "Finder"
     set current view of container window to icon view
     set toolbar visible of container window to false
     set statusbar visible of container window to false
-    set bounds of container window to {300, 300, 760, 660}
+    set bounds of container window to {300, 300, 760, 645}
     set viewOptions to icon view options of container window
     set arrangement of viewOptions to not arranged
-    set icon size of viewOptions to 96
+    set icon size of viewOptions to 54
     set background picture of viewOptions to (POSIX file "/Volumes/${name}/.background/bg.png")
-    set position of item "Colaw.app" to {135, 190}
-    set position of item "Applications" to {330, 190}
+    set position of item "Colaw.app" to {70, 187}
+    set position of item "Applications" to {312, 187}
     close
     open
   end tell
