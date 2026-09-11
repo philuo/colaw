@@ -43,6 +43,10 @@ interface Bindings {
   sendText: (receiver: Pointer | null, selector: Pointer, text: string) => Pointer | null
   sendObject: (receiver: Pointer | null, selector: Pointer, argument: Pointer | null) => Pointer | null
   sendObjectVoid: (receiver: Pointer | null, selector: Pointer, argument: Pointer | null) => void
+  sendTwoObjectsVoid: (
+    receiver: Pointer | null, selector: Pointer,
+    first: Pointer | null, second: Pointer | null,
+  ) => void
   textOf: (receiver: Pointer | null, selector: Pointer) => string | null
 }
 
@@ -78,6 +82,9 @@ function open(): Bindings | undefined {
     const textResult = dlopen(OBJC, {
       objc_msgSend: { args: [FFIType.ptr, FFIType.ptr], returns: FFIType.cstring },
     })
+    const twoObjectsVoid = dlopen(OBJC, {
+      objc_msgSend: { args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr], returns: FFIType.void },
+    })
     bindings = {
       classOf: name => core.symbols.objc_getClass(name),
       selector: name => core.symbols.sel_registerName(name),
@@ -85,6 +92,7 @@ function open(): Bindings | undefined {
       sendText: oneText.symbols.objc_msgSend as Bindings['sendText'],
       sendObject: oneObject.symbols.objc_msgSend as Bindings['sendObject'],
       sendObjectVoid: oneObjectVoid.symbols.objc_msgSend as Bindings['sendObjectVoid'],
+      sendTwoObjectsVoid: twoObjectsVoid.symbols.objc_msgSend as Bindings['sendTwoObjectsVoid'],
       textOf: textResult.symbols.objc_msgSend as Bindings['textOf'],
     }
   } catch (error) {
@@ -213,4 +221,35 @@ export function applicationIsActive(): boolean {
   const result = api.send(app, api.selector('isActive'))
   // A BOOL returns its register widened; a null pointer reads as false.
   return result !== null && Number(result) !== 0
+}
+
+/**
+ * The Finder/Launchpad/at-rest-Dock icon: `NSWorkspace setIcon:forFile:`
+ * writes the image into the bundle's resource-fork extended attribute, which
+ * every file-facing surface prefers over the CFBundleIconFile — without
+ * touching the bundle contents (the code signature stays sealed). The custom
+ * icon is lost when the bundle is replaced (an update, a rebuild) and is
+ * re-applied by the next launch's followAppearance.
+ * @param iconPath - The themed icns to pin.
+ * @param bundlePath - This app's own .app directory.
+ * @returns true when the workspace accepted the icon.
+ */
+export function setBundleIcon(iconPath: string, bundlePath: string): boolean {
+  return attempt(false, (api) => {
+    const imageClass = api.classOf('NSImage')
+    if (imageClass === null) return false
+    const allocated = api.send(imageClass, api.selector('alloc'))
+    if (allocated === null) return false
+    const image = api.sendObject(allocated, api.selector('initWithContentsOfFile:'), text(api, iconPath))
+    if (image === null) return false
+    const workspaceClass = api.classOf('NSWorkspace')
+    if (workspaceClass === null) return false
+    const workspace = api.send(workspaceClass, api.selector('sharedWorkspace'))
+    if (workspace === null) return false
+    const file = text(api, bundlePath)
+    if (file === null) return false
+    // options:0 reads as a null pointer — zero is the no-options value.
+    api.sendTwoObjectsVoid(workspace, api.selector('setIcon:forFile:options:'), image, file)
+    return true
+  })
 }

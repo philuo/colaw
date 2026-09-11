@@ -12,7 +12,8 @@ import { BrowserView, BrowserWindow } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
 import {
-  applicationIsActive, setAppearance, setApplicationIcon, systemIsDark, type AppearancePreference,
+  applicationIsActive, setAppearance, setApplicationIcon, setBundleIcon, systemIsDark,
+  type AppearancePreference,
 } from './app-appearance.ts'
 import { spawnSync } from 'node:child_process'
 
@@ -421,12 +422,28 @@ async function main(): Promise<void> {
     dark: resolveIcon(['../../AppIconDark.icns', '../cat5_dark.icns']),
   }
   let iconInUse: 'light' | 'dark' | undefined
-  /** Show the icon the current selection asks for; a matching one is a no-op. */
+  /** Show the icon the current selection asks for; a matching one is a no-op.
+   * Both surfaces update: the Dock's runtime tile, and — through the
+   * workspace's custom-icon attribute — Finder, Launchpad, and the Dock's
+   * at-rest tile, which persist across quits until the bundle is replaced. */
   const followAppearance = (appearance: AppearancePreference): void => {
     const wanted = pageAppearanceFor(appearance)
     if (wanted === iconInUse) return
     iconInUse = wanted
     setApplicationIcon(iconPaths[wanted])
+    const bundle = ownAppBundlePath()
+    if (bundle !== undefined) setBundleIcon(iconPaths[wanted], bundle)
+  }
+  /** This app's .app directory, walked up from the running bundle. */
+  const ownAppBundlePath = (): string | undefined => {
+    try {
+      let dir = dirname(fileURLToPath(bundleUrl()))
+      while (dir !== dirname(dir)) {
+        if (dir.endsWith('.app')) return dir
+        dir = dirname(dir)
+      }
+    } catch { /* outside a bundle: the Dock-only switch remains */ }
+    return undefined
   }
 
   // Pin the native chrome in the process's first instants. The app-level
