@@ -421,6 +421,11 @@ async function main(): Promise<void> {
     light: resolveIcon(['../../AppIcon.icns', '../cat5_light.icns']),
     dark: resolveIcon(['../../AppIconDark.icns', '../cat5_dark.icns']),
   }
+  /** The tray sits ON the menu bar, whose chrome follows the system — the
+   * inverse of the app icon: a dark bar shows the light cat and vice versa,
+   * or the icon disappears into the bar (exactly what happened first try). */
+  const inverse = (appearance: 'light' | 'dark'): 'light' | 'dark' =>
+    appearance === 'dark' ? 'light' : 'dark'
   let iconInUse: 'light' | 'dark' | undefined
   let trayIcon: Tray | undefined
   /** Show the icon the current selection asks for; a matching one is a no-op.
@@ -915,10 +920,7 @@ async function main(): Promise<void> {
     // The menu-bar tray: same reveal gesture as the Dock tile — a click
     // shows (and activates) the window whether it was hidden by the X or
     // just buried. The image follows the theme like every other icon.
-    // The tray sits ON the menu bar, whose chrome follows the system — the
-    // inverse of the app icon: a dark bar shows the light cat and vice versa,
-    // or the icon disappears into the bar (exactly what happened first try).
-    const inverse = (appearance: 'light' | 'dark'): 'light' | 'dark' => appearance === 'dark' ? 'light' : 'dark'
+    // The tray uses the inverse chrome (see `inverse` beside the icon paths).
     const tray = new Tray({ image: iconPaths[inverse(pageAppearanceFor(readAppearancePreferenceEarly()))], template: false, width: 18, height: 18 })
     tray.on('tray-clicked', () => {
       // show() activates as well, so a buried or hidden window comes back
