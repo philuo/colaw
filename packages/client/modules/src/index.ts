@@ -500,6 +500,8 @@ export class ClientModuleRegistry extends Service {
   /** One prior graph generation covers a request racing the HMR recomposition that replaced its URL. */
   private previousBatchResponses = new Map<string, { body: Buffer; contentType: string }>()
   private flushQueued = false
+  /** While true, arriving entries accumulate in {@link dirty} without recomposing. */
+  private compositionSuspended = false
   private composed: WebBootGraph
 
   /**
@@ -515,7 +517,7 @@ export class ClientModuleRegistry extends Service {
       const entryName = fiber.entry?.options.name
       if (entryName === undefined) return
       this.dirty.add(entryName)
-      if (this.flushQueued) return
+      if (this.flushQueued || this.compositionSuspended) return
       this.flushQueued = true
       queueMicrotask(() => {
         this.flushQueued = false
@@ -947,6 +949,26 @@ export class ClientModuleRegistry extends Service {
       ...(snapshot.sourceMap === undefined ? {} : { sourceMap: snapshot.sourceMap }),
     })
     return true
+  }
+
+  /**
+   * Defer recomposition while a bulk mount runs (the desktop host mounts its
+   * deferred plugin tree in the background). Every arriving entry otherwise
+   * pays a full graph recompose — re-concatenating every client bundle and
+   * its identity source map — which costs ~200ms per arriving plugin and adds
+   * seconds of CPU that no request ever consumes: the boot page fetched its
+   * generation's batches long before. The served generation stays the last
+   * composed one; resuming recomposes the accumulated dirty set once.
+   * @param suspended - true to defer composition, false to flush the backlog.
+   */
+  suspendComposition(suspended: boolean): void {
+    this.compositionSuspended = suspended
+    if (suspended || this.dirty.size === 0 || this.flushQueued) return
+    this.flushQueued = true
+    queueMicrotask(() => {
+      this.flushQueued = false
+      this.flush((err) => { this.ctx.logger.warn(err) })
+    })
   }
 
   private flush(onError: (err: Error) => void): void {

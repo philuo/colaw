@@ -501,7 +501,7 @@ async function main(): Promise<void> {
   const restChunks: Record<string, unknown>[][] = []
   for (const [index, entry] of ofStage('rest')
     .sort((a, b) => restRank(String(a.id)) - restRank(String(b.id))).entries()) {
-    const chunkIndex = Math.floor(index / 8)
+    const chunkIndex = Math.floor(index / 1)
     ;(restChunks[chunkIndex] ??= []).push(entry)
   }
 
@@ -569,23 +569,16 @@ async function main(): Promise<void> {
         })
       })
       if (bootProfile) {
-        // The vendored Cordis mangles its plugin event name, so the profiler
-        // polls the loader's entry table instead: every tick records each
-        // plugin's state transitions (not just first sight — the tree mounts
-        // as one unit, so the interesting signal is which plugins flip to
-        // active late). The poller runs through the deferred stage-two mount
-        // and is stopped when that tree finishes.
-        const seen = new Map<string, string>()
-        const poll = setInterval(() => {
-          for (const entry of hostCtx.loader?.entries() ?? []) {
-            const name = entry.options.name
-            const state = String(entry.fiber?.state)
-            if (seen.get(name) === state) continue
-            seen.set(name, state)
-            console.log(`[profile] ${bootMs()} ${name} state=${state}`)
-          }
-        }, 10)
-        bootProfileStop = () => clearInterval(poll)
+        // Event-driven per-plugin attribution: the vendored Cordis fires
+        // `internal/status` whenever a fiber changes state — synchronously
+        // inside the activation block, where a poller only ever sees the
+        // post-state. The deltas between consecutive events attribute the
+        // synchronous CPU of a slow boot to the plugins that sit between them.
+        hostCtx.on('internal/status', (fiber: { entry?: { options: { name: string } }; state: number }) => {
+          const entry = fiber.entry
+          if (entry === undefined) return
+          console.log(`[profile] ${bootMs()} status ${entry.options.name} → ${String(fiber.state)}`)
+        })
       }
     },
   )
@@ -617,16 +610,34 @@ async function main(): Promise<void> {
   // deferred plugin lands as it initializes.
   void (async () => {
     try {
+      // Each arriving plugin would otherwise recompose the whole client-bundle
+      // graph (~200ms of concatenation and identity source maps per plugin —
+      // seconds across this tree). Suspend composition for the bulk mount and
+      // let one recompose land when the tree settles.
+      // Cordis exposes services as inject-declared proxy properties — a bare
+      // root context has none — so a tiny inline plugin borrows the accessor.
+      let composition: { suspendComposition?: (suspended: boolean) => void } | undefined
+      await ctx.plugin({
+        inject: ['clientModules'],
+        apply: (moduleCtx: { clientModules?: { suspendComposition?: (suspended: boolean) => void } }) => {
+          composition = moduleCtx.clientModules
+        },
+      })
+      if (bootProfile) console.log(`[profile] ${bootMs()} composition suspension available=${String(composition?.suspendComposition !== undefined)}`)
+      composition?.suspendComposition?.(true)
       for (const [index, chunk] of restChunks.entries()) {
         const chunkConfig = join(projectDir, `rest-${String(index)}.cordis.json`)
         writeFileSync(chunkConfig, `${JSON.stringify(chunk)}\n`)
+        const chunkT0 = Date.now()
         await ctx.loader.create({
           name: 'cordis:include',
           config: { path: pathToFileURL(chunkConfig).href },
         })
+        if (bootProfile) console.log(`[profile] ${bootMs()} entry ${String(chunk[0]?.id)} create=${String(Date.now() - chunkT0)}ms`)
         await new Promise(resolve => setTimeout(resolve, 0))
       }
       await ctx.loader.await()
+      composition?.suspendComposition?.(false)
       console.log(`[electrobun-host] ${bootMs()} full plugin tree mounted`)
       bootProfileStop?.()
       bootProfileStop = undefined
@@ -719,6 +730,26 @@ async function main(): Promise<void> {
   }
   desktopCommands.set('toggle-window-zoom', toggleWindowZoom)
   electrobunEventEmitter.on('host-message', runWindowCommand)
+  // Zero-invasive boot evidence: the page reports its own timeline (resource
+  // totals, DOM milestones, whether the shell or the boot page owns the mount
+  // point) through the same bridge the window controls use. COLAW_BOOT_PROFILE
+  // schedules the polls; the numbers land in the host log beside the phases.
+  if (bootProfile) {
+    const probeListener = (payload: unknown): void => {
+      try {
+        const message = JSON.parse(String(payload)) as { kind?: string }
+        if (message.kind === 'colaw-probe') console.log(`[profile] ${bootMs()} webview ${JSON.stringify(message)}`)
+      } catch { /* not ours */ }
+    }
+    electrobunEventEmitter.on('host-message', probeListener)
+    const probe = '(() => {try{const n=performance.getEntriesByType("navigation")[0];const r=performance.getEntriesByType("resource");let t=0,mt=0,mf="";for(const e of r){t+=e.duration;if(e.duration>mt){mt=e.duration;mf=e.name}}__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",dcl:Math.round(n?.domContentLoadedEventEnd??-1),load:Math.round(n?.loadEventEnd??-1),res:r.length,resMs:Math.round(t),worstMs:Math.round(mt),worst:mf.slice(0,80),page:document.querySelector("[data-dsh-boot]")?"boot":"shell",t:Math.round(performance.now())}))}catch(e){__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",err:String(e)}))}})()'
+    for (const at of [600, 1500, 3000, 6000]) {
+      setTimeout(() => {
+        const view = BrowserView.getById(mainWindow.webviewId)
+        view?.executeJavascript(probe)
+      }, at)
+    }
+  }
 
   // Remember the frame the user settles on: a drag moves it, an edge drag sizes
   // it, and the next launch opens where they left it. Writes are coalesced —
