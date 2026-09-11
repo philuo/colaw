@@ -17,11 +17,12 @@ import {
 import { dshHomePath, migrateLegacyDshHome } from '@deepseek-ai/dsh-home-paths'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
+  composeEntries,
   healProfilesModuleFallback,
   loadLayeredEnv,
   loadProfile,
@@ -282,6 +283,60 @@ interface DesktopInjectionRow {
 }
 
 /**
+ * Read the appearance preference from the settings document on disk, without
+ * the settings service (which does not exist until the core boots).
+ *
+ * The Dock icon and the app appearance are process-visible from the first
+ * runloop ticks — seconds before the plugin tree finishes loading — so the
+ * early answer comes straight from `$DSH_HOME/settings.yaml`: the `ui-theme`
+ * block's `preference` field, the same value {@link readShellPreferences}
+ * reads through the service later. A missing file or section is a first run
+ * and simply follows the system.
+ * @returns The appearance selection as last saved, or `system`.
+ */
+function readAppearancePreferenceEarly(): AppearancePreference {
+  try {
+    const document = readFileSync(dshHomePath('settings.yaml'), 'utf8')
+    const section = document.split(/^ui-theme:\s*$/mu)[1]
+    if (section !== undefined) {
+      const block = section.split(/^\S/mu)[0] ?? ''
+      const found = /(light|dark|system)\b/u.exec(block)
+      if (found !== null) return found[1] as AppearancePreference
+    }
+  } catch {
+    // No settings document yet: a first run follows the system.
+  }
+  return 'system'
+}
+
+/**
+ * The splash painted while the core boots. The window opens in well under a
+ * second; the plugin tree takes several more, and the authenticated URL only
+ * exists once the webserver is up — until then this page is all the user
+ * sees, so it matches the resolved theme exactly (no white flash in dark
+ * mode) and stays framework-free.
+ * @param scheme - The color scheme the saved preference resolves to.
+ * @returns A complete HTML document for the loading window.
+ */
+function splashDocument(scheme: 'light' | 'dark'): string {
+  const dark = scheme === 'dark'
+  const background = dark ? '#191a1b' : '#fafbfb'
+  const foreground = dark ? '#e8eaed' : '#2f3233'
+  const dim = dark ? '#9aa1a6' : '#8a9094'
+  const track = dark ? '#2e3032' : '#e4e7e8'
+  return `<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;background:${background}}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;
+font:15px -apple-system,"SF Pro Text",system-ui,sans-serif;color:${foreground};
+-webkit-user-select:none;cursor:default}
+.wordmark{font-size:22px;font-weight:650;letter-spacing:.4px}
+.spinner{width:22px;height:22px;border-radius:50%;border:2.5px solid ${track};
+border-top-color:${dim};animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+</style></head><body><div class="wordmark">Colaw</div><div class="spinner"></div></body></html>`
+}
+
+/**
  * Boot dsh core and open the Electrobun window.
  */
 async function main(): Promise<void> {
@@ -292,7 +347,64 @@ async function main(): Promise<void> {
   const rootConfig = join(projectDir, ROOT_CONFIG_FILENAME)
   writeFileSync(rootConfig, ROOT_CONFIG)
 
-  console.log('[electrobun-host] Booting dsh core (web profile)...')
+  /** The color scheme the page should paint: an explicit selection is itself,
+   * `system` is what macOS is set to right now — read from the system
+   * preference, not from this app's pinned effective appearance. */
+  const pageAppearanceFor = (appearance: AppearancePreference): 'light' | 'dark' =>
+    appearance === 'system' ? (systemIsDark() ? 'dark' : 'light') : appearance
+
+  /** The icon for a preference follows the same resolution as the page
+   * appearance: the Dock shows what the current selection asks for. The light
+   * variant ships as its own file — the bundle's own icon is the dark one, so
+   * a dark-preference quit leaves the Dock (and Launchpad) consistent too. */
+  const iconPaths: Record<'light' | 'dark', string> = {
+    light: fileURLToPath(new URL('../cat5_light.icns', import.meta.url)),
+    dark: fileURLToPath(new URL('../cat5_dark.icns', import.meta.url)),
+  }
+  let iconInUse: 'light' | 'dark' | undefined
+  /** Show the icon the current selection asks for; a matching one is a no-op. */
+  const followAppearance = (appearance: AppearancePreference): void => {
+    const wanted = pageAppearanceFor(appearance)
+    if (wanted === iconInUse) return
+    iconInUse = wanted
+    setApplicationIcon(iconPaths[wanted])
+  }
+
+  // Pin the native chrome in the process's first instants. The app-level
+  // appearance has to be settled before the first view exists (AppKit
+  // propagates a new one into every view it has, and the webview's view
+  // raises an Objective-C exception when it takes one at runtime — an
+  // exception that cannot unwind through an FFI call, so it aborts the
+  // process; a theme toggle used to kill the app). The Dock icon is just as
+  // early: set only after the core boots, the saved preference visibly
+  // replaces the default icon seconds in — the white→dark flash.
+  const earlyAppearance = readAppearancePreferenceEarly()
+  setAppearance(earlyAppearance)
+  followAppearance(earlyAppearance)
+
+  // The window opens now, on a themed splash, instead of waiting out the
+  // whole core boot for a first frame. hiddenInset keeps the transparent
+  // title bar with inset native traffic lights, so web content owns the full
+  // window height (the sidebar runs to the top; the y offset centres the
+  // lights on the shell's 42px unified top bar). The frame is where the user
+  // left it — passing x/y at all is what pins the window instead of letting
+  // the system choose a spot.
+  const windowStatePath = join(projectDir, WINDOW_STATE_FILENAME)
+  const rememberedFrame = readWindowFrame(windowStatePath) ?? DEFAULT_WINDOW_FRAME
+  const mainWindow = new BrowserWindow({
+    title: 'Colaw',
+    url: null,
+    html: splashDocument(pageAppearanceFor(earlyAppearance)),
+    titleBarStyle: 'hiddenInset',
+    trafficLightOffset: { x: 6, y: 7 },
+    frame: {
+      x: rememberedFrame.x,
+      y: rememberedFrame.y,
+      width: rememberedFrame.width,
+      height: rememberedFrame.height,
+    },
+  })
+  console.log('[electrobun-host] Window opened on splash; booting dsh core (web profile)...')
   const environment = loadLayeredEnv('colaw')
   // Use dsh repo's apps/cli as install anchor so that bundle packages
   // (dsh-base, dsh-web-app) can be resolved from its node_modules.
@@ -327,113 +439,167 @@ async function main(): Promise<void> {
     ...loadOverlayPatches('colaw', ELECTROBUN_PATCH),
   ]
 
+  // Two-stage composition. The full tree costs seconds of plugin activation
+  // before the webserver exists, and none of it is needed to paint the shell:
+  // the browser loads its client bundles from the packages on disk, and the
+  // first screen needs only the serving/RPC spine. Boot that spine, hand the
+  // URL to the window, then mount everything else as a second include while
+  // the user already sees the app. Services the shell does not have yet
+  // arrive as they mount (the client subscribes to the pushed invalidations),
+  // so the budget is the spine, not the tree.
+  // Stage one is the serving plane ONLY: the webserver, the frontend's
+  // static index, the client-module batches, auth, and the settings/
+  // credentials RPC — everything the browser needs to paint the real shell.
+  // Cordis mounts a tree as one unit (its fibers activate when the include
+  // settles), so the only way to an early URL is a small first include;
+  // session/workspace data and every heavy plugin mounts behind it and
+  // reaches the page through the pushed invalidations.
+  const SPINE_ENTRY_IDS = new Set([
+    'webserver', 'web', 'web-runtime', 'web-startup', 'connection', 'credentials', 'modules', 'settings',
+  ])
+  const entries = composeEntries(patches)
+  // Serving first: the tree mounts in array order, and the early-URL loader
+  // polls for the webserver mid-boot — with the serving rows at the front the
+  // window gets the real page while the rest of the spine is still mounting.
+  const SPINE_ORDER = [
+    'webserver', 'web', 'web-runtime', 'web-startup', 'connection', 'modules', 'hmr',
+    'api-remotes', 'locale', 'settings', 'credentials', 'typert', 'typert-loader',
+    'typert-gateway', 'settings-controller',
+  ]
+  const ofStage = (stage: 'spine' | 'rest'): Record<string, unknown>[] => {
+    const kept = entries.filter(entry => stage === 'spine' ? SPINE_ENTRY_IDS.has(String(entry.id)) : !SPINE_ENTRY_IDS.has(String(entry.id)))
+    if (stage === 'rest') return kept
+    const rank = new Map(SPINE_ORDER.map((id, index) => [id, index]))
+    return [...kept].sort((a, b) => (rank.get(String(a.id)) ?? SPINE_ORDER.length) - (rank.get(String(b.id)) ?? SPINE_ORDER.length))
+  }
+  writeFileSync(rootConfig, `${JSON.stringify(ofStage('spine'))}\n`)
+  const restConfig = join(projectDir, 'rest.cordis.json')
+  writeFileSync(restConfig, `${JSON.stringify(ofStage('rest'))}\n`)
+
+  // Boot phases and (with COLAW_BOOT_PROFILE=1) every plugin mount land in the
+  // log with elapsed milliseconds, so a slow boot can be attributed on a real
+  // packaged run instead of being one opaque 9-second block.
+  const bootT0 = Date.now()
+  const bootMs = (): string => `+${String(Date.now() - bootT0).padStart(5)}ms`
+  const bootProfile = process.env.COLAW_BOOT_PROFILE === '1'
+
+  // The frontend does not wait for the whole plugin tree: the webserver and
+  // the auth service come up early in it, and the web index is itself a
+  // loading page that keeps polling until the client modules are ready. Swap
+  // the splash for the real URL the moment both services exist; everything
+  // else keeps loading behind that page.
+  let frontendLoaded = false
+  const loadFrontendIntoWindow = (): void => {
+    if (frontendLoaded) return
+    const hostCtx = current
+    if (hostCtx === undefined) return
+    const webServer = hostCtx.get('webServer') as { port: number } | undefined
+    const connection = hostCtx.get('connection') as { authenticatedUrl: (url: string) => string } | undefined
+    if (webServer === undefined || connection === undefined) return
+    let url: string
+    try {
+      url = connection.authenticatedUrl(`http://127.0.0.1:${webServer.port}`)
+    } catch {
+      // The auth service exists but is not ready to sign yet; retry on the
+      // next tick.
+      return
+    }
+    frontendLoaded = true
+    clearInterval(earlyUrlWatch)
+    const view = BrowserView.getById(mainWindow.webviewId)
+    if (view === undefined) {
+      console.error('[electrobun-host] splash window lost its webview before the frontend could load')
+      return
+    }
+    view.loadURL(url)
+    console.log(`[electrobun-host] ${bootMs()} frontend loading into the open window: ${url}`)
+  }
+  const earlyUrlWatch = setInterval(loadFrontendIntoWindow, 50)
+
   let current: Context | undefined
+  let bootProfileStop: (() => void) | undefined
   const ctx = await boot(
     'colaw',
     rootConfig,
-    structuredClone(patches),
+    [],
     (hostCtx) => {
       current = hostCtx
       hostCtx.provide(DSH_LAUNCH_ENVIRONMENT_KEY, environment)
       provideCmdline(hostCtx, { args: [], exit: () => {} })
+      // Announce the desktop chrome to the client shell. The index URL cannot
+      // carry it (browser-auth normalizes the query away), so the host
+      // contributes an index-injected global the shell reads before first
+      // paint. The resolved color scheme rides along: the webview's
+      // `prefers-color-scheme` reports the app-level appearance frozen at
+      // launch (re-setting it under live views crashes the process), so a
+      // `system` theme preference must not follow the media query in this
+      // shell — it follows this host-owned value instead.
+      hostCtx.on('webserver/index-inject', (table: DesktopInjectionRow[]) => {
+        table.push({
+          kind: 'global',
+          name: '__DSH_DESKTOP__',
+          value: { chrome: 'darwin', titlebarInset: 32 },
+        })
+        table.push({
+          kind: 'global',
+          name: '__DSH_DESKTOP_APPEARANCE__',
+          value: pageAppearanceFor(readShellPreferences(hostCtx).appearance),
+        })
+      })
+      if (bootProfile) {
+        // The vendored Cordis mangles its plugin event name, so the profiler
+        // polls the loader's entry table instead: every tick records each
+        // plugin's first observed active state, which attributes a slow boot
+        // to the plugins that arrived late.
+        const seen = new Set<string>()
+        const poll = setInterval(() => {
+          for (const entry of hostCtx.loader?.entries() ?? []) {
+            const name = entry.options.name
+            if (seen.has(name)) continue
+            seen.add(name)
+            console.log(`[profile] ${bootMs()} ${name} state=${String(entry.fiber?.state)}`)
+          }
+        }, 10)
+        bootProfileStop = () => clearInterval(poll)
+      }
     },
   )
   current = ctx
+  bootProfileStop?.()
+  bootProfileStop = undefined
+  if (bootProfile) console.log(`[profile] ${bootMs()} boot() returned`)
 
-  // Verify required services
+  // Verify required services (the early loader cleared the interval when it
+  // saw them; a full boot without them is a composition error).
   const webServer = ctx.get('webServer') as { port: number; host: string } | undefined
   const connection = ctx.get('connection') as { authenticatedUrl: (url: string) => string } | undefined
   if (webServer === undefined || connection === undefined) {
+    clearInterval(earlyUrlWatch)
     await ctx.fiber.dispose()
     throw new Error('dsh electrobun: webServer or connection service unavailable after boot')
   }
 
-  console.log(`[electrobun-host] dsh core booted, webserver on port ${webServer.port}`)
+  console.log(`[electrobun-host] ${bootMs()} dsh core booted (spine), webserver on port ${webServer.port}`)
+  // Fallback for a tree whose services arrived after the interval somehow
+  // missed them (or a future ordering where they mount last).
+  loadFrontendIntoWindow()
 
-  // Build the authenticated URL (dsh web requires a token for all requests).
-  const baseUrl = `http://127.0.0.1:${webServer.port}`
-  const appUrl = connection.authenticatedUrl(baseUrl)
-  console.log(`[electrobun-host] App URL: ${appUrl}`)
+  // Stage two: mount the rest of the tree in the background. The window has
+  // the URL already; every deferred plugin lands as it initializes and the
+  // client refreshes the surfaces it fills in.
+  void (async () => {
+    try {
+      await ctx.loader.create({
+        name: 'cordis:include',
+        config: { path: pathToFileURL(restConfig).href },
+      })
+      await ctx.loader.await()
+      console.log(`[electrobun-host] ${bootMs()} full plugin tree mounted`)
+    } catch (error) {
+      console.error(`[electrobun-host] deferred tree mount failed: ${String(error)}`)
+    }
+  })()
 
-  /** The color scheme the page should paint: an explicit selection is itself,
-   * `system` is what macOS is set to right now — read from the system
-   * preference, not from this app's pinned effective appearance. */
-  const pageAppearanceFor = (appearance: AppearancePreference): 'light' | 'dark' =>
-    appearance === 'system' ? (systemIsDark() ? 'dark' : 'light') : appearance
-
-  // Announce the desktop chrome to the client shell. The index URL cannot carry
-  // it (browser-auth normalizes the query away), so the host contributes an
-  // index-injected global the shell reads before first paint. The resolved
-  // color scheme rides along: the webview's `prefers-color-scheme` reports the
-  // app-level appearance frozen at launch (re-setting it under live views
-  // crashes the process), so a `system` theme preference must not follow the
-  // media query in this shell — it follows this host-owned value instead.
-  ctx.on('webserver/index-inject', (table: DesktopInjectionRow[]) => {
-    table.push({
-      kind: 'global',
-      name: '__DSH_DESKTOP__',
-      value: { chrome: 'darwin', titlebarInset: 32 },
-    })
-    table.push({
-      kind: 'global',
-      name: '__DSH_DESKTOP_APPEARANCE__',
-      value: pageAppearanceFor(readShellPreferences(ctx).appearance),
-    })
-  })
-
-  // Create Electrobun window and load the dsh frontend.
-  // hiddenInset: transparent title bar with inset native traffic lights, so the
-  // web content owns the full window height (the sidebar runs to the top). The
-  // y offset already centres the lights on the shell's 40px unified top bar
-  // (ui-layout AppFrame TOPBAR_HEIGHT).
-  // Restore where the user left the window; a first launch gets the default
-  // frame. Passing x/y at all is what pins the window instead of letting the
-  // system choose a spot.
-  // Bind the native chrome to the saved preferences *before* the window exists.
-  //
-  // The appearance has to be settled here and nowhere else: AppKit propagates a
-  // new one into every view it has, and the webview's view raises an Objective-C
-  // exception when it takes one at runtime — an exception that cannot unwind
-  // through an FFI call, so it aborts the process (a theme toggle used to kill
-  // the app). With no views to walk yet, the same call is safe, and doing it
-  // before the first frame means the saved theme is simply there: no flash of
-  // the system's appearance, and no icon swap in view.
-  const shellPreferences = readShellPreferences(ctx)
-  setAppearance(shellPreferences.appearance)
-
-  /** The icon for a preference follows the same resolution as the page
-   * appearance: the Dock shows what the current selection asks for. */
-  const iconFor = pageAppearanceFor
-  const iconPaths: Record<'light' | 'dark', string> = {
-    light: fileURLToPath(new URL('../../AppIcon.icns', import.meta.url)),
-    dark: fileURLToPath(new URL('../cat5_dark.icns', import.meta.url)),
-  }
-  let iconInUse: 'light' | 'dark' | undefined
-  /** Show the icon the current selection asks for; a matching one is a no-op. */
-  const followAppearance = (appearance: AppearancePreference): void => {
-    const wanted = iconFor(appearance)
-    if (wanted === iconInUse) return
-    iconInUse = wanted
-    setApplicationIcon(iconPaths[wanted])
-  }
-  followAppearance(shellPreferences.appearance)
-
-  const windowStatePath = join(projectDir, WINDOW_STATE_FILENAME)
-  const rememberedFrame = readWindowFrame(windowStatePath) ?? DEFAULT_WINDOW_FRAME
-  const mainWindow = new BrowserWindow({
-    title: 'Colaw',
-    url: appUrl,
-    titleBarStyle: 'hiddenInset',
-    trafficLightOffset: { x: 6, y: 7 },
-    frame: {
-      x: rememberedFrame.x,
-      y: rememberedFrame.y,
-      width: rememberedFrame.width,
-      height: rememberedFrame.height,
-    },
-  })
-
-  console.log('[electrobun-host] Window created, loading dsh frontend...')
   console.log(`[electrobun-host] Window frame: ${JSON.stringify(mainWindow.getFrame())}`)
   console.log(`[electrobun-host] Window state file: ${windowStatePath}`)
 
