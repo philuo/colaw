@@ -26,13 +26,14 @@ stable 应用**bundle 化，不再 deploy 化**。`pack-stable-app.ts` 用 `dsh-
 
 ### 分析必须自行掌握的解析规则
 
-- **手工 `node_modules` 走查，绝不用 Bun 解析器。** Bun 对所有解析形态施加 tsconfig `paths`（`resolveSync`、`createRequire().resolve` 皆然），会把分析悄悄翻到 src 平面；打包器自己实现 Node 的父级走查，覆盖 `exports` 的精确键、通配键与无 exports 子路径。
-- **数据声明的 loader 行进入闭包。** 预设组合是 import 图看不见的 YAML 条目清单；点名未发布插件的预设会在发现处行校验失败（「标准模式 加载失败」症状），发布后则在会话域按名挂载。每个闭包包已发布的 YAML 都按 `name: '@scope/pkg'` 行扫描，点名的包作为种子，迭代至不动点。
-- **发布包的声明导出面随包发布。** 约定在运行时按名解析子路径：typert-loader 发现 `./typert` 类型图，并对缺该导出的包**静默跳过**——类型图留空且无任何诊断。非浏览器包的每个非通配代码导出目标各自成为 unit。声明 `dsh.client` 的包除外——其 node 面没有运行时消费者，为其播种会把浏览器专属树（shiki 语言、katex、pdf worker）拉进应用。
-- **CJS 条件分发按原样随包。** 已 bundle 的 CJS 入口里运行时 `require('./x.js')`（zod 的 v3/v4 分发）无法内联；目标文件像 worker 文件一样随 unit 发布，且 verbatim 记录绝不覆盖同路径上 unit 的 bundle 输出。
-- **数据拷贝绝不覆盖 bundle 输出。** 运行时数据文件是非代码文件（外加客户端 bundle 族，其入口由拷贝循环做最小化）；其余一切代码文件归 unit 或 verbatim 写入器所有。
+- **手工 `node_modules` 走查，绝不用 Bun 解析器。** Bun 对所有解析形态施加 tsconfig `paths`（`resolveSync`、`createRequire().resolve` 皆然），会把分析悄悄翻到 src 平面；打包器自己实现 Node 的父级走查，覆盖 `exports` 的精确键、通配键与无 exports 子路径。**无扩展的相对 require**（`require('./x')` 指向 `x.js`）按 Node 的 CJS 规则解析——漏掉这一个探测会在入口从未点名的 npm 包处静默切断依赖链。
+- **数据声明的 loader 行进入闭包。** 预设组合是 import 图看不见的 YAML 条目清单；点名未发布插件的预设会在发现处行校验失败（「标准模式 加载失败」症状），发布后则在会话域按名挂载。每个闭包包已发布的 YAML 都按 `name: '@scope/pkg'` 行扫描，点名的包作为种子，迭代至不动点。**代码内的字符串字面量名与之同列**：directory-picker-auto 的 `BACKEND_PACKAGES` 表这类运行时按名挂载，任何 import 或 YAML 行都不点名，因此已扫代码中每个 `@deepseek-ai/*` 字面量同样作为种子。
+- **发布包的声明导出面随包发布。** 约定在运行时按名解析子路径：typert-loader 发现 `./typert` 类型图，并对缺该导出的包**静默跳过**——类型图留空且无任何诊断。非浏览器包的每个非通配代码导出目标各自成为 unit。声明 `dsh.client` 的包除外——其 node 面没有运行时消费者，为其播种会把浏览器专属树（shiki 语言、katex、pdf worker）拉进应用。**恒等通配**（`'./api/*': './api/*'`）不得与精确键并存输出：Bun 先匹配通配、把它们的 specifier 解析到无扩展路径——删掉通配让精确键胜出，而精确键本身必须是 `'./sub/path'` 而非 `'.sub/path'`。
+- **CJS 包原样随包。** 把 CJS 入口 bundle 成 ESM 会丢 named exports（Bun 的输出只带 `default`），破坏一切 `import { x } from 'cjs-pkg'`；给生成 manifest 盖 `type: module` 会把其文件错标为 ESM。CJS 包整包拷贝（其全部变体树——full/light、惰性 util——拉入入口链从未点名的依赖，因此闭包扫描每个已发布文件的 require），**源 manifest 原样保留**（sharp 的 libvips 探测读平台包的 `config` 块），并跳过会丢掉其运行时文件的 src 目录裁剪。
+- **verbatim 就是真的原样。** 经字符串 URL 与条件分发到达的文件（zod 的 v3/v4 分发、protobufjs 的惰性 util）按字节随包；重新 bundle 它们——尤其是 CJS 过 ESM 通道——破坏的恰是 Node 对原始文件的互操作。
 - **版本冲突内联进导入者。** 名字的首个解析拥有根平面；某包文件解析到别的版本（negotiator 0.6/1.1）时，该 specifier 从*它的* bundle 的 externals 中移除，`Bun.build` 内联其自身解析到的版本。把落选版本嵌套到各导入者之下的方案被否决——为 pnpm 纪律本就罕见的情形引入树的复杂度不值。
-- **安装里缺失的可选依赖保持缺失。** sharp 的 wasm32 回退与全部非 darwin-arm64 原生件 external 且不发布；运行时遇到与今天相同的解析失败。
+- **安装里缺失的可选依赖保持缺失。** sharp 的 wasm32 回退与全部非 darwin-arm64 原生件 external 且不发布；运行时遇到与今天相同的解析失败。经模板字面量寻址的平台限定包（`@vscode/ripgrep-${platform}-${arch}`、flock 绑定）作为数据包播种，其二进制保持可执行位。
+- **自包含性只在检出之外证明，绝不在检出之内。** 构建在仓库内的 .app 会经自身路径向上爬进仓库的 `node_modules`，于是带伤的包也能 boot 成功（藏起包内一个包、boot 依旧成功即为实证）。验收启动把 .app 拷出树外，用临时 `HOME`、纯系统 `PATH`、空环境运行；vendored loader 的逐条目 apply-failure 日志把折叠的「plugin tree failed」还原成那个失败的名字。
 
 ## 被否决的备选
 

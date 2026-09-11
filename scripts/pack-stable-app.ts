@@ -37,12 +37,12 @@
  */
 
 import {
-  copyFileSync, existsSync, mkdirSync, mkdtempSync,
+  chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync,
   readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync,
 } from 'node:fs'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
-import { basename, dirname, extname, join, relative, resolve } from 'node:path'
+import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { composeEntries, initProfile, loadOverlayPatches, loadProfileDirectory } from '../packages/boot/app-boot/src/index.ts'
@@ -190,6 +190,22 @@ function isFile(path: string): boolean {
   }
 }
 
+/** Mach-O magic numbers (fat, 64-bit LE/BE, thin) in the first four bytes. */
+const MACHO_MAGICS = new Set(['0xCAFEBABE', '0xBEBAFECA', '0xFEEDFACF', '0xCFFAEDFE', '0xFEEDFACE', '0xCEFAEDFE'])
+
+/** Whether a shipped file is a Mach-O image; such payloads must stay executable. */
+function isMachOImage(path: string): boolean {
+  const fd = openSync(path, 'r')
+  try {
+    const buffer = Buffer.alloc(4)
+    const read = readSync(fd, buffer, 0, 4, 0)
+    if (read < 4) return false
+    return MACHO_MAGICS.has(`0x${buffer.readUInt32BE(0).toString(16).toUpperCase().padStart(8, '0')}`)
+  } finally {
+    closeSync(fd)
+  }
+}
+
 function isDirectory(path: string): boolean {
   try {
     return statSync(path).isDirectory()
@@ -316,6 +332,10 @@ function resolveRelative(spec: string, fromFile: string): string | undefined {
   const base = resolve(dirname(fromFile), spec)
   const candidates = [base]
   const ext = extname(base)
+  if (ext === '') {
+    // CommonJS relative requires omit the extension: './x' names x.js.
+    candidates.push(`${base}.js`, `${base}.cjs`, `${base}.json`, `${base}.node`)
+  }
   if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
     candidates.push(`${base.slice(0, -ext.length)}.ts`, `${base.slice(0, -ext.length)}.mts`)
   }
@@ -519,6 +539,44 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
         recordResolution(root, nearestPackageDir(resolved.file, root), file, spec)
       }
     }
+    // Product-namespace package names appearing as plain string literals
+    // (BACKEND_PACKAGES tables, surface registries): the Loader mounts them
+    // by name at runtime, so every @deepseek-ai/* literal in scanned code
+    // seeds the closure the same way a YAML row does.
+    for (const match of code.matchAll(/['"`](@deepseek-ai\/[a-z0-9-._~]+(?:\/[a-z0-9-._~]+)*)['"`]/gu)) {
+      const spec = match[1]
+      if (spec === undefined) continue
+      closure.specifiers.add(spec)
+      try {
+        const resolved = resolveBareFile(spec, file)
+        if (statSync(resolved.file).isFile() && /\.(?:js|mjs|cjs|ts|mts|cts|tsx)$/u.test(resolved.file)) {
+          addUnit(spec, resolved.file, file, resolved.wildcard)
+        } else {
+          recordResolution(packageRootName(spec), nearestPackageDir(resolved.file, packageRootName(spec)), file, spec)
+        }
+      } catch {
+        closure.unresolved.add(spec)
+      }
+    }
+
+    // Platform-qualified packages addressed through template literals
+    // (`@vscode/ripgrep-${process.platform}-${arch}`, the flock binding):
+    // the import graph cannot see a computed name, so the installed
+    // darwin-arm64 variant is seeded as a data package — its payload is a
+    // binary (bin/rg, bin/*.node), never an import entry.
+    for (const match of code.matchAll(/`([@a-z0-9/._]+)-\$\{[^}]*platform[^}]*\}[^`]*`/gu)) {
+      const prefix = match[1]
+      if (prefix === undefined) continue
+      const variant = `${prefix}-darwin-arm64`
+      closure.specifiers.add(variant)
+      try {
+        const manifest = resolveBareFile(`${variant}/package.json`, file).file
+        recordResolution(variant, dirname(manifest), file, 'computed platform package')
+      } catch {
+        closure.unresolved.add(variant)
+      }
+    }
+
     // CommonJS require calls in built .cjs workers reference the shared plane
     // too. A relative require inside a bundled CJS entry is the module's own
     // conditional dispatch (zod's v3/v4 switch): the bundler cannot inline
@@ -548,11 +606,6 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     closure.specifiers.add(name)
     addUnit(name, resolveBareFile(name, cliAnchor).file, cliAnchor)
   }
-  // The flock wrapper loads its platform binding through a computed
-  // `@deepseek-ai/node-addon-system-${platform}-${arch}` name at call time.
-  closure.specifiers.add('@deepseek-ai/node-addon-system-darwin-arm64')
-  const addonDir = dirname(resolveBareFile('@deepseek-ai/node-addon-system-darwin-arm64/package.json', cliAnchor).file)
-  recordResolution('@deepseek-ai/node-addon-system-darwin-arm64', addonDir, cliAnchor, 'native addon platform')
   fileQueue.push(hostEntry)
   // Two data-declared surfaces the import graph never sees, seeded per
   // package and iterated to a fixpoint (a discovered package may declare
@@ -613,6 +666,30 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     }
     return specs
   }
+  /** Every runtime file of a CommonJS package: it ships whole, so its whole
+   * require graph belongs in the closure, not just the entry's chain (the
+   * full/light variants and lazy util trees pull deps the entry never names). */
+  const commonJSPackageFiles = (pkgDir: string): string[] => {
+    const files: string[] = []
+    const walk = (dir: string): void => {
+      let entries
+      try {
+        entries = readdirSync(dir, { withFileTypes: true })
+      } catch {
+        return
+      }
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          if (isTestTreeDir(entry.name) || PRUNE_DIR_NAMES.has(entry.name)) continue
+          walk(join(dir, entry.name))
+          continue
+        }
+        if (entry.isFile() && /\.(?:js|cjs)$/u.test(entry.name)) files.push(join(dir, entry.name))
+      }
+    }
+    walk(pkgDir)
+    return files
+  }
   for (let settled = false; !settled;) {
     for (let next = fileQueue.shift(); next !== undefined; next = fileQueue.shift()) scanFile(next)
     settled = true
@@ -622,14 +699,18 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
       const record = closure.packages.get(pkg)
       if (record === undefined) continue
       const manifestPath = join(record.dir, 'package.json')
+      const packageManifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>
       const seeds = [
         ...declaredPluginNames(record.dir),
-        ...declaredExportSpecs(record.dir, JSON.parse(readFileSync(manifestPath, 'utf8')) as Record<string, unknown>),
+        ...declaredExportSpecs(record.dir, packageManifest),
       ]
       for (const spec of seeds) {
         closure.specifiers.add(packageRootName(spec))
         addUnit(spec, resolveBareFile(spec, manifestPath).file, manifestPath)
         settled = false
+      }
+      if (packageManifest.type !== 'module') {
+        for (const file of commonJSPackageFiles(record.dir)) fileQueue.push(file)
       }
     }
   }
@@ -677,12 +758,20 @@ interface ShippedManifestParts {
   clientRel?: string
 }
 
-const PRUNE_DIR_NAMES = new Set(['node_modules', 'tests', 'test', '__tests__', 'coverage', '.git', '.github'])
+const PRUNE_DIR_NAMES = new Set(['node_modules', 'tests', 'test', '__tests__', 'coverage', '.git', '.github',
+  '.yarn', '.bin', '.circleci', 'benchmark', 'benchmarks', 'bench', 'example', 'examples', 'install'])
+
+/** Directory names an npm package may carry that only its own tests load. */
+function isTestTreeDir(name: string): boolean {
+  return PRUNE_DIR_NAMES.has(name) || name.endsWith('-test') || name.endsWith('-tests')
+}
 
 function prunedFileName(name: string): boolean {
-  return name === 'package.json' || name === '.DS_Store'
+  return name === 'package.json' || name === '.DS_Store' || name === 'test.js' || name === 'test.mjs'
     || name.startsWith('README.') || name.startsWith('CHANGELOG.') || name === 'LICENSE' || name === 'LICENCE'
     || name.startsWith('tsconfig') || name.endsWith('.tsbuildinfo') || name.endsWith('.i18n.yaml')
+    || name.endsWith('.bench.js') || name.endsWith('.bench.mjs')
+    || name.endsWith('.fixture.js') || name.endsWith('.fixtures.js') || name.endsWith('.fixture.mjs')
 }
 
 /** Runtime data files of one package: everything except code the units replace. */
@@ -692,6 +781,7 @@ function packageDataFiles(
   manifest: Record<string, unknown>,
   unitOutRels: ReadonlySet<string>,
   verbatimOutRels: ReadonlySet<string>,
+  keepAllCode = false,
 ): { files: string[]; parts: ShippedManifestParts } {
   const files: string[] = []
   const skipDirs = new Set(PRUNE_DIR_NAMES)
@@ -715,10 +805,12 @@ function packageDataFiles(
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const rel = relBase === '' ? entry.name : `${relBase}/${entry.name}`
       if (entry.isDirectory()) {
-        if (skipDirs.has(entry.name)) continue
-        // TypeScript sources ship only when a unit's output sits among them
-        // (exact-file subpath imports keep their name).
-        if (entry.name === 'src' && ![...unitOutRels, ...verbatimOutRels].some(outRel => outRel.startsWith('src/'))) continue
+        if (skipDirs.has(entry.name) || isTestTreeDir(entry.name)) continue
+        // A package's own TypeScript sources ship only when a unit's output
+        // sits among them (exact-file subpath imports keep their name); the
+        // rule is the package root's src only — npm trees keep runtime CJS
+        // under build/src and must not be caught by it.
+        if (!keepAllCode && relBase === '' && entry.name === 'src' && ![...unitOutRels, ...verbatimOutRels].some(outRel => outRel.startsWith('src/'))) continue
         // The web frontend's dist ships without its self-contained preview build.
         if (pkg === '@deepseek-ai/dsh-web-frontend' && rel === 'dist/preview') continue
         walk(join(dir, entry.name), rel)
@@ -734,7 +826,7 @@ function packageDataFiles(
         continue
       }
       if (ext === '.ts' || ext === '.tsx') continue
-      if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
+      if (!keepAllCode && (ext === '.js' || ext === '.mjs' || ext === '.cjs')) {
         // Unit bundles and verbatim files are written by their own passes; a
         // raw data copy here would overwrite minified output with source.
         // The client bundle family is the one code path the data copy owns
@@ -759,6 +851,17 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
   const verbatimOutRels = new Set([...closure.verbatim.values()].filter(file => file.pkg === pkg).map(file => file.outRel))
   const externals = externalsFor(closure, pkg)
 
+  // A CommonJS package ships as-is. Bundling it to ESM would drop its named
+  // exports (Bun's CJS→ESM output carries only `default`), breaking every
+  // `import { x } from 'cjs-pkg'` at load; and stamping the emitted manifest
+  // `type: module` would mislabel its files as ESM. Node's own interop reads
+  // the original CJS correctly, so the tree and manifest are copied verbatim
+  // (pruned of docs and test trees like everything else).
+  if (manifest.type !== 'module') {
+    emitCommonJSPackage(pkg, pkgDir, outDir, manifest)
+    return
+  }
+
   for (const unit of [...closure.units.values()].filter(unit => unit.pkg === pkg)) {
     const text = await buildUnit(unit.src, 'bun', 'esm', externals)
     if (text === undefined) {
@@ -776,14 +879,13 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
     if (unitOutRels.has(file.outRel)) continue
     const destination = join(outDir, ...file.outRel.split('/'))
     mkdirSync(dirname(destination), { recursive: true })
-    const ext = extname(file.src)
-    if (ext === '.js' || ext === '.mjs' || ext === '.cjs') {
-      const minified = await buildUnit(file.src, 'bun', ext === '.cjs' ? 'cjs' : 'esm', externals)
-      if (minified !== undefined) writeFileSync(destination, minified)
-      else copyFileSync(file.src, destination)
-    } else {
-      copyFileSync(file.src, destination)
-    }
+    // Verbatim means verbatim: these files are reached through string URLs
+    // and conditional dispatch (zod's v3/v4 switch, protobufjs' lazy util),
+    // and re-bundling them — especially CJS through the ESM pass, which
+    // drops named exports — breaks exactly the interop Node performs on the
+    // original. Minification is not worth that correctness edge.
+    copyFileSync(file.src, destination)
+    if (isMachOImage(destination)) chmodSync(destination, 0o755)
   }
 
   const { files, parts } = packageDataFiles(pkg, pkgDir, manifest, unitOutRels, verbatimOutRels)
@@ -798,7 +900,9 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
       writeFileSync(destination, minified ?? code)
       continue
     }
-    copyFileSync(join(pkgDir, ...rel.split('/')), destination)
+    const sourceFile = join(pkgDir, ...rel.split('/'))
+    copyFileSync(sourceFile, destination)
+    if (isMachOImage(destination)) chmodSync(destination, 0o755)
   }
 
   const shipped: Record<string, unknown> = {
@@ -836,7 +940,8 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
     // those files where the importing specifier names them.
     for (const unit of closure.units.values()) {
       if (unit.pkg !== pkg || unit.specSubpath === undefined) continue
-      rewritten[`.${unit.specSubpath}`] = `./${unit.outRel}`
+      const subpath = unit.specSubpath.replace(/^\/+/u, '')
+      rewritten[`./${subpath}`] = `./${unit.outRel}`
     }
     if (clientRel !== undefined) rewritten['./client'] = `./${clientRel}`
     if (rootUnit !== undefined && rewritten['.'] === undefined) rewritten['.'] = `./${rootUnit}`
@@ -845,6 +950,29 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
     shipped.main = rootUnit
   }
   writeFileSync(join(outDir, 'package.json'), `${JSON.stringify(shipped, undefined, 2)}\n`)
+}
+
+/**
+ * Ship one CommonJS package verbatim: the published tree (pruned like every
+ * other data copy, binaries kept executable) and the source manifest's own
+ * main/exports/type, so Node's CJS↔ESM interop reads it exactly as upstream
+ * installs do.
+ */
+function emitCommonJSPackage(pkg: string, pkgDir: string, outDir: string, manifest: Record<string, unknown>): void {
+  const { files } = packageDataFiles(pkg, pkgDir, manifest, new Set<string>(), new Set<string>(), true)
+  for (const rel of files) {
+    const destination = join(outDir, ...rel.split('/'))
+    mkdirSync(dirname(destination), { recursive: true })
+    copyFileSync(join(pkgDir, ...rel.split('/')), destination)
+    if (isMachOImage(destination)) chmodSync(destination, 0o755)
+  }
+  // The client bundle family never applies here (client packages are ESM
+  // plugins), but a code walk that skipped plain .js outside lib/ would drop
+  // the CJS runtime files this path exists to keep.
+  // The source manifest ships untouched: consumers read fields beyond the
+  // resolution set (sharp's libvips detection reads the platform package's
+  // `config` block), and rewriting it is one more chance to drop one.
+  copyFileSync(join(pkgDir, 'package.json'), join(outDir, 'package.json'))
 }
 
 /** Bundle the host main with the same externals and place it as the app's bun entry. */
@@ -931,7 +1059,10 @@ function auditApp(closure: Closure): void {
         continue
       }
       if (entry.isFile()) {
-        if (/\.(?:ts|tsx|map)$/u.test(entry.name)) offending.push(`source artifact ${path}`)
+        // Product packages keep their runtime TypeScript (loader-mounted by
+        // name through string references; Bun executes it natively).
+        const productSource = path.includes(`${sep}node_modules${sep}@deepseek-ai${sep}`) && path.includes(`${sep}src${sep}`)
+        if (/\.(?:ts|tsx|map)$/u.test(entry.name) && !productSource) offending.push(`source artifact ${path}`)
         if (entry.name.startsWith('tsconfig') || entry.name.startsWith('README.')) offending.push(`metadata ${path}`)
       }
     }
@@ -955,7 +1086,12 @@ function auditApp(closure: Closure): void {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name)
       if (entry.isDirectory()) collect(path)
-      else if (entry.isFile() && /\.(?:js|mjs|cjs)$/u.test(entry.name)) bundleFiles.push(path)
+      else if (entry.isFile() && /\.(?:js|mjs|cjs)$/u.test(entry.name)) {
+        // Conditional build variants Node never resolves under the app's
+        // conditions (browser/native overrides of a node entry).
+        if (/\.(?:browser|native)\.[cm]?js$/u.test(entry.name)) continue
+        bundleFiles.push(path)
+      }
     }
   }
   collect(closureRoot)

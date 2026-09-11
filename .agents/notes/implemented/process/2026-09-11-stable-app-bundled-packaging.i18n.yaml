@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/process/2026-09-11-stable-app-bundled-packaging.md
-2026-09-11-stable-app-bundled-packaging.md: f3dd6771eae5eb7bbc983d9eef1ab224e0741a7c
-2026-09-11-stable-app-bundled-packaging.zh.md: 047e9685d1c099e30bd931331c7f5be00c300603
+2026-09-11-stable-app-bundled-packaging.md: 4b6d4c31372552d1698c1fcf7fcd2a6fe3877481
+2026-09-11-stable-app-bundled-packaging.zh.md: c4e2a581e087a04196d47820ce9b65bc36a3438c
