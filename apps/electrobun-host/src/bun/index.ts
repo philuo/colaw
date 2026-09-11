@@ -421,11 +421,6 @@ async function main(): Promise<void> {
     light: resolveIcon(['../../AppIcon.icns', '../cat5_light.icns']),
     dark: resolveIcon(['../../AppIconDark.icns', '../cat5_dark.icns']),
   }
-  /** The menu-bar tray image: the app's transparent cat head (the same PNG
-   * the sidebar renders), shipped beside the host. Template mode turns it
-   * into an alpha mask, so macOS paints it black on a light bar and white on
-   * a dark one — no background, no manual theme pairing. */
-  const trayCatPath = (): string => resolveIcon(['../views/tray-cat.png'])
   let iconInUse: 'light' | 'dark' | undefined
   let trayIcon: Tray | undefined
   /** Show the icon the current selection asks for; a matching one is a no-op.
