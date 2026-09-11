@@ -19,7 +19,7 @@ const spawn = (cmd: string, args: string[]): void => {
 }
 const version = (JSON.parse(readFileSync(join(app, 'Contents/Resources/version.json'), 'utf8')) as { version?: string }).version ?? '0.0.0'
 const name = `COLAW ${version}-arm64`
-const dist = join(repo, 'dist')
+const dist = join(repo, 'artifacts')
 const stage = join(dist, `${name}-stage`)
 const raw = join(dist, `${name}.rw.dmg`)
 const final = join(dist, `${name}.dmg`)

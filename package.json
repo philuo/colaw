@@ -19,6 +19,7 @@
   "scripts": {
     "build": "tsx scripts/build.ts",
     "build:app:stable": "bun scripts/pack-stable-app.ts",
+    "build:dmg": "bun scripts/build-dmg.ts",
     "build:bench": "npm run build:native-system && npm run build:lib && tsdown --config benchmarks/tsdown.config.ts",
     "build:official": "tsx scripts/build.ts --profile official",
     "build:lib": "pnpm run build:lib:host && pnpm run build:lib:client",
