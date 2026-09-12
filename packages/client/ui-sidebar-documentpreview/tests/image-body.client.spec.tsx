@@ -155,16 +155,16 @@ describe('ImageBody', () => {
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
     // Fit is min(400/400, 300/2000) = 0.15; a notch of -100px scales by
-    // exp(100 * 0.002) ≈ 1.2214, so one notch lands at ≈ 0.1832.
+    // exp(100 * 0.0025) ≈ 1.284, so one notch lands at ≈ 0.1926.
     fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 100, clientY: 75 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(0.1832')
+    expect(image.style.transform).toContain('scale(0.1926')
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe(null)
-    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('18%')
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('19%')
     // Plain wheel without the pinch modifier stays a scroll, not a zoom.
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 100, clientY: 75 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(0.1832')
+    expect(image.style.transform).toContain('scale(0.1926')
   })
 
   it('scales with the gesture magnitude and bounds one event\'s factor', async () => {
@@ -173,15 +173,65 @@ describe('ImageBody', () => {
     const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 2000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    // A trackpad pinch emits rapid small deltas: -5px is a 1.01005 nudge,
+    // A trackpad pinch emits rapid small deltas: -5px is a 1.01258 nudge,
     // keeping the composed gesture smooth instead of a per-event jump.
     fireEvent.wheel(viewport, { deltaY: -5, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(0.1515')
+    expect(image.style.transform).toContain('scale(0.1518')
     // One malformed huge delta is clamped to a single ×2 step.
     fireEvent.wheel(viewport, { deltaY: -100000, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(0.3030')
+    expect(image.style.transform).toContain('scale(0.3037')
+  })
+
+  it('caps the fitted pane at the visible window region', async () => {
+    const view = render(<ImageBody {...props()} />)
+    const image = await screen.findByRole('img', { hidden: true })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 2000 })
+    // A restored tab can mount with the frame grown past the window (jsdom's
+    // window is 1024x768): a box at top 400 and 2000 tall has only 368px
+    // visible, and the fit must divide by that, not by 2000.
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 2000 })
+    viewport.getBoundingClientRect = () => ({
+      x: 0, y: 400, top: 400, left: 0, right: 400, bottom: 2400,
+      width: 400, height: 2000, toJSON: () => ({}),
+    })
+    fireEvent.load(image)
+    await act(async () => { resizeProbe?.() })
+    // Fit is min(400/400, 368/2000) = 0.184 — the whole image stays visible.
+    expect(image.style.transform).toContain('scale(0.184')
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('18%')
+  })
+
+  it('re-fits when the measured pane corrects, until the operator zooms', async () => {
+    const view = render(<ImageBody {...props()} />)
+    const image = await screen.findByRole('img', { hidden: true })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 2000 })
+    fireEvent.load(image)
+    await act(async () => { await Promise.resolve() })
+    expect(image.style.transform).toContain('scale(0.15')
+    // The settle probes deliver the corrected pane: the un-zoomed posture
+    // re-seats at the new whole-image fit on its own.
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 500 })
+    viewport.getBoundingClientRect = () => ({
+      x: 0, y: 200, top: 200, left: 0, right: 400, bottom: 700,
+      width: 400, height: 500, toJSON: () => ({}),
+    })
+    await act(async () => { resizeProbe?.() })
+    expect(image.style.transform).toContain('scale(0.25')
+    // Once the operator zooms, their scale survives later pane corrections.
+    fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 })
+    fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 })
+    await act(async () => { await Promise.resolve() })
+    expect(image.style.transform).toContain('scale(0.4121')
+    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 700 })
+    viewport.getBoundingClientRect = () => ({
+      x: 0, y: 100, top: 100, left: 0, right: 400, bottom: 800,
+      width: 400, height: 700, toJSON: () => ({}),
+    })
+    await act(async () => { resizeProbe?.() })
+    expect(image.style.transform).toContain('scale(0.4121')
+    expect(viewport.getAttribute('data-zoom-at-fit')).toBe(null)
   })
 
   it('clamps zoom at both ends and resets through the badge and double-click', async () => {

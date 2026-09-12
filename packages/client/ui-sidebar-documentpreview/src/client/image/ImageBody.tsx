@@ -36,7 +36,7 @@ type ImageSource =
 /** Wheel zoom grows with the gesture's pixel magnitude, like Preview: a
  * notch is a comfortable step while a trackpad pinch's rapid small deltas
  * compose into one smooth continuous zoom instead of a per-event jump. */
-const WHEEL_ZOOM_SENSITIVITY = 0.002
+const WHEEL_ZOOM_SENSITIVITY = 0.0025
 /** Per-event factor bounds, so one malformed delta cannot leap the view. */
 const GESTURE_FACTOR_MIN = 0.5
 const GESTURE_FACTOR_MAX = 2
@@ -141,6 +141,9 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   const [zoom, setZoom] = useState<ZoomState>({ scale: 1, tx: 0, ty: 0 })
   const [panning, setPanning] = useState(false)
   const drag = useRef<{ readonly x: number; readonly y: number; readonly tx: number; readonly ty: number } | undefined>()
+  // The operator's own zoom outlives pane changes; without a gesture the
+  // whole-image posture re-seats whenever the measured pane corrects itself.
+  const userZoomed = useRef(false)
 
   const fitScale = useMemo(() => {
     if (natural === undefined || pane === undefined) return 1
@@ -150,26 +153,47 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   const scale = Math.max(zoom.scale, fitScale)
   const atFit = zoom.scale <= fitScale && zoom.tx === 0 && zoom.ty === 0
 
-  // Live pane geometry: the fit tracks the sidebar's width and the pane's height.
+  /** Refresh the fitted pane from the frame's current visible box. */
+  const measurePane = useCallback((): void => {
+    const element = frame.current
+    if (element === null) return
+    const next = visiblePaneOf(element)
+    setPane(current =>
+      current !== undefined && current.width === next.width && current.height === next.height
+        ? current
+        : next)
+  }, [])
+
+  // Live pane geometry: the observer tracks the frame, and the settle probes
+  // (animation frame, late timer, window resize) re-measure because a
+  // restored tab can mount before its container finishes laying out.
   useEffect(() => {
     const element = frame.current
     if (element === null) return
-    const observer = new ResizeObserver(() => {
-      setPane({ width: element.clientWidth, height: element.clientHeight })
-    })
+    const observer = new ResizeObserver(() => { measurePane() })
     observer.observe(element)
-    setPane({ width: element.clientWidth, height: element.clientHeight })
-    return () => { observer.disconnect() }
-  }, [])
+    measurePane()
+    const settleFrame = requestAnimationFrame(() => { measurePane() })
+    const settleTimer = window.setTimeout(() => { measurePane() }, 300)
+    window.addEventListener('resize', measurePane)
+    return () => {
+      cancelAnimationFrame(settleFrame)
+      window.clearTimeout(settleTimer)
+      window.removeEventListener('resize', measurePane)
+      observer.disconnect()
+    }
+  }, [measurePane])
 
   const reset = useCallback((): void => {
+    userZoomed.current = false
     setZoom({ scale: fitScale, tx: 0, ty: 0 })
   }, [fitScale])
 
-  // A new image, or a fit that moved under the operator, re-fits quietly.
+  // A new image, or a corrected pane while the operator has not zoomed,
+  // re-seats the whole-image posture quietly.
   useEffect(() => {
-    if (natural !== undefined) reset()
-  }, [natural?.width, natural?.height, reset])
+    if (natural !== undefined && !userZoomed.current) reset()
+  }, [natural?.width, natural?.height, pane, reset])
 
   /**
    * Zoom by a multiplicative factor while holding the pane-space anchor
@@ -177,13 +201,13 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
    * blank space when the image overflows the pane.
    */
   const zoomAt = useCallback((factor: number, anchorX: number, anchorY: number): void => {
-    const measured = frame.current === null
-      ? undefined
-      : { width: frame.current.clientWidth, height: frame.current.clientHeight }
-    // The live box wins: a resize the observer has not delivered yet must
-    // not anchor against the pane's previous shape.
-    const paneShape = measured ?? pane
+    // The live clamped box wins: a resize the observer has not delivered yet
+    // must not anchor against the pane's previous shape. A degenerate read
+    // (mid-teardown geometry) falls back to the last measured pane.
+    const live = frame.current === null ? undefined : visiblePaneOf(frame.current)
+    const paneShape = live !== undefined && live.width > 1 && live.height > 1 ? live : pane
     if (paneShape === undefined || natural === undefined) return
+    if (factor > 1 || scale > fitScale) userZoomed.current = true
     setZoom((current) => {
       const from = Math.max(current.scale, fitScale)
       const next = Math.min(Math.max(from * factor, fitScale), ZOOM_MAX)
@@ -201,7 +225,7 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
         ty: clampPan(ty, natural.height * next, paneShape.height),
       }
     })
-  }, [fitScale, natural, pane])
+  }, [fitScale, natural, pane, scale])
 
   // The pinch gesture arrives as Ctrl+wheel in WebKit; ⌘+wheel joins it. The
   // factor follows the delta's magnitude, clamped per event.
@@ -236,7 +260,7 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
     const held = drag.current
     if (held === undefined || frame.current === null) return
-    const paneShape = { width: frame.current.clientWidth, height: frame.current.clientHeight }
+    const paneShape = visiblePaneOf(frame.current)
     if (natural === undefined) return
     setZoom(current => ({
       scale: Math.max(current.scale, fitScale),
@@ -293,6 +317,21 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
       )}
     </div>
   )
+}
+
+/**
+ * The pane the fit divides by: the frame's own box clamped to the visible
+ * window region. Restored tabs and mid-settle layouts can leave the frame
+ * taller than the window; dividing by that grown box strands the resting
+ * posture above the true fit and crops the image. The window is the
+ * outermost truth: the visible height is at most the window's bottom edge
+ * below the frame's top.
+ */
+function visiblePaneOf(element: HTMLElement): { readonly width: number; readonly height: number } {
+  const box = element.getBoundingClientRect()
+  const height = Math.max(Math.min(element.clientHeight, window.innerHeight - Math.max(box.top, 0)), 1)
+  const width = Math.max(Math.min(element.clientWidth, window.innerWidth - Math.max(box.left, 0)), 1)
+  return { width, height }
 }
 
 /**
