@@ -19,6 +19,10 @@
      tail footer (and its 28px hover targets) scroll fully clear of the veil
      instead of dimming under the glass at scroll end. */
   padding: 16px calc(var(--dsh-composer-side-clearance) + 16px) 48px;
+  /* Hover-anchored chrome near the tail (tooltips, reveal fades) must never
+     swing a scrollbar in and reflow every row for a frame — the gutter is
+     reserved even while the bar itself is transient. */
+  scrollbar-gutter: stable;
   /* Inline-size query container: wide markdown tables size their breakout
      against this box's content width (100cqw in AssistantMarkdown's
      md-table-wide rule) — the CSS stand-in for deepsuite chat's JS-measured
