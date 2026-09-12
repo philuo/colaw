@@ -248,8 +248,11 @@ describe('ToolRow', () => {
   it('row click expands: chevron leading, summary kept inline, body in the scrolling card', () => {
     const view = render(<ToolRow {...rowProps} />)
     fireEvent.click(view.getByRole('button'))
-    expect(view.queryByTestId('tool-icon')).toBeNull()
-    expect(view.container.querySelector('svg')).not.toBeNull()
+    // Expanded, the leading arrow is the same node rotated down (root carries
+    // data-open); the tool icon stays mounted only to fade out through CSS,
+    // so "gone" is a style state here, not a DOM removal.
+    expect(view.container.querySelector('[data-open]')).not.toBeNull()
+    expect(view.container.querySelector('[class*="chevron"]')).not.toBeNull()
     expect(view.getByText('List files')).toBeTruthy()
     expect(view.getByText(/"a": 1/)).toBeTruthy()
     expect(view.container.querySelector('[class*="ioCard"]')).not.toBeNull()
@@ -288,7 +291,7 @@ describe('ToolRow', () => {
     expect(errorView.container.querySelector('[data-testid="tool-icon"]')).toBeNull()
     // The dot rides the idle slot, so an expandable error row keeps the
     // icon→chevron hover preview instead of losing it with the icon.
-    expect(errorView.container.querySelector('[class*="chevronHover"]')).not.toBeNull()
+    expect(errorView.container.querySelector('[class*="chevron"]')).not.toBeNull()
   })
 
   it('non-expandable rows render a passive leading slot and no row button', () => {

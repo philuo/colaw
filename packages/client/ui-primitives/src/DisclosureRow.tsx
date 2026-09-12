@@ -57,17 +57,17 @@ export function DisclosureRow({
     event.preventDefault()
     onToggle()
   }
-  const collapsedLeading = previewChevron
-    ? (
-      <>
-        <span className={css.iconIdle}>{icon}</span>
-        <IconChevronDownOutline14 className={clsx(chevronClassName, css.chevronHover)} />
-      </>
-    )
-    : icon
-  const leading = open
-    ? <IconChevronDownOutline14 className={chevronClassName} />
-    : collapsedLeading
+  // One chevron element for every state, always in the same DOM slot so the
+  // open/close toggle animates as a rotation of the same arrow instead of two
+  // icons swapping. Collapsed it points right (nothing is expanded yet);
+  // opening rotates it down while the semantic icon fades out via CSS.
+  const chevron = <IconChevronDownOutline14 className={clsx(chevronClassName, css.chevron)} />
+  const leading = (
+    <>
+      <span className={css.iconIdle}>{icon}</span>
+      {open || previewChevron ? chevron : null}
+    </>
+  )
 
   return (
     <div className={clsx(css.root, className)} data-open={open || undefined}>

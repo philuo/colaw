@@ -60,20 +60,35 @@ button.leading {
   transition: opacity 100ms ease;
 }
 
-.chevronHover {
+/* One chevron serves every disclosure state. Collapsed it points right
+   (nothing is expanded yet), and opening rotates it down, so the toggle reads
+   as the same arrow turning. It is an overlay inside the 16px leading box so
+   a collapsed row can crossfade its semantic icon into the chevron on hover. */
+.chevron {
   position: absolute;
   inset: 0;
   margin: auto;
   opacity: 0;
-  transition: opacity 100ms ease;
+  transform: rotate(-90deg);
+  transition: opacity 100ms ease, transform 150ms ease;
 }
 
 .row:hover .iconIdle {
   opacity: 0;
 }
 
-.row:hover .chevronHover {
+.row:hover .chevron {
   opacity: 1;
+}
+
+/* Open: the semantic icon stays hidden and the arrow has turned down. */
+.root[data-open] .iconIdle {
+  opacity: 0;
+}
+
+.root[data-open] .chevron {
+  opacity: 1;
+  transform: rotate(0deg);
 }
 
 .title {
