@@ -68,9 +68,18 @@ jobs:
 
       - name: Pack the product closure into the staging root
         run: |
-          bun scripts/pack-stable-app.ts
+          set -o pipefail
+          bun scripts/pack-stable-app.ts 2>&1 | tee /tmp/pack-ci.log
           mkdir -p "$COLAW_PACK_STAGING"
           cp -R apps/electrobun-host/build/stable-macos-arm64/Colaw.app "$COLAW_PACK_STAGING/"
+
+      - name: Upload the pack log (debug side-channel)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pack-log
+          path: /tmp/pack-ci.log
+          if-no-files-found: ignore
 
       - name: Build the official release set (identity, manifest, patches)
         working-directory: apps/electrobun-host
