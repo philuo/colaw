@@ -138,4 +138,7 @@ jobs:
           TAG: ${{ steps.tag.outputs.name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes
+          gh release view "$TAG" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+            [ -z "$asset" ] || gh release delete-asset "$TAG" "$asset" --yes
+          done
           gh release upload "$TAG" --clobber assets/*
