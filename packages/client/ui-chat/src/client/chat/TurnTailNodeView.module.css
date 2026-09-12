@@ -6,7 +6,8 @@
 
 .actions {
   /* With tail content, this adds to the root gap; without it, the Chat flow's
-     preceding-item offset supplies the other 16px. */
+     preceding-item offset supplies the other 16px. No left pull: the row once
+     slid 6px out of the content edge for glyph alignment, and the root's
+     overflow hidden shaved the copy button's hover circle there. */
   margin-top: 4px;
-  margin-left: -6px;
 }

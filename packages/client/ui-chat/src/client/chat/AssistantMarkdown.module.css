@@ -62,9 +62,9 @@
   line-height: 18px;
 }
 
-/* Finalized footer offset (figma 43:32997); chrome lives in MessageIconActions. */
+/* Finalized footer offset (figma 43:32997); chrome lives in MessageIconActions.
+   The figma's -6px glyph-alignment pull is dropped: it slid the row out of the
+   content edge and the root's overflow hidden shaved the hover circle. */
 .actions {
   margin-top: 16px;
-  /* Optical align with 28px icon hit targets that pad 6px past the glyph. */
-  margin-left: -6px;
 }
