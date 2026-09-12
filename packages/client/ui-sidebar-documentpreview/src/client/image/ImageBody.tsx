@@ -37,7 +37,7 @@ type ImageSource =
 /** Wheel zoom grows with the gesture's pixel magnitude, like Preview: a
  * notch is a comfortable step while a trackpad pinch's rapid small deltas
  * compose into one smooth continuous zoom instead of a per-event jump. */
-const WHEEL_ZOOM_SENSITIVITY = 0.004
+const WHEEL_ZOOM_SENSITIVITY = 0.007
 /** Per-event factor bounds, so one malformed delta cannot leap the view. */
 const GESTURE_FACTOR_MIN = 0.5
 const GESTURE_FACTOR_MAX = 2

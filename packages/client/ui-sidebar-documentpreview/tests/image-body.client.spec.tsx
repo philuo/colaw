@@ -146,20 +146,20 @@ describe('ImageBody', () => {
     const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    // A notch of -100px scales by exp(100 * 0.004) ≈ 1.4918 over the fit.
+    // A notch of -100px wants exp(100 * 0.007) ≈ 2.32 but one event is
+    // capped at ×2, so a notch lands on exactly 2 over the fit.
     fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 100, clientY: 75 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1.4918')
-    // cx = 100 - 200 = -100; tx = -100 - (-100 * 1.4918) ≈ 49.18. The
-    // 200-tall contained height stays under the 300-tall pane, so ty = 0.
-    expect(image.style.transform).toContain('translate(49.18')
-    expect(image.style.transform).toContain(', 0px)')
+    expect(image.style.transform).toContain('scale(2')
+    // cx = 100 - 200 = -100; tx = -100 - (-100 * 2) = 100. The contained
+    // 200-tall height doubles to 400 in a 300-tall pane: slack 50 caps ty.
+    expect(image.style.transform).toContain('translate(100px, 50px)')
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe(null)
-    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('30%')
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('40%')
     // A plain wheel over a contained image is not a zoom or a pan.
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 100, clientY: 75 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1.4918')
+    expect(image.style.transform).toContain('scale(2')
   })
 
   it('scales with the gesture magnitude and bounds one event\'s factor', async () => {
@@ -168,10 +168,10 @@ describe('ImageBody', () => {
     const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    // A trackpad pinch emits rapid small deltas: -5px is a 1.0202 nudge.
+    // A trackpad pinch emits rapid small deltas: -5px is a 1.0356 nudge.
     fireEvent.wheel(viewport, { deltaY: -5, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1.0202')
+    expect(image.style.transform).toContain('scale(1.0356')
     // One malformed huge delta is clamped to a single ×2 step.
     fireEvent.wheel(viewport, { deltaY: -100000, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
