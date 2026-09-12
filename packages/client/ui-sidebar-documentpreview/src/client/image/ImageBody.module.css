@@ -123,6 +123,12 @@
   line-height: 1;
   cursor: text;
   pointer-events: auto;
+  /* The app suppresses selection app-wide (user-select: none on the frame
+     chain), which made these lines drag-pan instead of select — the exact
+     "cannot select image text" report. This one layer is deliberately
+     selectable, so it wins outright. */
+  user-select: text !important;
+  -webkit-user-select: text !important;
 }
 
 .textLayerLine::selection {
