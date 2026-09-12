@@ -181,7 +181,7 @@ export class WorkspaceCommands {
     const entries: WorkspaceTrashEntry[] = []
     for (const sessionId of [...registry.archivedSessionIds].reverse()) {
       const archivedAt = registry.archivedEntries[sessionId]
-      let preview: { title?: string, digest?: string } = {}
+      let preview: { title?: string; digest?: string } = {}
       if (persistence !== undefined) {
         try {
           const handle = await persistence.open(sessionId, 'read')
@@ -216,8 +216,13 @@ export class WorkspaceCommands {
 
   /**
    * Remove one archived session from disk for good: the durable log, the
-   * archive record, and every workspace accounting slot. Live sessions are
-   * refused — an open conversation is closed or archived first.
+   * archive record, and every workspace accounting slot. An id that is not
+   * archived is refused; there is deliberately no live-session refusal —
+   * the host session store keeps admitted instances for any session opened
+   * this run (archiving alone does not evict them), so a residency probe
+   * would reject exactly the sessions the trash exists to delete. The
+   * conversation surface already guarantees an archived session is not the
+   * open conversation (archiving clears the selection and hides the row).
    * @param request - the archived session to delete permanently.
    * @returns the complete resulting archive set.
    */
@@ -226,9 +231,6 @@ export class WorkspaceCommands {
     const registry = this.ctx.workspaceRegistry
     if (!registry.archivedSessionIds.includes(sessionId)) {
       throw new RemoteError('workspace/trash-conflict', `session "${sessionId}" is not archived`, { sessionId })
-    }
-    if (this.ctx.get('sessions')?.get(sessionId) !== undefined) {
-      throw new RemoteError('workspace/trash-conflict', `session "${sessionId}" is live; close it before deleting`, { sessionId })
     }
     const persistence = this.ctx.get('sessionPersistence') as SessionPersistence | undefined
     if (persistence === undefined) {
@@ -257,14 +259,32 @@ export class WorkspaceCommands {
   }
 
   /**
-   * Remove every archived session from disk for good.
-   * @returns the complete resulting archive set (empty on success).
+   * Remove every archived session from disk for good. One failing entry
+   * never abandons the rest: each deletion is attempted independently and
+   * the failures aggregate into one error after the loop, so a partial
+   * clear reports exactly the survivors instead of aborting on the first
+   * conflict. The whole sweep serializes with other workspace writes.
+   * @returns the complete resulting archive set (empty when every entry went).
    */
-  async clearTrash(): Promise<WorkspaceArchiveValue> {
-    for (const sessionId of [...this.ctx.workspaceRegistry.archivedSessionIds]) {
-      await this.deleteArchivedSession({ sessionId })
-    }
-    return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+  clearTrash(): Promise<WorkspaceArchiveValue> {
+    return this.enqueue(async () => {
+      const failures: string[] = []
+      for (const sessionId of [...this.ctx.workspaceRegistry.archivedSessionIds]) {
+        try {
+          await this.deleteArchivedSession({ sessionId })
+        } catch (error) {
+          failures.push(`${sessionId}: ${error instanceof RemoteError ? error.message : errorMessage(error)}`)
+        }
+      }
+      if (failures.length > 0) {
+        throw new RemoteError(
+          'workspace/trash-conflict',
+          `cleared all but ${String(failures.length)} entr${failures.length === 1 ? 'y' : 'ies'}: ${failures.join('; ')}`,
+          { failed: failures.length },
+        )
+      }
+      return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+    })
   }
 
   private requireWorkspace(workspaceId: WorkspaceId): Workspace {

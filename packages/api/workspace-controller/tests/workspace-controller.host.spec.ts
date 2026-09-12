@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
@@ -41,7 +42,7 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve }
 }
 
-async function harness() {
+async function harness(persistence?: Partial<SessionPersistence>) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-workspace-controller-')))
   tempDirs.push(root)
   const ctx = new Context()
@@ -52,7 +53,10 @@ async function harness() {
   const storageDomain = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
-  ctx.provide('sessionPersistence', { list: () => Promise.resolve([]) } as never)
+  ctx.provide('sessionPersistence', {
+    list: () => Promise.resolve([]),
+    ...persistence,
+  } as never)
   await ctx.plugin(WorkspaceRegistry)
   const dispose = (): void => {}
   ctx.provide('typert', {
@@ -333,5 +337,76 @@ describe('WorkspaceController follow', () => {
     await ctx.fiber.dispose()
     roots.splice(roots.indexOf(ctx), 1)
     await expect(closing).resolves.toEqual({ done: true, value: undefined })
+  })
+})
+
+describe('WorkspaceController trash', () => {
+  /** A persistence double that records removals and can be scripted to fail. */
+  function recordingPersistence(failures: ReadonlySet<string> = new Set()): {
+    removed: string[]
+    persistence: { remove: (id: SessionId) => Promise<void> }
+  } {
+    const removed: string[] = []
+    return {
+      removed,
+      persistence: {
+        remove: async (id: SessionId) => {
+          if (failures.has(id)) throw new Error(`disk exploded for ${id}`)
+          removed.push(id)
+        },
+      },
+    }
+  }
+
+  /** Two archived sessions, one of them still admitted in the session store. */
+  async function archivedPair(persistence: { remove: (id: SessionId) => Promise<void> }) {
+    const { controller, ctx, root } = await harness(persistence)
+    const workspace = await controller.create({ path: stageDir(root, 'ws') })
+    const admitted = ctx.sessions.create(SessionId('admitted-archived'), {
+      meta: { cwd: workspace.workspace.path },
+    })
+    const idle = ctx.sessions.create(SessionId('idle-archived'), {
+      meta: { cwd: workspace.workspace.path },
+    })
+    await controller.archiveSession({ sessionId: admitted.id })
+    await controller.archiveSession({ sessionId: idle.id })
+    return { controller, ctx, admitted, idle }
+  }
+
+  it('deletes an archived session that is still admitted in the session store', async () => {
+    const { removed, persistence } = recordingPersistence()
+    const { controller, admitted } = await archivedPair(persistence)
+    await expect(controller.deleteArchivedSession({ sessionId: admitted.id }))
+      .resolves.toEqual({ archivedSessionIds: [SessionId('idle-archived')] })
+    expect(removed).toEqual([admitted.id])
+  })
+
+  it('clears every entry, including sessions opened this run', async () => {
+    const { removed, persistence } = recordingPersistence()
+    const { controller, admitted, idle } = await archivedPair(persistence)
+    await expect(controller.clearTrash()).resolves.toEqual({ archivedSessionIds: [] })
+    expect(removed.sort()).toEqual([admitted.id, idle.id].sort())
+    await expect(controller.trashEntries()).resolves.toEqual({ entries: [] })
+  })
+
+  it('keeps clearing the remaining entries when one deletion fails, and reports the survivor', async () => {
+    const { removed, persistence } = recordingPersistence(new Set([SessionId('idle-archived')]))
+    const { controller, admitted, idle } = await archivedPair(persistence)
+    await expect(controller.clearTrash()).rejects.toMatchObject({
+      code: 'workspace/trash-conflict',
+      message: expect.stringContaining('idle-archived'),
+    })
+    expect(removed).toEqual([admitted.id])
+    await expect(controller.trashEntries()).resolves.toMatchObject({
+      entries: [{ sessionId: idle.id }],
+    })
+  })
+
+  it('refuses to delete a session that is not archived', async () => {
+    const { removed, persistence } = recordingPersistence()
+    const { controller } = await archivedPair(persistence)
+    await expect(controller.deleteArchivedSession({ sessionId: SessionId('never-archived') }))
+      .rejects.toMatchObject({ code: 'workspace/trash-conflict' })
+    expect(removed).toEqual([])
   })
 })

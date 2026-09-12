@@ -111,8 +111,8 @@ export interface WorkspaceArchiveValue {
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
-    /** The trash operation targeted a session that is live, or not archived. */
-    'workspace/trash-conflict': { readonly sessionId: SessionId }
+    /** The trash operation targeted a session that is not archived, or the count of entries a clear could not delete. */
+    'workspace/trash-conflict': { readonly sessionId: SessionId } | { readonly failed: number }
   }
 }
 
