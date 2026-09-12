@@ -7,6 +7,24 @@
  */
 import { parentPort, workerData } from 'node:worker_threads'
 
+// Parity for vitest pools that run under Node 22, which predates ES2025's
+// Uint8Array.prototype.toHex. Every WKWebView the app targets (macOS 15.x,
+// Safari 18.2+) ships it natively, so production needs no such shim — but
+// PDF.js computes file fingerprints with it unconditionally, and without the
+// fallback this carrier cannot parse anything under a Node pool.
+if (typeof Uint8Array.prototype.toHex !== 'function') {
+  const HEX = Array.from({ length: 256 }, (_unused, index) => index.toString(16).padStart(2, '0'))
+  Object.defineProperty(Uint8Array.prototype, 'toHex', {
+    value() {
+      let hex = ''
+      for (const byte of this) hex += HEX[byte]
+      return hex
+    },
+    writable: true,
+    configurable: true,
+  })
+}
+
 // Bun exposes some of these as lazy builtins whose plain `delete` runs the
 // underlying native with the prototype as receiver (a TypeError); shadowing
 // with an undefined value hides the native just as effectively.

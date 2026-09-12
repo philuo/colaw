@@ -4,7 +4,7 @@ export default {
   app: {
     name: "Colaw",
     identifier: "ai.deepseek.harness",
-    version: "1.0.4",
+    version: "1.0.5",
   },
   // The stable release identity (hash, manifest, delta patches) belongs to
   // Hutch's release packaging; the packer's payload merges in at postWrap.

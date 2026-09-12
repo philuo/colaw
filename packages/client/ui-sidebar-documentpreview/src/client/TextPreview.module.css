@@ -107,6 +107,15 @@
   overflow: hidden;
 }
 
+/* The zoomable image fills the body cell the same way the code preview does:
+   its natural-pixel layout must not stretch this scroller, or the fitted
+   scale is measured against a grown pane and long images open cropped. */
+.body:has([data-image-preview]) {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .wrap {
   white-space: pre-wrap;
   word-break: break-word;

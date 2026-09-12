@@ -49,7 +49,7 @@ tab 使用 `fileAddressFor` 构造的 Session 地址，携带相对或绝对路�
 
 HTML 以贴合正文四边的 Blob iframe 运行，沙箱属性严格为 `sandbox="allow-scripts"`，不含 `allow-same-origin`；脚本无法访问父应用的源或文件读取接口。渲染器通过普通 inject 回调调用 `remote.workspaceFiles.readRelated`，加载直接声明的相对 `.js` 经典脚本和 `.css` 样式表；固定安全上限为单个资源 4 MiB、总计 32 MiB、64 个不同资源。Host 代码解析关联路径，`rpc.ts` 解码返回的字节。在渲染器内部，base64 仅用于把 iframe 引导载荷嵌入脚本文本。`<base href>` 将依赖解析交给浏览器，HTTPS 资源也由浏览器处理。本地模块 import、CSS `url()`/`@import` 和动态 `fetch` 不使用 Host 文件访问。读取失败、无效 UTF-8 或超出上限都使预览失败，不发布部分资源包。替换或卸载文档会释放其 Blob URL。
 
-PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态图片上下文中渲染。图片保持固有 CSS 像素尺寸；小图在共享滚动区内居中，大图可沿任一轴滚动。渲染器既不提供缩放，也不提供拖拽平移。SVG 标记绝不进入应用 DOM 或 iframe，因此其中的脚本无法执行，也无法访问父页面。替换或卸载图片会撤销其 Blob URL。
+PNG、JPEG、GIF、WebP、BMP、ICO 和 SVG 通过 Blob URL 在 `<img>` 静态图片上下文中渲染。面板硬性定界（视口以绝对定位铺满框架），因此即便超长图也按真实面板测量，默认完整居中收纳、双轴居中且绝不超过原始像素。⌘/Ctrl+滚轮（触控板捏合手势）以指针为锚点缩放，缩放系数与手势像素幅度成正比——滚轮一档是合适的步进，捏合的高频小增量则合成为一段平滑连续的缩放（单次事件钳制在 ×0.5–×2）；放大后可拖拽平移并受边缘钳制，双击在适配与 2 倍特写之间切换，比例徽标显示原始像素缩放并点击复位。SVG 标记绝不进入应用 DOM 或 iframe，因此其中的脚本无法执行，也无法访问父页面。替换或卸载图片会撤销其 Blob URL。
 
 共享文案来自 `sidebarDocumentPreview`；各内置渲染器拥有自己的本地化标签。
 

@@ -1,38 +1,89 @@
+/* The pane-bounded surface: the frame takes the whole body cell (the owner's
+   `:has([data-image-preview])` rule bounds it), and the viewport fills it
+   absolutely so the image's natural-pixel layout size can never stretch the
+   measured pane — that mis-scaled the fit and cropped long images. */
 .frame {
+  position: relative;
   display: flex;
   box-sizing: border-box;
-  width: max-content;
-  min-width: 100%;
-  height: max-content;
-  min-height: 100%;
-  padding: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
   font-family: var(--dsw-font, sans-serif);
   white-space: normal;
+}
+
+/* The fitted surface: one pane-sized viewport, the image centered within it
+   and transformed by the operator's zoom/pan. Overflow stays hidden — the
+   pan clamps keep the image reachable, and the viewport owns zoom/pan
+   locally instead of growing the shared document body. */
+.viewport {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  padding: 8px;
+  overflow: hidden;
+  touch-action: none;
+}
+
+.viewport[data-panning] {
+  cursor: grabbing;
+}
+
+.viewport:not([data-zoom-at-fit]) {
+  cursor: grab;
 }
 
 .image {
   display: block;
   flex: none;
-  width: auto;
   max-width: none;
-  height: auto;
   max-height: none;
   margin: auto;
   user-select: none;
+  -webkit-user-drag: none;
+  transform-origin: center center;
+  will-change: transform;
 }
 
 .image[hidden] {
   display: none;
 }
 
+/* Natural-pixel scale, bottom-right; one click returns to the fitted view. */
+.badge {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 1;
+  min-width: 52px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-overlay);
+  color: var(--dsw-alias-label-primary);
+  font-family: var(--dsw-mono-font, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 18px;
+  cursor: pointer;
+}
+
+.badge:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
 .status {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  width: 100%;
-  min-height: 100%;
-  margin: 0;
   padding: 10px;
   color: var(--dsw-alias-label-secondary);
   font-size: 13px;

@@ -5,6 +5,8 @@ export const zh = {
   loading: '正在打开图片…',
   failed: '无法显示这张图片。',
   unsupported: '图片预览需要完整文件内容。',
+  zoomPercent: '{percent}%',
+  zoomReset: '重置缩放',
 } satisfies Record<string, string>
 
 /** Image renderer dictionary keys. */
@@ -17,6 +19,8 @@ export const en = {
   loading: 'Opening image…',
   failed: 'This image could not be displayed.',
   unsupported: 'Image preview requires the complete file contents.',
+  zoomPercent: '{percent}%',
+  zoomReset: 'Reset zoom',
 } satisfies Record<ImagePreviewKey, string>
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {

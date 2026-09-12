@@ -1,52 +1,74 @@
-# Changelog
+# 更新日志（Changelog）
 
-All notable changes to this project are documented here, newest first.
-Each entry ships with a `vX.Y.Z` tag; the release workflow publishes the
-matching GitHub Release with DMG, app zip, and the update feed.
+本项目的所有重要变更均记录于此，最新在前。
+每个条目随 `vX.Y.Z` 标签发布；发布流水线会创建对应的 GitHub Release，
+附带 DMG、应用 zip 与自动更新 feed。
+
+## [1.0.5] — 2026-09-12
+
+### 新增
+
+- **图片预览聚焦缩放**：右侧栏图片预览不再只是"平铺看个轮廓"。默认姿态
+  改为完整居中显示（等比缩放至面板内、且不超过原始像素，避免小图模糊放大）；
+  ⌘/Ctrl + 滚轮（触控板双指捏合的等效手势）以指针为锚点缩放，放大后可
+  按住拖拽平移（自动钳制在图片边缘内，不会拖飞），双击在"适配"与"2 倍"
+  之间切换，右下角新增百分比徽标，点击即可一键复位（处于适配比例时徽标
+  置灰，表示当前无可复位）。缩放/平移仅为视图状态，不改动文件本体。
+  新增 18 个交互用例覆盖：居中适配、禁止超额放大、滚轮缩放锚点与幅度
+  比例、平移边缘钳制、双击切换与徽标复位。
+
+### 修复
+
+- **长图默认显示不完整**：图片按原始像素参与布局，会把预览视口撑高，
+  "适配比例"随之按被撑大的错误面板计算（实测 3174×8130 的长图按 50%
+  显示、下半截被裁）。现在视口以绝对定位铺满定界后的面板（对齐代码
+  预览的既有方案），任何长图都按真实面板测量，默认完整可见。
+- **缩放过灵敏、不跟随指针**：原先每个滚轮事件固定 ×1.25，触控板捏合
+  以高频小事件涌入，0.5 秒即可放大数百倍；且锚点计算使用了被撑大的
+  面板中心，缩放会"飞离"指针。现在缩放系数与手势像素幅度成正比
+  （滚轮一档约 1.27 倍，捏合平滑连续，单次事件钳制在 ×0.5–×2），锚点
+  始终取实时面板下的指针位置。
+- 测试设施：PDF 兼容性回归的 worker 载体在 Node 22 进程池下补齐
+  `Uint8Array.prototype.toHex` 平价垫片（应用目标 WKWebView 均原生具备，
+  生产路径不受影响），本地与 CI 进程池均可复现真实故障形态。
 
 ## [1.0.4] — 2026-09-12
 
-### Fixed
+### 修复
 
-- **PDF preview failed on the desktop app** (`this.#g.getOrInsertComputed is
-  not a function`). PDF.js 6 requires the Map upsert proposal
-  (`getOrInsert`/`getOrInsertComputed`), and the WKWebView the app runs in
-  lacks it (as well as `Promise.try` and the Set methods on older macOS
-  builds) — every PDF open failed at parse time. The preview now installs
-  idempotent shims on both sides of the worker boundary: the page realm
-  imports `pdf/compat.ts` ahead of PDF.js, and the same shim source is
-  prepended to the worker's Blob module. New regression coverage parses a
-  real PDF with the APIs deleted from BOTH realms, reproducing the desktop
-  failure shape; all 25 PDF spec cases pass. Verified end to end in the
-  desktop app: the right-sidebar preview renders the sample PDF page.
+- **桌面端 PDF 预览打开即失败**（`this.#g.getOrInsertComputed is not a
+  function`）。PDF.js 6 依赖 Map upsert 提案
+  （`getOrInsert`/`getOrInsertComputed`），而应用所在的 WKWebView 并不
+  支持（旧版 macOS 上还缺 `Promise.try` 与 Set 方法），导致每次打开 PDF
+  都在解析阶段报错。现在预览在 worker 边界两侧同时安装幂等垫片：页面
+  侧在加载 PDF.js 之前引入 `pdf/compat.ts`，同一份垫片源码也会拼接在
+  worker 的 Blob 模块之前。新增回归用例在"两个 realm 都删掉这些 API"
+  的前提下解析真实 PDF，完整复现桌面端故障形态；25 个 PDF 用例全部
+  通过。并已在桌面应用中端到端实测：右侧栏成功渲染示例 PDF 页面。
 
 ## [1.0.3] — 2026-09-12
 
-### Fixed
+### 修复
 
-- **Trash "clear all" deleted nothing for sessions opened during the run.**
-  `deleteArchivedSession` refused any session the host session store still
-  held, but archiving does not evict it, so the residency probe rejected
-  exactly the sessions the trash exists to delete — a clear aborted on its
-  first entry with `workspace/trash-conflict`. The unimplementable probe is
-  gone; `clearTrash` now sweeps every entry independently (one failure no
-  longer abandons the rest) and aggregates survivors into a single conflict
-  error. Host spec gains four trash regression cases.
+- **回收站"清空全部"对本次运行中打开过的会话一条也删不掉。**
+  `deleteArchivedSession` 之前会拒绝宿主会话仓库仍持有的会话，但归档
+  并不会把它从仓库中逐出，于是这个存活探测恰好挡住了回收站本来就该
+  删除的会话——清空操作在第一条就带着 `workspace/trash-conflict` 中止。
+  现已移除这条无法成立的探测；`clearTrash` 逐条独立清理（单条失败不再
+  连累其余条目），并将幸存条目汇总为一个冲突错误上报。宿主侧新增四个
+  回归用例。
 
 ## [1.0.2] — 2026-09-12
 
-### Added
+### 新增
 
-- Codex-style workspace chip on the New Session page: the bound posture
-  shows folder + title with a hover-revealed filled circle-X remove
-  affordance; the unbound posture keeps an existing-workspace picker with no
-  detached row and no add-directory (Finder) entry. New Session defaults to
-  no workspace — only an explicit sidebar group action or the current
-  session's workspace preselects one. Removing or switching the bound
-  workspace carries the unsubmitted draft. Startup reuses or creates a
-  workspace-less blank session.
-- `scripts/pack-stable-release.ts`: the local one-shot stable chain mirroring
-  CI (pack → official `--env=stable` identity → DMG), leaving a directly
-  runnable `Colaw.app` (no self-extraction popup on every repack) beside the
-  official `Colaw.dmg` in `build/stable-macos-arm64/`, with no update feed
-  baked locally.
+- 新建会话页的 Codex 风格工作区胶囊：绑定态展示文件夹图标与标题，悬停
+  显现实心圆叉移除入口；未绑定态保留已有工作区选择，但不再提供"不绑定
+  工作区"独立行，也没有添加目录（Finder）入口。新建会话默认不选工作
+  区——只有侧栏工作区分组操作、或当前会话所在工作区的新建动作才会预选。
+  移除或切换绑定工作区时，未提交的草稿内容随行保留。启动时复用或新建
+  一个不绑定工作区的空白会话。
+- `scripts/pack-stable-release.ts`：本地一键稳定版打包链，对齐 CI
+  （打包 → 官方 `--env=stable` 身份 → DMG），产物 `build/stable-macos-arm64/`
+  中留下可直接运行的 `Colaw.app`（每次重打包不再弹自动解压弹窗）与官方
+  `Colaw.dmg` 并列，且本地不写入更新 feed。
