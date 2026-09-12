@@ -27,9 +27,12 @@ import { SettingsRoot } from './SettingsRoot.tsx'
 import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
 import { AboutSettingsSection } from './AboutSettingsSection.tsx'
+import { IdentityRow } from './IdentityRow.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
+import { IDENTITY_SETTINGS_NAMESPACE } from '../identity-settings.ts'
+import type { IdentitySettings } from '../identity-settings.ts'
 import { en, zh, type SettingsKey } from './locales.ts'
 
 export type {
@@ -191,4 +194,16 @@ export function apply(ctx: ClientContext): void {
     locale: NS,
     children: { 'settings.general.item': { kind: 'list', scope: 'root' } },
   }, GeneralSection))
+
+  // 身份预设 (identity preset): one of the shell-owned General rows — the
+  // namespace it writes is registered by this package's host half, which also
+  // republishes the system-prompt section on every settled edit.
+  const identityScope = ctx.settingsScope.bind<IdentitySettings>({ namespace: IDENTITY_SETTINGS_NAMESPACE })
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'identity',
+    order: 90,
+    locale: NS,
+    inject: () => ({ identity: identityScope }),
+  }, IdentityRow))
 }

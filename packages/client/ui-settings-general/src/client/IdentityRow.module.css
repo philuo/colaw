@@ -1,0 +1,70 @@
+/* 身份预设 (identity preset) row: title + description on the left, the two
+   persona inputs stacked on the right, matching the General rows' rhythm. */
+
+.row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  width: min(560px, 100%);
+  padding: 4px 0;
+  color: var(--dsw-alias-label-primary);
+}
+
+.rowText {
+  display: flex;
+  flex: 1 1 40%;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.title {
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 500;
+}
+
+.desc {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 17px;
+}
+
+.fields {
+  display: flex;
+  flex: 1 1 60%;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.fieldLabel {
+  flex: 0 0 44px;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.input {
+  box-sizing: border-box;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 0.5px solid var(--dsw-alias-border-l3);
+  border-radius: 6px;
+  background: var(--dsw-alias-bg-input);
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--dsw-alias-border-focus);
+}

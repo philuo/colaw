@@ -48,3 +48,156 @@
 - id: client-hmr
   config:
     pollIntervalMs: 100
+
+# ── Built-in remote MCP services (product-shipped integrations) ──
+#
+# Each row mounts one @deepseek-ai/dsh-mcp-client instance over Streamable
+# HTTP with the product's own bearer credentials. failOnStartupError stays
+# false (a remote outage must never block boot), and reconnect uses the
+# library defaults. Tool names surface as `mcp__<serverName>__<tool>`.
+#
+# Credential note: these tokens ship with the product by explicit product
+# decision (user-requested built-ins); rotating them means re-issuing the
+# app or overriding the rows from the user patch layer.
+
+# 北大法宝 (PKULaw) — statutes, cases, citation services.
+- insert:
+    - id: mcp-pkulaw-law-search
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pkulaw-law-search
+        transport: streamable-http
+        url: https://apim-gateway.pkulaw.com/mcp-law-search-service
+        toolCallTimeoutMs: 180000
+    - id: mcp-pkulaw-law-keyword
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pkulaw-law-keyword
+        transport: streamable-http
+        url: https://apim-gateway.pkulaw.com/mcp-law
+        toolCallTimeoutMs: 180000
+    - id: mcp-pkulaw-case-semantic-search
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pkulaw-case-semantic-search
+        transport: streamable-http
+        url: https://apim-gateway.pkulaw.com/mcp-case-search-service
+        toolCallTimeoutMs: 180000
+    - id: mcp-pkulaw-case-keyword
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pkulaw-case-keyword
+        transport: streamable-http
+        url: https://apim-gateway.pkulaw.com/mcp-case
+        toolCallTimeoutMs: 180000
+    - id: mcp-pkulaw-law-item-keyword
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pkulaw-law-item-keyword
+        transport: streamable-http
+        url: https://apim-gateway.pkulaw.com/mcp-fatiao
+        toolCallTimeoutMs: 180000
+    - id: mcp-pkulaw-law-recognition
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pkulaw-law-recognition
+        transport: streamable-http
+        url: https://apim-gateway.pkulaw.com/law_recognition
+        toolCallTimeoutMs: 180000
+    - id: mcp-pkulaw-case-number-recognition
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pkulaw-case-number-recognition
+        transport: streamable-http
+        url: https://apim-gateway.pkulaw.com/case_number_recognition
+        toolCallTimeoutMs: 180000
+    - id: mcp-pkulaw-citation-validator
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: pkulaw-citation-validator
+        transport: streamable-http
+        url: https://apim-gateway.pkulaw.com/pku_citation_validator
+        toolCallTimeoutMs: 180000
+
+# 企查查 (QCC) — company credit, risk, IP, operations, tender services.
+- insert:
+    - id: mcp-qcc-company
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-company
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/company/stream
+        toolCallTimeoutMs: 180000
+    - id: mcp-qcc-risk
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-risk
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/risk/stream
+        toolCallTimeoutMs: 180000
+    - id: mcp-qcc-ipr
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-ipr
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/ipr/stream
+        toolCallTimeoutMs: 180000
+    - id: mcp-qcc-operation
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-operation
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/operation/stream
+        toolCallTimeoutMs: 180000
+    - id: mcp-qcc-history
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-history
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/history/stream
+        toolCallTimeoutMs: 180000
+    - id: mcp-qcc-executive
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-executive
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/executive/stream
+        toolCallTimeoutMs: 180000
+    - id: mcp-qcc-legal-regulation
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-legal-regulation
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/regulation/stream
+        toolCallTimeoutMs: 180000
+    - id: mcp-qcc-legal-case
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-legal-case
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/case/stream
+        toolCallTimeoutMs: 180000
+    - id: mcp-qcc-tender
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: qcc-tender
+        transport: streamable-http
+        url: https://agent.qcc.com/mcp/tender/stream
+        toolCallTimeoutMs: 180000
+
+# Firecrawl — web scraping / crawling / extraction.
+- insert:
+    - id: mcp-firecrawl
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: firecrawl
+        transport: streamable-http
+        url: https://mcp.firecrawl.dev/v2/mcp
+        toolCallTimeoutMs: 180000
+
+# 百度网盘 (Baidu Netdisk) bundled skill: the bdpan storage operations skill
+# ships as packaged assets (upstream baidu-netdisk/bdpan-storage, Apache-2.0).
+- insert:
+    - id: skill-baidu-netdisk
+      name: '@deepseek-ai/dsh-skill-baidu-netdisk'
+      config: {}

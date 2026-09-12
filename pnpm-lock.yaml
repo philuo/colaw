@@ -508,6 +508,15 @@ importers:
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:*
         version: link:../../packages/util/launch-environment
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:*
+        version: link:../../packages/mcp/mcp-client
+      '@deepseek-ai/dsh-skill-baidu-netdisk':
+        specifier: workspace:*
+        version: link:../../packages/skill/skill-baidu-netdisk
+      '@deepseek-ai/dsh-tool-mineru':
+        specifier: workspace:*
+        version: link:../../packages/tools/tool-mineru
       '@deepseek-ai/dsh-web-frontend':
         specifier: workspace:*
         version: link:../web
@@ -8899,6 +8908,15 @@ importers:
         specifier: workspace:^
         version: link:../skill
 
+  packages/skill/skill-baidu-netdisk:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-skill':
+        specifier: workspace:^
+        version: link:../skill
+
   packages/skill/skill-filesystem:
     dependencies:
       '@deepseek-ai/schemastery':
@@ -10195,6 +10213,22 @@ importers:
       '@deepseek-ai/dsh-user-questions':
         specifier: workspace:^
         version: link:../../interaction/user-questions
+
+  packages/tools/tool-mineru:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-tools':
+        specifier: workspace:^
+        version: link:../../core/tools
 
   packages/typert/generator:
     dependencies:

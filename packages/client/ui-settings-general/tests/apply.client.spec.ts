@@ -107,9 +107,12 @@ describe('ui-settings-general apply', () => {
     // The nav label is a locale-following thunk; owners resolve at read time.
     expect(generalLabel(c)).toBe('通用设置')
     expect(c.ctx.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
-    // The General items and the onboarding steps are feature-owned rows; this plugin seats none of its own.
-    expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS)).toEqual([])
+    // The onboarding steps are feature-owned rows; this plugin seats none of its own.
     expect(c.ctx.slots.entries('settings.onboarding').filter(row => row.locale === NS)).toEqual([])
+    // The one shell-owned General item is the 身份预设 row: product identity,
+    // intentionally owned by the shell rather than a feature plugin.
+    const identityItems = c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS)
+    expect(identityItems.map(row => row.options?.id)).toEqual(['identity'])
     const { controller, hooks } = actionInjectedOf(c)
     expect(controller.store.getSnapshot().status).toBe('idle')
     expect(hooks.snapshot).toBe(controller.store)
@@ -212,7 +215,9 @@ describe('ui-settings-general apply', () => {
       expect(ownEntries(c, name)[0]).not.toBe(before[index])
     })
     expect(c.ctx.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
-    expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS)).toEqual([])
+    // The 身份预设 row re-registers with the rebuilt chain; still shell-owned, still one.
+    expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS).map(row => row.options?.id))
+      .toEqual(['identity'])
     // The recovered registrations still ride the locale path.
     const english = localeView('en', 1)
     const chinese = localeView('zh', 2)

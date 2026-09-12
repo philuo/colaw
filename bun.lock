@@ -184,6 +184,7 @@
         "@deepseek-ai/dsh-cmdline": "workspace:*",
         "@deepseek-ai/dsh-host-webserver": "workspace:*",
         "@deepseek-ai/dsh-launch-environment": "workspace:*",
+        "@deepseek-ai/dsh-mcp-client": "workspace:*",
         "@deepseek-ai/dsh-web-frontend": "workspace:*",
         "@deepseek-ai/schemastery": "workspace:*",
         "electrobun": "2.0.2-beta.19",
