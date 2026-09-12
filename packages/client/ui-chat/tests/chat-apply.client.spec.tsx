@@ -85,7 +85,7 @@ describe('Chat apply wiring', () => {
     expect(resolveSlotLabel(views[0]?.options.label)).toBe('对话')
     expect(b.runtime.slots.spec('conversation.chat.node'))
       .toMatchObject({ kind: 'keyed', scope: 'session' })
-    expect(b.runtime.slots.entries('conversation.composer.dock').map(row => row.options.id))
+    expect(b.runtime.slots.entries('conversation.composer.contextPanel').map(row => row.options.id))
       .toEqual(['stats'])
     expect(b.runtime.slots.entries('settings.general.item').map(row => row.options.id))
       .toEqual(['transcript-view', 'composer-enter'])

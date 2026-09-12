@@ -5,7 +5,7 @@ import { cleanup, render } from '@testing-library/react'
 import { bindSnapshotSelector, makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import { zh as commonZh } from '@deepseek-ai/dsh-client-locale/src/locales/zh.ts'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
-import { StatsPills } from '../src/client/chat/StatsPills.tsx'
+import { ComposerStatsPanel } from '../src/client/chat/StatsPills.tsx'
 import { zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
@@ -45,14 +45,15 @@ describe('render branch tails', () => {
     const snap = chatSnapshotFixture({ nodes })
     const source = { getSnapshot: () => snap, subscribe: () => () => {} }
     const view = render(
-      <StatsPills
+      <ComposerStatsPanel
         t={t}
         useChat={bindSnapshotSelector(source)}
         useProjection={() => undefined}
       />,
     )
-    expect(view.container.textContent).toBe('2 轮 3 步')
-    // Window-fold counts carry no timed figure, so the pill is a static reading.
+    expect(view.container.textContent).toBe('会话统计2 轮 3 步')
+    // Window-fold counts carry no timed figure, so the time group renders its
+    // title alone and the usage group is absent without a projection.
     expect(view.queryAllByRole('button')).toHaveLength(0)
   })
 

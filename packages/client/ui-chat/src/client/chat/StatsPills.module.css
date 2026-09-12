@@ -1,68 +1,53 @@
-/* Two icon pills side by side under the composer, 13/20 tertiary text tier
-   with a hover-pill affordance; each pill's click-open panel wears the shared
-   stat-dialog.module.css skin. */
+/* Sections inside the composer context meter's open panel: the same row skin
+   as the meter's own breakdown (12/20, secondary labels, tabular primary
+   values), one titled group for session time/speed and one for token usage. */
 
-.root {
-  display: flex;
-  justify-content: center;
+.section {
+  display: grid;
   gap: 12px;
-  max-width: var(--dsh-chat-content-width);
-  width: 100%;
-  margin: 0 auto;
-  box-sizing: border-box;
-  padding: 4px calc(var(--dsh-composer-side-clearance) + 16px) 0px;
-  font-size: var(--dsh-content-font-size-secondary, 13px);
-  line-height: calc(20px + var(--dsh-content-font-delta-secondary, 0px));
+  text-align: left;
 }
 
-/* Dialog anchor: shrink-wraps its pill so the panel clamp measures the pill. */
-.anchor {
-  display: inline-flex;
-  min-width: 0;
-}
-
-.pill {
-  display: inline-flex;
+.groupTitle {
+  display: flex;
   align-items: center;
   gap: 6px;
-  box-sizing: border-box;
-  max-width: 100%;
-  padding: 1px 8px;
-  border: none;
-  border-radius: 24px;
-  background: transparent;
+  font-size: 12px;
+  line-height: 20px;
   color: var(--dsw-alias-label-tertiary);
-  font: inherit;
-  font-variant-numeric: tabular-nums;
-  line-height: inherit;
-  white-space: nowrap;
 }
 
-.pill svg {
+.groupTitle svg {
   width: 14px;
   height: 14px;
   flex: none;
 }
 
-/* Only the button form (a pill with dialog rows to open) invites interaction;
-   the static span form keeps the resting tertiary reading. */
-button.pill {
-  cursor: pointer;
+.groupValue {
+  margin-left: auto;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary);
 }
 
-button.pill:hover,
-button.pill[aria-expanded='true'] {
-  background: var(--dsw-alias-interactive-bg-hover);
+.rows {
+  margin: 4px 0 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 0;
+}
+
+.row dt {
   color: var(--dsw-alias-label-secondary);
 }
 
-.label {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.sep {
-  color: var(--dsw-alias-separator-primary);
-  margin: 0 6px;
+.row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+  color: var(--dsw-alias-label-primary);
 }

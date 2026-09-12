@@ -5,6 +5,7 @@
  * capacity. */
 
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import type { UseProjection } from '@deepseek-ai/dsh-api-session-controller/client'
 // Type-only: the `contextPressure` / `contextBreakdown` projection key merges.
 import type {} from '@deepseek-ai/dsh-token-meter/client'
@@ -50,9 +51,11 @@ export interface ContextMeterProps {
   useProjection: UseProjection
   /** The owning bar's locale seat, passed down as a plain prop. */
   t: ComposerBarProps['t']
+  /** Slot sections rendered inside the open panel under the context rows. */
+  panelExtra?: ReactNode
 }
 
-export function ContextMeter({ useProjection, t }: ContextMeterProps) {
+export function ContextMeter({ useProjection, t, panelExtra }: ContextMeterProps) {
   const pressure = useProjection('contextPressure')
   const breakdown = useProjection('contextBreakdown')
   const [open, setOpen] = useState(false)
@@ -162,6 +165,14 @@ export function ContextMeter({ useProjection, t }: ContextMeterProps) {
                 </div>
               ))}
             </dl>
+          )}
+          {/* Slot sections (the session stats) close the panel under a
+              hairline that echoes the header rule. */}
+          {panelExtra != null && (
+            <>
+              <div className={css.extraRule} aria-hidden />
+              <div className={css.extra}>{panelExtra}</div>
+            </>
           )}
         </div>
       )}

@@ -131,6 +131,18 @@
   margin: 6px 0 0;
 }
 
+/* Slot sections (the session stats) close the panel: a full-bleed hairline
+   echoing the header rule, then the section's own grid. */
+.extraRule {
+  height: 1px;
+  margin: 10px -12px 2px;
+  background: var(--dsw-alias-border-l2);
+}
+
+.extra {
+  padding-top: 6px;
+}
+
 .row {
   display: flex;
   align-items: center;

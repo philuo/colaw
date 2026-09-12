@@ -168,6 +168,8 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.overlay': { kind: 'list'; scope: 'session' }
     /** Ambient entries below the composer card. */
     'conversation.composer.dock': { kind: 'list'; scope: 'session' }
+    /** Sections inside the composer context meter's open panel. */
+    'conversation.composer.contextPanel': { kind: 'list'; scope: 'session' }
     /** Compact controls at the left of the composer tool row. */
     'conversation.input.left': { kind: 'list'; scope: 'session' }
     /** Compact controls before the composer submit action. */
@@ -343,7 +345,7 @@ export type ComposerBarProps =
     | 'conversation.input.attachments' | 'conversation.input.overlay'
     | 'conversation.input.left' | 'conversation.input.plan'
     | 'conversation.input.right' | 'conversation.input.model'
-    | 'conversation.composer.dock'
+    | 'conversation.composer.dock' | 'conversation.composer.contextPanel'
   >
   & InjectFace<ComposerBarInjected>
   & PropsLocale<'conversation'>

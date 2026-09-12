@@ -16,7 +16,7 @@ import {
   UserMessageNodeView,
 } from '../src/client/chat/MessageItem.tsx'
 import { AssistantMarkdown, type AssistantMarkdownProps } from '../src/client/chat/AssistantMarkdown.tsx'
-import { StatsPills } from '../src/client/chat/StatsPills.tsx'
+import { ComposerStatsPanel } from '../src/client/chat/StatsPills.tsx'
 import { zh } from '../src/client/locale.ts'
 import { chatSnapshotFixture } from './chat-snapshot-fixture.client.ts'
 
@@ -1045,7 +1045,7 @@ describe('small branch tails', () => {
     const snap = chatSnapshotFixture({ nodes })
     const source = { getSnapshot: () => snap, subscribe: () => () => {} }
     const view = render(
-      <StatsPills
+      <ComposerStatsPanel
         t={t}
         useChat={bindSnapshotSelector(source)}
         useProjection={(key: string) => key === 'tokenUsage'
@@ -1053,15 +1053,12 @@ describe('small branch tails', () => {
           : undefined}
       />,
     )
-    // The untimed counts pill renders static, so the usage pill is the only button.
-    const [usagePill] = [...view.getAllByRole('button')] as [HTMLElement]
+    // Pure output accounting reaches the usage group's bucket rows; the title
+    // carries the compact total and no cache-hit row renders.
     expect(view.getByText('1 轮 1 步').closest('button')).toBeNull()
-    expect(usagePill.textContent).toBe('10 tok')
-    // Pure output accounting still reaches the usage pill's click-open dialog rows.
-    fireEvent.click(usagePill)
-    const dialog = view.getByRole('dialog')
-    expect(dialog.textContent).toContain('输出10 tok')
-    expect(dialog.textContent).not.toContain('缓存命中')
+    expect(view.getByText('Token 用量').textContent).toContain('10 tok')
+    expect(view.container.textContent).toContain('输出10 tok')
+    expect(view.container.textContent).not.toContain('缓存命中')
   })
 })
 

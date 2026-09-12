@@ -91,6 +91,7 @@ interface BenchOptions {
   leftItems?: React.ReactNode
   rightItems?: React.ReactNode
   footer?: React.ReactNode
+  contextPanel?: React.ReactNode
   attachments?: readonly ComposerAttachment[]
   /** Upload states served for file-kind drafts (absent = every file is ready). */
   fileUploads?: DraftFileUploads
@@ -158,6 +159,7 @@ function bench(over?: BenchOptions) {
     if (key === 'conversation.input.left') return over?.leftItems ?? null
     if (key === 'conversation.input.right') return over?.rightItems ?? null
     if (key === 'conversation.composer.dock') return over?.footer ?? null
+    if (key === 'conversation.composer.contextPanel') return over?.contextPanel ?? null
     if (key === 'conversation.input.plan') return over?.planEntry ?? null
     if (key === 'conversation.input.model') return over?.modelEntry ?? null
     return null
@@ -1570,7 +1572,7 @@ describe('command launcher chrome and control seats', () => {
       'conversation.input.overlay', 'conversation.input.attachments',
       'conversation.input.plan', 'conversation.input.left',
       'conversation.input.right', 'conversation.input.model',
-      'conversation.composer.dock',
+      'conversation.composer.contextPanel', 'conversation.composer.dock',
     ])
     expect(view.queryByLabelText('Plan mode')).toBeNull()
     expect(view.queryByLabelText('Model')).toBeNull()
