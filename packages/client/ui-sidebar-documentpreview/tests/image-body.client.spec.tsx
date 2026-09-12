@@ -316,6 +316,64 @@ describe('ImageBody', () => {
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe(null)
   })
 
+  it('renders deep zoom through a pane-sized canvas past the layer budget', async () => {
+    // The deep-zoom switch depends on device pixels; 4x makes two notches
+    // (k=4 over a 400-wide containment: 6400 > 4096) cross the budget while
+    // one notch (3200) stays on the transform path.
+    const ratioDescriptor = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio')
+    Object.defineProperty(window, 'devicePixelRatio', { configurable: true, value: 4 })
+    const draws: unknown[][] = []
+    const context = {
+      setTransform: () => {},
+      clearRect: () => {},
+      drawImage: (...args: unknown[]) => { draws.push(args) },
+      imageSmoothingEnabled: false,
+      imageSmoothingQuality: '',
+    }
+    const getContext = vi.fn(() => context)
+    vi.stubGlobal('requestAnimationFrame', (callback: (time: number) => void): number => { callback(0); return 1 })
+    vi.stubGlobal('cancelAnimationFrame', () => {})
+    try {
+      const view = render(<ImageBody {...props()} />)
+      const image = await screen.findByRole('img', { hidden: true })
+      const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
+      const canvas = view.container.querySelector('canvas')!
+      expect(canvas).not.toBeNull()
+      canvas.getContext = getContext as unknown as HTMLCanvasElement['getContext']
+      fireEvent.load(image)
+      await act(async () => { await Promise.resolve() })
+      // One notch (k=2): 400*2*4 = 3200 device px stays under the budget —
+      // the transform path runs, the canvas stays hidden.
+      fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 })
+      await act(async () => { await Promise.resolve() })
+      expect(image.style.transform).toContain('scale(2')
+      expect(canvas.hidden).toBe(true)
+      // The second notch crosses: the img is stashed and the deep canvas
+      // draws the whole bitmap positioned exactly as the transform would.
+      fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 })
+      await act(async () => { await Promise.resolve() })
+      expect(image.style.visibility).toBe('hidden')
+      expect(image.style.transform).toBe('')
+      expect(canvas.hidden).toBe(false)
+      expect(canvas.width).toBe(1600)
+      expect(canvas.height).toBe(1200)
+      // 2000x1000 drawn at k=4 over the 400x300 pane, centered: the dest
+      // rect is (400-1600)/2 = -600, (300-800)/2 = -250, 1600x800.
+      expect(draws.at(-1)).toEqual([image, 0, 0, 2000, 1000, -600, -250, 1600, 800])
+      // Reset returns to the whole-image posture on the img path.
+      await settleGestures()
+      fireEvent.click(screen.getByRole('button', { name: 'Reset zoom' }))
+      await act(async () => { await Promise.resolve() })
+      expect(image.style.visibility).toBe('')
+      expect(image.style.transform).toBe('')
+      expect(canvas.hidden).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+      if (ratioDescriptor === undefined) Reflect.deleteProperty(window, 'devicePixelRatio')
+      else Object.defineProperty(window, 'devicePixelRatio', ratioDescriptor)
+    }
+  })
+
   it('revokes replaced bytes and reports image decode and Blob creation failures', async () => {
     const initial = props()
     const view = render(<ImageBody {...initial} />)

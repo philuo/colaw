@@ -46,6 +46,15 @@ const GESTURE_FACTOR_MAX = 2
 const GESTURE_COMMIT_MS = 160
 /** The farthest scale, in natural pixels, the viewer allows. */
 const ZOOM_MAX = 8
+/**
+ * Beyond this many device pixels on the displayed longer axis, a transform-
+ * scaled <img> layer exceeds WebKit's raster budget and clamps — the
+ * permanently-blurry regime. The viewer then switches to a viewport-sized
+ * canvas that samples the visible region at display resolution instead
+ * (Preview.app's deep-zoom approach): the backing store stays pane-sized,
+ * so any zoom level renders sharp.
+ */
+const CANVAS_LAYER_BUDGET = 4096
 
 /**
  * Resolve a supported filename to the media type assigned to its Blob.
@@ -169,6 +178,7 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
 }): ReactNode {
   const frame = useRef<HTMLDivElement | null>(null)
   const image = useRef<HTMLImageElement | null>(null)
+  const deepCanvas = useRef<HTMLCanvasElement | null>(null)
   const [natural, setNatural] = useState<{ readonly width: number; readonly height: number } | undefined>()
   const [zoom, setZoom] = useState<ZoomState>({ k: 1, tx: 0, ty: 0 })
   const [panning, setPanning] = useState(false)
@@ -178,6 +188,9 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   // transform is written straight to the DOM and React renders nothing.
   const live = useRef<ZoomState | undefined>(undefined)
   const settle = useRef<number | undefined>(undefined)
+  // The deep-zoom draw's latest state and its rAF gate.
+  const deepPending = useRef<ZoomState | undefined>(undefined)
+  const deepFrame = useRef<number | undefined>(undefined)
 
   const atFit = zoom.k <= 1 && zoom.tx === 0 && zoom.ty === 0
   const contained = natural === undefined || shape === undefined
@@ -190,15 +203,92 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
     && (scaled.width > shape.pane.width + 1 || scaled.height > shape.pane.height + 1)
 
   /**
-   * Write the gesture transform straight to the element — no React render
-   * sits between a pointermove and the compositor. The layer is promoted
-   * (will-change) for the gesture's duration so panning and pinching are
-   * pure GPU texture movement; the resting posture carries no transform at
-   * all, so the image rasterizes at its laid-out size and stays sharp.
+   * Whether this zoom level outgrows a transform-scaled layer: past the
+   * raster budget WebKit clamps the layer texture and the image stays
+   * blurry no matter how long the gesture rests.
+   */
+  const exceedsLayerBudget = useCallback((value: ZoomState, box: ContainedShape): boolean => {
+    const longest = Math.max(box.width, box.height) * Math.max(value.k, 1)
+    return longest * Math.max(window.devicePixelRatio, 1) > CANVAS_LAYER_BUDGET
+  }, [])
+
+  /**
+   * The deep-zoom draw: the whole bitmap, positioned exactly as the
+   * transform would place it, rasterized into a pane-sized canvas. The GPU
+   * clips to the canvas and samples only the visible region at display
+   * resolution, so the backing store never exceeds the pane while every
+   * zoom level renders sharp. Coalesced to one draw per animation frame.
+   */
+  const drawDeep = useCallback((value: ZoomState): void => {
+    const source = image.current
+    const canvas = deepCanvas.current
+    const viewport = frame.current
+    if (source === null || canvas === null || viewport === null || contained === undefined || natural === undefined) return
+    const context = canvas.getContext('2d')
+    if (context === null) return
+    const ratio = Math.max(window.devicePixelRatio, 1)
+    const width = viewport.clientWidth
+    const height = viewport.clientHeight
+    if (width <= 0 || height <= 0) return
+    const backingWidth = Math.round(width * ratio)
+    const backingHeight = Math.round(height * ratio)
+    if (canvas.width !== backingWidth) canvas.width = backingWidth
+    if (canvas.height !== backingHeight) canvas.height = backingHeight
+    context.setTransform(ratio, 0, 0, ratio, 0, 0)
+    context.imageSmoothingEnabled = true
+    context.imageSmoothingQuality = 'high'
+    context.clearRect(0, 0, width, height)
+    const kk = Math.max(value.k, 1)
+    const drawnWidth = contained.width * kk
+    const drawnHeight = contained.height * kk
+    context.drawImage(source,
+      0, 0, natural.width, natural.height,
+      (width - drawnWidth) / 2 + value.tx,
+      (height - drawnHeight) / 2 + value.ty,
+      drawnWidth, drawnHeight)
+  }, [contained, natural])
+
+  const scheduleDeepDraw = useCallback((value: ZoomState): void => {
+    deepPending.current = value
+    if (deepFrame.current !== undefined) return
+    deepFrame.current = requestAnimationFrame(() => {
+      deepFrame.current = undefined
+      const pending = deepPending.current
+      if (pending !== undefined) drawDeep(pending)
+    })
+  }, [drawDeep])
+
+  /**
+   * Write the gesture posture straight to the presentation — no React
+   * render sits between a pointermove and the compositor. Under the layer
+   * budget the <img> transform path runs (GPU texture movement, will-change
+   * riding the gesture only, re-rasterized sharp at rest); past it the
+   * deep-zoom canvas takes over and the img is stashed (it stays the
+   * decoded draw source).
    */
   const paint = useCallback((value: ZoomState, badgePercent?: number, promoting = false): void => {
     const el = image.current
     if (el === null) return
+    if (contained !== undefined && exceedsLayerBudget(value, contained)) {
+      const canvas = deepCanvas.current
+      if (canvas !== null && canvas.getContext('2d') !== null) {
+        el.style.removeProperty('will-change')
+        el.style.removeProperty('transform')
+        el.style.visibility = 'hidden'
+        canvas.hidden = false
+        scheduleDeepDraw(value)
+        if (badgePercent !== undefined) {
+          const badge = frame.current?.querySelector<HTMLElement>(`.${css.badge}`)
+          if (badge !== null && badge !== undefined) badge.textContent = `${badgePercent}%`
+        }
+        return
+      }
+    }
+    const canvas = deepCanvas.current
+    if (canvas !== null && !canvas.hidden) {
+      canvas.hidden = true
+      el.style.removeProperty('visibility')
+    }
     if (value.k <= 1 && value.tx === 0 && value.ty === 0) {
       el.style.removeProperty('will-change')
       el.style.removeProperty('transform')
@@ -215,7 +305,7 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
       const badge = frame.current?.querySelector<HTMLElement>(`.${css.badge}`)
       if (badge !== null && badge !== undefined) badge.textContent = `${badgePercent}%`
     }
-  }, [])
+  }, [contained, exceedsLayerBudget, scheduleDeepDraw])
 
   // Repaint the resting posture from state whenever it settles outside a
   // gesture (commit, reset, decode, or pane shape change).
@@ -223,7 +313,10 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
     if (live.current === undefined) paint(zoom)
   }, [zoom, contained, shape, ready, paint])
 
-  useEffect(() => () => { window.clearTimeout(settle.current) }, [])
+  useEffect(() => () => {
+    window.clearTimeout(settle.current)
+    if (deepFrame.current !== undefined) cancelAnimationFrame(deepFrame.current)
+  }, [])
 
   /** Fold the in-flight gesture into React state and stop the stream. */
   const commitLive = useCallback((): void => {
@@ -438,6 +531,10 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
         }}
         onError={onFailed}
       />
+      {/* The deep-zoom surface: takes over past the layer budget (see
+          paint/drawDeep) so every zoom level renders at display
+          resolution; hidden while the transform path is in force. */}
+      <canvas ref={deepCanvas} className={css.deepCanvas} aria-hidden="true" hidden />
       {ready && percent !== undefined && (
         <button type="button" className={css.badge} aria-label={t('zoomReset')} onClick={reset} disabled={atFit}>
           {t('zoomPercent', { percent })}
