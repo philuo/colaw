@@ -91,7 +91,7 @@ jobs:
           ditto -c -k --keepParent Colaw.app Colaw-macos-arm64.app.zip
           ls -la
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: colaw-macos-arm64
           path: |
@@ -99,7 +99,7 @@ jobs:
             apps/electrobun-host/build/stable-macos-arm64/Colaw-macos-arm64.app.zip
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: colaw-update-feed
           path: |
