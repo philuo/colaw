@@ -1,75 +1,56 @@
-# DeepSeek Harness
+# Colaw
 
 English | [中文](README.zh.md)
 
-DeepSeek Harness (`dsh`) is an open-source agent harness developed by [DeepSeek AI](https://deepseek.com).
+Colaw is a desktop AI coding assistant for macOS (Apple silicon): chat, workspaces, sessions, and file preview live in one native window, so you can read and write code, run commands, and look things up in your local projects.
 
-It is built on an **everything-is-a-plugin** architecture and powered by [Cordis](https://github.com/cordiverse/cordis), whose design is described in [_A Programming Paradigm for Spatiotemporal Composability_](https://arxiv.org/abs/2608.25512).
+## Features
 
-Documentation: [https://deepseek-harness.github.io/deepseek-harness/](https://deepseek-harness.github.io/deepseek-harness/)
+- **Conversational coding**: read/edit files, search by content, run commands, and search the web — with multi-turn tasks, subagents, and workflow orchestration.
+- **Workspaces and sessions**: organize sessions by workspace; archive them, and restore or permanently delete them from the trash (including clear-all). Every session keeps its full history.
+- **Right-sidebar document preview**: Markdown, code (line numbers + syntax highlighting), PDF, images, HTML, and plain text — previewed in place, without leaving the app.
+  - **Deep zoom for long and very large images**: sharp at any magnification, anchored on the pointer, with drag-to-pan.
+  - **Select and copy text straight off an image**: opening an image silently recognizes its text (Apple Vision, on-device, nothing uploaded); the text layer is pixel-aligned with the image and can be selected and copied like a document.
+- **Models and credentials**: configure the API key under **Settings → Models** (stored only in the local managed store; process environment variables are never read). Switch models and reasoning effort at any time.
+- **Automatic updates**: incremental patch updates, applied on restart.
 
-## Developer preview
+## Install
 
-DeepSeek Harness is in _developer preview_ and iterating rapidly. **THERE WILL BE COMPATIBILITY-BREAKING CHANGES.**
+Download `Colaw.dmg` from [Releases](https://github.com/philuo/colaw/releases/latest), open it, and drag Colaw into Applications. On first launch, fill in your API key under **Settings → Models**.
 
-Review the [safety notice](SAFETY.md) before running the project.
+Requirements: macOS 15 or later, Apple silicon (arm64).
 
-## Run
+<a id="run"></a>
+## Running and using
 
-### Run from `npm`
+- Launching the app opens the session view. `⌘N` starts a new session; `⌘B` collapses or expands the left sidebar.
+- **Choose workspace** in the top bar binds a working directory; the assistant then works inside it by default.
+- Right sidebar: open it with the panel icon in the top-right corner. The **Files** tab browses the workspace — click a file to preview it; images and PDFs support zoom and pan.
+- **Open working directory** in the top bar reveals the current directory in Finder.
 
-Install `Node.js`, then run:
+## Development and packaging
+
+This repository runs on [Bun](https://bun.com) exclusively: use `bun` / `bunx` for installing, scripts, tests, and builds — never `node` / `npx`.
+
+Local stable packaging — one command runs the whole chain (product pack → official release identity → directly runnable app → DMG):
 
 ```sh
-npx @deepseek-ai/dsh web
+bun scripts/pack-stable-release.ts
 ```
 
-The command starts the Web UI at `http://127.0.0.1:3080` by default and opens it in the default browser for a local launch. An SSH launch only prints the host URL because the SSH client or editor owns the local forwarded address. Pass `--no-open` to run the server without opening a browser. See [Web UI guide](docs/user/guide/index.md).
+Artifacts land in `apps/electrobun-host/build/stable-macos-arm64/`:
 
-### Run from source
+- `Colaw.app` — double-click to run;
+- `Colaw.dmg` — the distribution image.
 
-To run from a repository checkout:
+Development mode and common checks:
 
 ```sh
-git clone https://github.com/deepseek-ai/deepseek-harness.git
-cd deepseek-harness
-pnpm install
-pnpm run build
-pnpm dsh web
+cd apps/electrobun-host && bun run dev   # hot-reload development window
+bun vitest run <test path>               # unit tests
+bun node_modules/typescript/bin/tsc -b tsconfig.client.json   # client typecheck
 ```
 
-`pnpm run build` prepares the repository artifacts. `pnpm dsh web` uses those built artifacts without rebuilding.
+## Notes
 
-## Community and support
-
-- Submit feedback or bug reports through [GitHub Discussions](https://github.com/deepseek-ai/deepseek-harness/discussions).
-- Add the [`dsh-plugin`](https://github.com/topics/dsh-plugin) topic to your plugin repository for discoverability.
-- Join <a href="https://discord.gg/Ycq5dCaS4">DeepSeek Harness Discord community</a>.
-
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md).
-
-## Development
-
-Start with the [development guide](docs/development.md) and [architecture documentation](docs/architecture.md).
-
-For agents, follow [AGENTS.md](AGENTS.md).
-
-## Citation
-
-```bibtex
-@misc{deepseek-harness2026,
-  title={DeepSeek Harness: Everything is a Plugin},
-  author={DeepSeek-AI},
-  year={2026},
-  publisher={GitHub},
-  howpublished={\url{https://github.com/deepseek-ai/deepseek-harness}},
-}
-```
-
-## License
-
-[MIT](LICENSE)
-
-Third-party dependencies and their licenses are disclosed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+基于 dsh 项目改造而来，适配 MacOS Arm64。
