@@ -64,14 +64,18 @@ body[data-ds-dark-theme] .panel::before {
   inset: 0;
   z-index: -1;
   border-radius: inherit;
-  background:
+  /*background:
     var(--dsh-glass-sheen),
     color-mix(in srgb, var(--dsw-specific-tip) 60%, transparent);
   -webkit-backdrop-filter: var(--dsh-glass-filter);
   backdrop-filter: var(--dsh-glass-filter);
   box-shadow:
     inset 0 1px 0 rgb(255 255 255 / 20%),
-    inset 0 -1px 0 rgb(0 0 0 / 40%);
+    inset 0 -1px 0 rgb(0 0 0 / 40%);*/
+  background: var(--dsh-glass-bg), color-mix(in srgb, var(--dsw-specific-menu) 66%, transparent);
+  -webkit-backdrop-filter: var(--dsh-glass-filter-v0);
+  backdrop-filter: var(--dsh-glass-filter-v0);
+  border: var(--dsh-glass-border);
   pointer-events: none;
 }
 

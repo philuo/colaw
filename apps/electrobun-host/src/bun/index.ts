@@ -592,6 +592,7 @@ async function main(): Promise<void> {
     dark: resolveIcon(['../../AppIconDark.icns', '../cat5_dark.icns']),
   }
   let iconInUse: 'light' | 'dark' | undefined
+
   /** Show the icon the current selection asks for; a matching one is a no-op.
    * Both surfaces update: the Dock's runtime tile, and — through the
    * workspace's custom-icon attribute — Finder, Launchpad, and the Dock's
@@ -1186,7 +1187,7 @@ async function main(): Promise<void> {
     tray.on('tray-clicked', () => {
       mainWindow.show()
     })
-    trayIcon = tray
+
     if (bootProfile) console.log(`[profile] tray created id=${String(tray.id)} bounds=${JSON.stringify(tray.getBounds())}`)
 
     // Zoom — the green button's behaviour, and what macOS itself runs on a
@@ -1208,13 +1209,14 @@ async function main(): Promise<void> {
     // The boot-failure page's only action: hand the data directory to Finder.
     desktopCommands.set('open-data-dir', () => openWithSystem(dshHomePath()))
     // On-image text recognition for the file preview: the shell sends the
-    // image's workspace-relative path plus a requestId; the answer rides a
-    // window event the preview listens for (same channel shape as the About
-    // panel). The renderer never holds absolute paths, so the session's
-    // workspace root resolves the file here.
+    // image's absolute path plus a requestId; the answer rides a window
+    // event the preview listens for (same channel shape as the About panel).
     desktopCommands.set('image-ocr', (payload) => {
       const request = payload as { path?: unknown; sessionId?: unknown; requestId?: unknown } | undefined
       if (typeof request?.path !== 'string' || typeof request?.requestId !== 'string') return
+      // The preview knows only the workspace-relative path; the vision helper
+      // needs the real file, so resolve it against the session's workspace root
+      // (its header cwd, or the deployment root when the header has none).
       const sessionId = typeof request.sessionId === 'string' ? request.sessionId : ''
       let root = ''
       try {
@@ -1224,7 +1226,9 @@ async function main(): Promise<void> {
           ?? ''
       } catch { /* fall through to the raw path */ }
       const absolute = isAbsolute(request.path) || root === '' ? request.path : join(root, request.path)
+      console.log(`[image-ocr] command received: ${absolute}`)
       void runImageOcr(absolute).then((result) => {
+        console.log(`[image-ocr] result: ${'error' in result ? `error=${result.error}` : `items=${result.items.length}`}`)
         const view = BrowserView.getById(mainWindow.webviewId)
         if (view === undefined) return
         view.executeJavascript(
