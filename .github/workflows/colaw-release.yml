@@ -1,22 +1,25 @@
-# Colaw release build (macOS arm64) from the deepseek-harness tree.
+# Colaw release build (macOS arm64 only) from the deepseek-harness tree.
 #
-# This replaces the shell-repo's Hutch/Vite release flow: the product is the
-# pnpm workspace under this repository, packaged by scripts/pack-stable-app.ts
-# (closure bundler + Electrobun shell + bytecode host) and scripts/build-dmg.ts
-# (drag-to-Applications installer image). Windows has no build in this tree, so
-# this workflow is macOS-only by design.
+# Two-stage packaging, matching the verified local chain:
+#   1. scripts/pack-stable-app.ts — the product closure (Bun runs every build
+#      script; corepack-activated pnpm only installs the workspace).
+#   2. `hutch electrobun build --env=stable` — the OFFICIAL release identity:
+#      version.json hash (Electrobun's algorithm), update.json manifest, and
+#      automatic bsdiff patches against the previously published release on
+#      the update base URL. The packer's closure merges into Hutch's shell
+#      through the postBuild hook (COLAW_PACK_STAGING).
 #
-# Triggers:
-# - push to colaw-release: build, publish workflow artifacts (no release).
-# - push tag v*: build and attach Colaw.dmg + Colaw.app zip to a GitHub
-#   release (created if absent; same-tag assets are clobbered so the stable
-#   `releases/latest/download/...` URLs keep serving fresh content).
-# - workflow_dispatch: optional `tag` input publishes like a tag push;
-#   optional `update-base-url` bakes the Electrobun update-server root into
-#   the app's version.json (empty leaves update checks disabled).
+# The update base URL is this repo's GitHub Releases (stable channel via
+# releases/latest/download, per Electrobun's updates guide). Assets:
+#   - Colaw-stable.dmg, Colaw-macos-arm64.app.zip — human downloads
+#   - stable-macos-arm64-Colaw.app.tar.zst, -update.json, -<hash>.patch —
+#     the auto-updater's static files (Release assets double as the server)
 #
-# Runtime rule of this fork: Bun runs everything (bun/bunx); pnpm appears only
-# as the workspace installer, activated through corepack per packageManager.
+# Triggers: push to main builds artifacts; push of a v* tag (or dispatch with
+# a tag) additionally publishes a GitHub Release with every asset. Same-tag
+# re-runs clobber assets, keeping releases/latest/download URLs stable.
+# Versions are semver tags (vMAJOR.MINOR.PATCH) — bump
+# apps/electrobun-host/electrobun.config.ts in the same commit as the tag.
 
 name: colaw-release
 
@@ -27,21 +30,21 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag (e.g. v0.1.5). Empty builds artifacts only."
-        required: false
-        default: ""
-      update-base-url:
-        description: "Electrobun update-server base URL baked into the app (optional)."
+        description: "Release tag (e.g. v1.0.1). Empty builds artifacts only."
         required: false
         default: ""
 
 permissions:
   contents: write
 
+env:
+  COLAW_UPDATE_BASE_URL: https://github.com/philuo/colaw/releases/latest/download
+  COLAW_PACK_STAGING: /tmp/pack-staging
+
 jobs:
   macos-arm64:
     runs-on: macos-14 # GitHub-hosted Apple Silicon
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -63,17 +66,24 @@ jobs:
         working-directory: apps/electrobun-host
         run: bun ./node_modules/electrobun/bin/electrobun.cjs prepare
 
-      - name: Pack the stable app
-        env:
-          COLAW_UPDATE_BASE_URL: ${{ github.event.inputs.update-base-url || '' }}
-        run: bun scripts/pack-stable-app.ts
+      - name: Pack the product closure into the staging root
+        run: |
+          bun scripts/pack-stable-app.ts
+          mkdir -p "$COLAW_PACK_STAGING"
+          cp -R apps/electrobun-host/build/stable-macos-arm64/Colaw.app "$COLAW_PACK_STAGING/"
 
-      - name: Build the installer image
+      - name: Build the official release set (identity, manifest, patches)
+        working-directory: apps/electrobun-host
+        run: bun ./node_modules/electrobun/bin/electrobun.cjs build --env=stable
+
+      - name: Build the drag-to-Applications installer image
         run: bun scripts/build-dmg.ts
 
-      - name: Zip the app bundle (permissions-preserving)
+      - name: Zip the shipped bundle (official identity, permissions-preserving)
         working-directory: apps/electrobun-host/build/stable-macos-arm64
-        run: ditto -c -k --keepParent Colaw.app Colaw-macos-arm64.app.zip
+        run: |
+          ditto -c -k --keepParent Colaw.app Colaw-macos-arm64.app.zip
+          ls -la
 
       - uses: actions/upload-artifact@v4
         with:
@@ -81,6 +91,12 @@ jobs:
           path: |
             apps/electrobun-host/build/stable-macos-arm64/Colaw.dmg
             apps/electrobun-host/build/stable-macos-arm64/Colaw-macos-arm64.app.zip
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: colaw-update-feed
+          path: apps/electrobun-host/artifacts/
           if-no-files-found: error
 
   publish:
@@ -100,6 +116,12 @@ jobs:
         with:
           path: dist/
 
+      - name: Flatten for release assets
+        run: |
+          mkdir assets
+          find dist -type f -exec cp {} assets/ \;
+          ls -la assets/
+
       - name: Publish (create or overwrite same-tag assets)
         env:
           GH_TOKEN: ${{ github.token }}
@@ -107,4 +129,4 @@ jobs:
           TAG: ${{ steps.tag.outputs.name }}
         run: |
           gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes
-          gh release upload "$TAG" --clobber dist/*/*
+          gh release upload "$TAG" --clobber assets/*
