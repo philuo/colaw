@@ -395,7 +395,7 @@ describe('UiWorkspaceService', () => {
       .rejects.toThrow('uiWorkspace.connectWorkspace: unknown workspace ghost')
   })
 
-  it('targets an explicit, current-session, then recent Workspace and reports failed starts', async () => {
+  it('targets an explicit or current-session Workspace and otherwise starts workspace-less', async () => {
     const current = summary('current', { cwd: '/w/current-home', updatedAt: 1 })
     const recent = summary('recent', { cwd: '/w/recent-home', updatedAt: 2 })
     const b = bench({
@@ -412,16 +412,21 @@ describe('UiWorkspaceService', () => {
       expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-recent-home'))
     })
 
+    // Back inside a Workspace's conversation, an unscoped New Session
+    // inherits that Workspace (the sidebar's top-bar New control).
     b.sessions.open(current.id)
     b.uiWorkspace.startSession()
     await vi.waitFor(() => {
       expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-current-home'))
     })
 
+    // No current Session: no recency fallback — the New Session default is
+    // workspace-less, whichever Workspace was used last.
     b.sessions.clear()
     b.uiWorkspace.startSession()
     await vi.waitFor(() => {
-      expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-recent-home'))
+      expect(b.sessions.create).toHaveBeenCalledWith({})
+      expect(b.sessions.open).toHaveBeenLastCalledWith(sid('opened-undefined'))
     })
 
     // No workspace anywhere: the session is still created — workspace-free —
@@ -442,40 +447,66 @@ describe('UiWorkspaceService', () => {
     })
   })
 
-  it('opens the recent Workspace after both baselines arrive', async () => {
+  it('startDetachedSession runs the carry hook before opening and honours supersession', async () => {
+    const b = bench({
+      sessions: sessionState([summary('current')], sid('current')),
+      workspaces: workspaceState([workspace('one')]),
+    })
+    const beforeOpen = vi.fn()
+    b.uiWorkspace.startDetachedSession(beforeOpen)
+    await flush()
+    expect(b.sessions.create).toHaveBeenCalledWith({})
+    expect(beforeOpen).toHaveBeenCalledWith(sid('created-none'))
+    expect(b.sessions.open).toHaveBeenLastCalledWith(sid('created-none'))
+
+    // A later navigation wins the epoch: the late session lands unopened and
+    // the carry hook never runs for it.
+    const pending = Promise.withResolvers<SessionId>()
+    b.sessions.create.mockImplementation(() => pending.promise)
+    b.uiWorkspace.startDetachedSession(beforeOpen)
+    b.layout.beginNavigation()
+    pending.resolve(sid('superseded'))
+    await flush()
+    expect(beforeOpen).toHaveBeenCalledTimes(1)
+    expect(b.sessions.open).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts a workspace-less Session after both baselines arrive (no recency fallback)', async () => {
     const b = bench()
     b.sessions.create.mockResolvedValue(sid('initial'))
 
-    const stableFirst = workspace('stable-first', [], '2026-01-01T00:00:00.000Z')
     const recent = workspace('recent', [], '2026-01-02T00:00:00.000Z')
-    b.workspaces.list.set(workspaceState([stableFirst, recent]))
+    b.workspaces.list.set(workspaceState([recent]))
     expect(b.sessions.create).not.toHaveBeenCalled()
     b.sessions.list.set(sessionState())
 
     await vi.waitFor(() => {
       expect(b.sessions.open).toHaveBeenCalledWith(sid('initial'))
     })
-    expect(b.sessions.create).toHaveBeenCalledWith({ workspaceId: wid('recent') })
+    expect(b.sessions.create).toHaveBeenCalledWith({})
+    expect(b.sessions.create).not.toHaveBeenCalledWith({ workspaceId: wid('recent') })
     expect(b.workspaces.list.getSnapshot().items.map(item => item.workspaceId)).toEqual([
-      wid('stable-first'), wid('recent'),
+      wid('recent'),
     ])
   })
 
-  it('uses Workspace creation time when members are absent and preserves Host tie order', async () => {
+  it('reuses the latest ungrouped, unarchived blank Session at startup instead of creating one', async () => {
     const b = bench()
-    b.sessions.create.mockResolvedValue(sid('initial'))
-
-    b.workspaces.list.set(workspaceState([
-      workspace('newest', [sid('missing')], '2026-03-01T00:00:00.000Z'),
-      workspace('same-time', [], '2026-03-01T00:00:00.000Z'),
-      workspace('older', [], '2026-01-01T00:00:00.000Z'),
-    ]))
-    b.sessions.list.set(sessionState())
+    const olderBlank = summary('older-blank', { blank: true, updatedAt: 1 })
+    const latestBlank = summary('latest-blank', { blank: true, updatedAt: 5 })
+    const ordinary = summary('ordinary', { cwd: '/w/x', updatedAt: 9 })
+    const groupedBlank = summary('grouped-blank', { blank: true, updatedAt: 7 })
+    const archivedBlank = summary('archived-blank', { blank: true, updatedAt: 8 })
+    b.workspaces.list.set(workspaceState(
+      [workspace('one', [groupedBlank.id])],
+      [archivedBlank.id],
+    ))
+    b.sessions.list.set(sessionState([olderBlank, latestBlank, ordinary, groupedBlank, archivedBlank]))
 
     await vi.waitFor(() => {
-      expect(b.sessions.open).toHaveBeenCalledWith(sid('initial'))
+      expect(b.sessions.open).toHaveBeenCalledWith(latestBlank.id)
     })
-    expect(b.sessions.create).toHaveBeenCalledWith({ workspaceId: wid('newest') })
+    expect(b.sessions.create).not.toHaveBeenCalled()
   })
 
   it('retries failed initial selection and never overwrites a later selection', async () => {
@@ -488,7 +519,7 @@ describe('UiWorkspaceService', () => {
     b.workspaces.list.set(workspaceState([workspace('recent')]))
     b.sessions.list.set(sessionState())
     await vi.waitFor(() => {
-      expect(warning).toHaveBeenCalledWith('initial workspace selection failed:', expect.any(Error))
+      expect(warning).toHaveBeenCalledWith('initial workspace-free selection failed:', expect.any(Error))
     })
     b.workspaces.list.update(state => ({ ...state, items: [...state.items] }))
     await vi.waitFor(() => {

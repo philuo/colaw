@@ -67,6 +67,7 @@ async function bench(opts?: { blank?: boolean }) {
       runtime.sessions.open(SID)
     }),
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
+    startDetachedSession: vi.fn(),
   } as never)
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
@@ -89,12 +90,14 @@ async function bench(opts?: { blank?: boolean }) {
 describe('resident composer', () => {
   it('renders the locked view state while no session exists at all', async () => {
     const runtime = await SlotTestRuntime.create()
+    const startDetachedSession = vi.fn()
     runtime.ctx.provide('uiWorkspace', {
       openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
         beforeOpen(SID)
         runtime.sessions.open(SID)
       }),
       openSession: (id: SessionId) => { runtime.sessions.open(id) },
+      startDetachedSession,
     } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
@@ -108,14 +111,19 @@ describe('resident composer', () => {
     expect(textarea).not.toBeNull()
     expect(textarea!.getAttribute('aria-disabled')).not.toBe('true')
     expect(textarea!.getAttribute('contenteditable')).not.toBe('true')
-    expect(textarea!.getAttribute('aria-haspopup')).toBe('menu')
+    // The inert surface starts a workspace-less Session now — no picker
+    // semantics ride on the textarea itself.
+    expect(textarea!.getAttribute('aria-haspopup')).toBeNull()
+    // The unbound chip keeps the picker open/close conversation.
+    const chip = view.getByRole('button', { name: '选择工作区' })
     expect(view.getByTestId('workspace-probe').textContent).toBe('false:0')
+    fireEvent.click(chip)
+    expect(view.getByTestId('workspace-probe').textContent).toBe('true:0')
+    // One start gesture on the inert surface — pointer or keyboard — asks for
+    // the detached session; the chip stays the unbound picker trigger.
     fireEvent.click(textarea!)
-    expect(view.getByTestId('workspace-probe').textContent).toBe('true:0')
-    expect(textarea!.getAttribute('aria-expanded')).toBe('true')
-    fireEvent.click(view.getByRole('button', { name: '选择工作区' }))
     fireEvent.keyDown(textarea!, { key: 'Enter' })
-    expect(view.getByTestId('workspace-probe').textContent).toBe('true:0')
+    expect(startDetachedSession).toHaveBeenCalledTimes(2)
     expect(view.getByRole('button', { name: '选择工作区' })).toBeTruthy()
     await runtime.dispose()
   })
@@ -128,6 +136,7 @@ describe('resident composer', () => {
         runtime.sessions.open(SID)
       }),
       openSession: (id: SessionId) => { runtime.sessions.open(id) },
+      startDetachedSession: vi.fn(),
     } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
@@ -164,7 +173,11 @@ describe('resident composer', () => {
     expect(view.container.querySelector('[data-conversation-scroll]')).toBe(scrollBody)
     expect(view.container.querySelector('[data-composer-seat]')).toBe(composerSeat)
     expect(view.container.querySelector<HTMLDivElement>('[data-composer-input]')).toBe(textarea)
-    expect(view.getByRole('button', { name: '选择工作区' })).toBe(workspaceChip)
+    // The chip flipped to its bound posture (the session now lives in w1): a
+    // folder label with the remove affordance replaces the picker trigger.
+    // The picker surface itself is the same mounted probe, still open.
+    expect(view.container.querySelector('[data-workspace-chip="bound"]')?.textContent).toBe('Proj')
+    expect(view.queryByRole('button', { name: '选择工作区' })).toBeNull()
     expect(view.getByTestId('workspace-probe')).toBe(workspaceProbe)
     expect(workspaceProbe.textContent).toBe('true:1')
     expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
@@ -199,6 +212,7 @@ describe('prompt rejection through the assembled composer', () => {
         runtime.sessions.open(SID)
       }),
       openSession: (id: SessionId) => { runtime.sessions.open(id) },
+      startDetachedSession: vi.fn(),
     } as never)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)

@@ -106,12 +106,12 @@ body[data-ds-dark-theme] .card::before {
    pattern, so the stroke is an ::after overlay: theme-token background masked
    by an SVG dash ring (stroke-width 2 centered on the box edge = 1px visible
    inside), which keeps the 22px radius and both themes. */
-.cardWorkspaceTrigger {
+.cardStartTrigger {
   --dsw-elevation-stroke-color: transparent;
   cursor: pointer;
 }
 
-.cardWorkspaceTrigger::after {
+.cardStartTrigger::after {
   content: '';
   position: absolute;
   inset: -1px;
@@ -126,17 +126,17 @@ body[data-ds-dark-theme] .card::before {
 /* Disabled toolbar controls neither receive nor swallow clicks in the trigger
    state: pointer events fall through to the card's own click handler, making
    the full capsule one pick target. */
-.cardWorkspaceTrigger :disabled {
+.cardStartTrigger :disabled {
   pointer-events: none;
 }
 
-.cardWorkspaceTrigger:hover::after {
+.cardStartTrigger:hover::after {
   background: var(--dsw-alias-state-business-primary);
 }
 
 /* The trigger state's own instrument is the dashed ring on ::after, so its pane
    drops the hairline it would otherwise draw around it. */
-body[data-ds-dark-theme] .cardWorkspaceTrigger {
+body[data-ds-dark-theme] .cardStartTrigger {
   background: transparent;
   box-shadow: none;
 }
@@ -145,7 +145,7 @@ body[data-ds-dark-theme] .cardWorkspaceTrigger {
    `backdrop-filter` on the element that owns the content would also become
    the containing block for every `position: fixed` descendant — which is how
    the tooltips above these controls are placed. */
-body[data-ds-dark-theme] .cardWorkspaceTrigger::before {
+body[data-ds-dark-theme] .cardStartTrigger::before {
   content: '';
   position: absolute;
   inset: 0;

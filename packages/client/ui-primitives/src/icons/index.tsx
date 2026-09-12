@@ -252,6 +252,19 @@ export const IconCloseFill14 = ({ size = 14, className }: IconProps) => (
   </svg>
 )
 
+/** circle_close_fill_16: a filled currentColor disc with the close glyph
+ * knocked out to transparency (mask), so the remove affordance reads on any
+ * fill behind it — hover swaps a folder glyph for this to mark "remove". */
+export const IconCircleCloseFill16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <mask id="mask0_circle_close_fill_16" maskUnits="userSpaceOnUse" x="0" y="0" width="16" height="16">
+      <rect width="16" height="16" fill="white" />
+      <path d="M5.4 5.4L10.6 10.6M10.6 5.4L5.4 10.6" stroke="black" strokeWidth="1.5" strokeLinecap="round" />
+    </mask>
+    <circle cx="8" cy="8" r="6.5" fill="currentColor" mask="url(#mask0_circle_close_fill_16)" />
+  </svg>
+)
+
 /** ic_ds_copy_outline_16 */
 export const IconCopyOutline16 = ({ size = 16, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">

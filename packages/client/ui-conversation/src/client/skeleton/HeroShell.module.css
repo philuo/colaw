@@ -129,9 +129,9 @@
   padding-left: 8px;
 }
 
-/* Folder + label + chevron — transparent at rest; fill only on hover / open.
+/* Folder + label — transparent at rest; fill only on hover / open.
    Overflow-driven degradation, no breakpoint: the label shrinks with an
-   ellipsis down to nothing, so folder and chevron always sit snug against
+   ellipsis down to nothing, so the icons always sit snug against
    whatever text remains — full text, ellipsized text, or none. */
 .workspace {
   display: inline-flex;
@@ -164,6 +164,58 @@
 .folder {
   flex: none;
   color: var(--dsw-alias-label-primary);
+}
+
+/* Bound form's icon seat: folder at rest, filled circle-X on hover / focus —
+   the Codex remove affordance. The two glyphs stack; opacity cross-fades. */
+.remove {
+  position: relative;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.removeFolder,
+.removeX {
+  position: absolute;
+  inset: 0;
+  display: block;
+  transition: opacity 120ms ease;
+}
+
+.removeX {
+  opacity: 0;
+}
+
+@media (hover: hover) {
+  .remove:hover .removeFolder {
+    opacity: 0;
+  }
+
+  .remove:hover .removeX {
+    opacity: 1;
+  }
+}
+
+/* Keyboard focus reaches the same remove posture hover shows. */
+.remove:focus-visible {
+  outline: none;
+}
+
+.remove:focus-visible .removeFolder {
+  opacity: 0;
+}
+
+.remove:focus-visible .removeX {
+  opacity: 1;
 }
 
 .workspaceLabel {

@@ -76,8 +76,7 @@ interface BenchOptions {
   disabled?: boolean
   inert?: boolean
   blocked?: { readonly reason: string }
-  workspacePickerOpen?: boolean
-  onRequestWorkspace?: () => void
+  onStartSession?: () => void
   promptError?: SessionSnapshot['promptError']
   /** Authoritative queue rows served to the machine overlay (empty = none). */
   queue?: SessionSnapshot['queue']
@@ -208,8 +207,7 @@ function bench(over?: BenchOptions) {
     variant: over?.variant ?? 'composer',
     ...(over?.inert === true ? { disabled: true } : {}),
     ...(over?.blocked !== undefined ? { blocked: over.blocked } : {}),
-    ...(over?.workspacePickerOpen !== undefined ? { workspacePickerOpen: over.workspacePickerOpen } : {}),
-    ...(over?.onRequestWorkspace !== undefined ? { onRequestWorkspace: over.onRequestWorkspace } : {}),
+    ...(over?.onStartSession !== undefined ? { onStartSession: over.onStartSession } : {}),
     ...(over?.placeholder !== undefined ? { placeholder: over.placeholder } : {}),
     ...(over?.accessory !== undefined ? { accessory: over.accessory } : {}),
   }
@@ -1215,38 +1213,27 @@ describe('running and lock semantics', () => {
     expect(custom.placeholder).toBe('Custom placeholder')
   })
 
-  it('the inert textarea opens the Workspace picker by pointer or keyboard', () => {
-    const onRequestWorkspace = vi.fn()
+  it('the inert textarea starts a fresh Session by pointer or keyboard', () => {
+    const onStartSession = vi.fn()
     const { view, textarea } = bench({
       inert: true,
-      workspacePickerOpen: false,
-      onRequestWorkspace,
-      placeholder: '选择一个工作区开始',
+      onStartSession,
+      placeholder: '描述你想要构建的内容, / 调用指令, @ 文件或对话',
     })
     expect(textarea.getAttribute('aria-disabled')).not.toBe('true')
     expect(editableOf(textarea)).toBe(false)
-    expect(textarea.getAttribute('aria-haspopup')).toBe('menu')
-    expect(textarea.getAttribute('aria-expanded')).toBe('false')
+    expect(textarea.getAttribute('aria-haspopup')).toBeNull()
     expect((view.getByLabelText('添加文件或调用指令') as HTMLButtonElement).disabled).toBe(true)
 
     fireEvent.click(textarea)
     fireEvent.keyDown(textarea, { key: 'Enter' })
     fireEvent.keyDown(textarea, { key: ' ' })
-    expect(onRequestWorkspace).toHaveBeenCalledTimes(3)
+    expect(onStartSession).toHaveBeenCalledTimes(3)
 
-    // The WHOLE capsule is the pick target, and its pointerdown never reaches
-    // the document — the open picker's outside-close must not race the reopen.
+    // The WHOLE capsule is the start target.
     const card = view.container.querySelector('[data-composer-card]') as HTMLElement
     fireEvent.click(card)
-    expect(onRequestWorkspace).toHaveBeenCalledTimes(4)
-    const onDocumentPointerDown = vi.fn()
-    document.addEventListener('pointerdown', onDocumentPointerDown)
-    try {
-      fireEvent.pointerDown(card)
-    } finally {
-      document.removeEventListener('pointerdown', onDocumentPointerDown)
-    }
-    expect(onDocumentPointerDown).not.toHaveBeenCalled()
+    expect(onStartSession).toHaveBeenCalledTimes(4)
   })
 
   it('the plan projection swaps the placeholder while its effective target is plan mode', () => {

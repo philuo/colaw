@@ -21,7 +21,6 @@ import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/s
 import css from './WorkspacePicker.module.css'
 
 const ADD_WORKSPACE = '::add-workspace'
-const NO_WORKSPACE = '::no-workspace'
 
 /** Core flow props: the owner supplies popover control and pick semantics. */
 export interface WorkspacePickFlowProps {
@@ -41,10 +40,14 @@ export interface WorkspacePickFlowProps {
   renderDirectoryFlow: (owner: DirectoryFlowOwnerProps) => ReactNode
   /** A real Workspace was picked or created. */
   onPick: (workspaceId: WorkspaceId) => void
-  /** Start with no workspace attached; absent hides the detached entry. */
-  startDetached?: () => void
   /** Close the popover (outside click / Escape / post-pick). */
   onClose: () => void
+  /**
+   * Offer the add-directory action (and with it this surface's directory
+   * flow). The conversation hero keeps false — picking a directory is a
+   * sidebar concern there, so the hero menu lists existing Workspaces only.
+   */
+  allowAdd?: boolean
   /** Only offer the add action, hide existing workspaces. */
   addOnly?: boolean
   /** Menu opening direction relative to the anchor. */
@@ -67,8 +70,8 @@ export function WorkspacePickFlow({
   useDirectoryFlow,
   renderDirectoryFlow,
   onPick,
-  startDetached,
   onClose,
+  allowAdd = true,
   addOnly = false,
   side = 'bottom',
   selectedId,
@@ -102,33 +105,24 @@ export function WorkspacePickFlow({
   useEffect(() => {
     if (flowOpen && !flowAvailable) setFlowOpen(false)
   }, [flowOpen, flowAvailable])
-  const addEntries: MenuEntry[] = flowAvailable
+  const addEntries: MenuEntry[] = allowAdd && flowAvailable
     ? [{ id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutline16 size={16} />, disabled: flowBusy }]
     : []
   // With workspaces listed, the add action pins below the scroll region
   // (divider + always visible); otherwise it IS the menu.
   const pinAdd = !addOnly && workspaces.length > 0
   const items: MenuEntry[] = pinAdd
-    ? [
-      // Chatting without a directory is a first-class choice, not a fallback:
-      // the entry heads the list wherever the picker offers workspaces.
-      ...(startDetached === undefined ? [] : [{
-        id: NO_WORKSPACE,
-        label: t('menu.noWorkspace'),
-        icon: <IconFolderClose16 size={16} />,
-        disabled: flowBusy,
-      }]),
-      ...workspaces.map(workspace => ({
-        id: workspace.workspaceId,
-        label: workspace.title,
-        icon: <IconFolderClose16 size={16} />,
-        disabled: flowBusy,
-      })),
-    ]
+    ? workspaces.map(workspace => ({
+      id: workspace.workspaceId,
+      label: workspace.title,
+      icon: <IconFolderClose16 size={16} />,
+      disabled: flowBusy,
+    }))
     : addEntries
   // Nothing listed and nothing to add with (a composition that mounts this
-  // package without any directory-picker): an empty popover would claim a
-  // choice that does not exist, so the anchor gesture shows nothing at all.
+  // package without any directory-picker, or the hero's existing-only menu
+  // over an empty list): an empty popover would claim a choice that does not
+  // exist, so the anchor gesture shows nothing at all.
   const menuIsEmpty = items.length === 0
 
   const closeModal = (): void => {
@@ -191,11 +185,6 @@ export function WorkspacePickFlow({
       openDirectoryFlow()
       return
     }
-    if (id === NO_WORKSPACE) {
-      onClose()
-      startDetached?.()
-      return
-    }
     onPick(id as WorkspaceId)
   }
 
@@ -213,7 +202,7 @@ export function WorkspacePickFlow({
         portal
         getAnchorRect={getAnchorRect}
       />
-      {open && !addIsTheOnlyEntry && !menuIsEmpty && workspaceSnapshot.phase === 'pending' && <div className={css.menuStatus} role="status">{t('picker.loading')}</div>}
+      {open && !addIsTheOnlyEntry && workspaceSnapshot.phase === 'pending' && <div className={css.menuStatus} role="status">{t('picker.loading')}</div>}
       {renderDirectoryFlow(flowOwner)}
       <Modal
         open={errorOpen}
@@ -237,7 +226,10 @@ export function WorkspacePickFlow({
 
 /**
  * The conversation empty-state registration: adapts the owner share to the
- * core flow (all state and semantics live in the flow / the owner).
+ * core flow (all state and semantics live in the flow / the owner). The hero
+ * menu lists existing Workspaces only — adding a directory (and with it the
+ * host chooser) stays a sidebar concern, and starting workspace-less is the
+ * hero's own default, not a menu row.
  * @param props - empty-state slot props (owner share + injected creation callback).
  * @returns the flow element.
  */
@@ -247,7 +239,6 @@ export function WorkspacePicker({
   useWorkspaces,
   selectedId,
   onPick,
-  startDetached,
   onClose,
   createWorkspace,
   useDirectoryFlow,
@@ -263,9 +254,9 @@ export function WorkspacePicker({
       createWorkspace={createWorkspace}
       useDirectoryFlow={useDirectoryFlow}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
+      allowAdd={false}
       selectedId={selectedId}
       onPick={onPick}
-      startDetached={startDetached}
       onClose={onClose}
     />
   )

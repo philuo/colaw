@@ -57,6 +57,7 @@ async function bench() {
       runtime.sessions.open(id)
     },
     openSession: (id: SessionId) => { runtime.sessions.open(id) },
+    startDetachedSession: vi.fn(),
   } as never)
   const sessionFake = sessionFakeFor()
   await runtime.sessions.add({

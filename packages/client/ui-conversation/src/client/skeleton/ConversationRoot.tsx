@@ -131,7 +131,7 @@ function WidthHandle(props: {
 export function ConversationRoot({
   sessionId, useSession, useSessions, useSessionPendingInteraction,
   useWorkspaces, useConversation, useInput, useComposerBlock,
-  renderSlot, renderSlotChain, selectWorkspace, t,
+  renderSlot, renderSlotChain, selectWorkspace, startDetached, t,
 }: ConversationRootProps) {
   const session = useSession(s => s)
   const pendingInteraction = useSessionPendingInteraction(snapshot =>
@@ -274,7 +274,10 @@ export function ConversationRoot({
   const zone: InputZone | undefined =
     session === undefined || inputState === undefined ? undefined : { session, input: inputState }
 
-  // The chip is a selector; label resolution walks the flow top-down:
+  // The chip is the Codex-style two-posture control: bound shows the folder
+  // label with a hover-revealed remove (detach) affordance; unbound shows the
+  // "Choose workspace" picker trigger. The label resolution walks the flow
+  // top-down:
   //   1. a just-picked workspace (pending) → its title;
   //   2. cold start, no session yet → placeholder ("Choose workspace");
   //   3. the blank session's workspace is in the list → its title;
@@ -292,13 +295,16 @@ export function ConversationRoot({
 
   const heroWorkspaceRow = (
     <div className={css.heroWorkspaceRow}>
-      <WorkspaceChip
-        buttonRef={pickerAnchor}
-        label={chipTitle}
-        menuOpen={pickerOpen}
-        onClick={() => { setPickerOpen(open => !open) }}
-        t={t}
-      />
+      {chipTitle === undefined
+        ? (
+          <WorkspaceChip
+            buttonRef={pickerAnchor}
+            menuOpen={pickerOpen}
+            onClick={() => { setPickerOpen(open => !open) }}
+            t={t}
+          />
+        )
+        : <WorkspaceChip label={chipTitle} onRemove={startDetached} t={t} />}
       {renderSlot('conversation.hero.workspace', {
         open: pickerOpen,
         anchorRef: pickerAnchor,
@@ -316,13 +322,13 @@ export function ConversationRoot({
     </div>
   )
 
-  // The placeholder chip ("Choose workspace") and the Workspace-trigger input
+  // The placeholder chip ("Choose workspace") and the Session-trigger input
   // travel together on the true cold start: no session at all. A session that
-  // EXISTS is editable whatever it is bound to — workspace-less chat is a
-  // first-class mode ("start without a workspace" in the picker), and a blank
-  // session whose workspace vanished simply keeps chatting unbound. The bar is
-  // ONE session-maybe slot rendered unconditionally — inert is a prop, not a
-  // different tree, so the textarea DOM survives the transition.
+  // EXISTS is editable whatever it is bound to — workspace-less chat is the
+  // default New Session mode, and a blank session whose workspace vanished
+  // simply keeps chatting unbound. The bar is ONE session-maybe slot rendered
+  // unconditionally — inert is a prop, not a different tree, so the textarea
+  // DOM survives the transition.
   const inert = sessionId === undefined
   // A raised block is the same inert posture with the blocker's own reason:
   // one disabled textarea, never a second tree. The no-workspace state wins
@@ -333,9 +339,8 @@ export function ConversationRoot({
     ...(inert
       ? {
         disabled: true,
-        placeholder: t('placeholder.workspace'),
-        workspacePickerOpen: pickerOpen,
-        onRequestWorkspace: () => { setPickerOpen(true) },
+        placeholder: t('placeholder.hero'),
+        onStartSession: startDetached,
       }
       : blocked
         // `blocked`, not `disabled`: the bar refuses input either way, but a

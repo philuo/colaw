@@ -7,7 +7,7 @@ import type {
   SessionListState,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
-  IWorkspaces, WorkspaceId, WorkspaceView,
+  IWorkspaces, WorkspaceId, WorkspaceSnapshot,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -40,9 +40,17 @@ export interface UiWorkspace {
   connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId>
   /**
    * Start a New Session flow and navigate to its Session.
-   * @param workspaceId - explicit target; absent inherits the current or most recent Workspace.
+   * @param workspaceId - explicit target; absent inherits the current
+   * Session's Workspace or starts workspace-less (the New Session default).
    */
   startSession(workspaceId?: WorkspaceId): void
+  /**
+   * Start a workspace-less Session and open it unless a later navigation
+   * supersedes it.
+   * @param beforeOpen - optional synchronous preparation for the new Session
+   * (draft carry), skipped after supersession.
+   */
+  startDetachedSession(beforeOpen?: (sessionId: SessionId) => void): void
   /**
    * Archive a Session and clear it when it is the current selection.
    * @param sessionId - Session to archive.
@@ -147,9 +155,15 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   /** A chat with no workspace attached: the host's session create defaults
    * the cwd on its own, so a session can start with no directory bound. */
-  startDetachedSession(): void {
+  startDetachedSession(beforeOpen?: (sessionId: SessionId) => void): void {
+    const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
+    const isCurrent = (): boolean => !navigation.aborted
     void this.sessions.create({}).then(
-      (sessionId) => { if (!this.lifetime.signal.aborted) this.openSession(sessionId) },
+      (sessionId) => {
+        if (!isCurrent()) return
+        beforeOpen?.(sessionId)
+        if (isCurrent()) this.openSession(sessionId)
+      },
       (reason) => {
         console.warn('workspace-free session failed:', reason)
         this.sessions.clear()
@@ -168,13 +182,13 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     const workspace = this.workspaces.list.getSnapshot()
     const sessions = this.sessions.list.getSnapshot()
     const current = sessions.current
+    // A Workspace is preselected only by an explicit request (the sidebar
+    // group's New action) or by the current Session already living in one;
+    // every other start is workspace-less by default — no recency fallback.
     const currentWorkspaceId = current === undefined
       ? undefined
       : workspace.items.find(item => item.sessionIds.includes(current))?.workspaceId
-    const recent = workspace.phase === 'ready' && sessions.phase === 'ready'
-      ? recentWorkspace(workspace.items, sessions.byId)
-      : undefined
-    const target = workspaceId ?? currentWorkspaceId ?? recent
+    const target = workspaceId ?? currentWorkspaceId
     if (target === undefined) {
       this.startDetachedSession()
       return
@@ -219,13 +233,14 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         initial = 'done'
         return
       }
-      const target = recentWorkspace(workspace.items, sessions.byId)
-      if (target === undefined) {
-        initial = 'done'
-        return
-      }
+      // The startup default is the same as every other New Session: no
+      // Workspace preselected. Reuse-or-create a workspace-less blank Session
+      // so the composer is immediately usable; which Workspace (if any) the
+      // user works in stays their own next action.
+      const reusable = reusableDetachedSession(workspace, sessions)
       initial = 'connecting'
-      void this.connectWorkspace(target).then(
+      const attempt = reusable === undefined ? this.sessions.create({}) : Promise.resolve(reusable)
+      void attempt.then(
         (sessionId) => {
           if (this.lifetime.signal.aborted) return
           if (this.sessions.list.getSnapshot().current === undefined) {
@@ -236,7 +251,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         (reason: unknown) => {
           if (this.lifetime.signal.aborted) return
           initial = 'waiting'
-          console.warn('initial workspace selection failed:', reason)
+          console.warn('initial workspace-free selection failed:', reason)
         },
       )
     }
@@ -261,23 +276,27 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
 }
 
-/** Stable tie-breaking follows Host Workspace order. */
-function recentWorkspace(
-  workspaces: readonly WorkspaceView[],
-  sessions: SessionListState['byId'],
-): WorkspaceId | undefined {
-  let selected: WorkspaceId | undefined
+/**
+ * The most recent reusable workspace-less blank Session: unarchived, owned by
+ * no Workspace, and bound to no directory. Latest activity wins; the Host
+ * order breaks ties implicitly through {@link SessionListState.ids} scan order.
+ */
+function reusableDetachedSession(
+  workspace: WorkspaceSnapshot,
+  sessions: SessionListState,
+): SessionId | undefined {
+  let selected: SessionId | undefined
   let selectedTime = Number.NEGATIVE_INFINITY
-  for (const workspace of workspaces) {
-    let latest = Number.NEGATIVE_INFINITY
-    for (const sessionId of workspace.sessionIds) {
-      const session = sessions[sessionId]
-      if (session !== undefined) latest = Math.max(latest, session.updatedAt)
-    }
-    if (latest === Number.NEGATIVE_INFINITY) latest = Date.parse(workspace.createdAt)
-    if (selected === undefined || latest > selectedTime) {
-      selected = workspace.workspaceId
-      selectedTime = latest
+  for (const id of sessions.ids) {
+    const summary = sessions.byId[id]
+    // No bound directory matches the chip's own notion of workspace-less:
+    // both an absent cwd and an empty one.
+    if (summary === undefined || !summary.blank || summary.cwd) continue
+    if (workspace.archivedSessionIds.includes(id)) continue
+    if (workspace.items.some(item => item.sessionIds.includes(id))) continue
+    if (selected === undefined || summary.updatedAt > selectedTime) {
+      selected = id
+      selectedTime = summary.updatedAt
     }
   }
   return selected

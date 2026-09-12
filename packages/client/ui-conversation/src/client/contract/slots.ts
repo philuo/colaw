@@ -261,6 +261,11 @@ export type ConvViewProps = PropsRuntime<'conversation.view'>
 export interface ConversationInjected {
   /** Connect and open a blank Session in the selected Workspace. */
   selectWorkspace: (workspaceId: WorkspaceId) => Promise<void>
+  /**
+   * Move the New Session flow to a workspace-less blank Session (the bound
+   * workspace chip's remove affordance and the no-Session composer trigger).
+   */
+  startDetached: () => void
   /** Session-addressed composer block source, or the stable absent source. */
   hooks: { composerBlock: ObservableSnapshot<ComposerBlock | undefined> }
 }
@@ -293,10 +298,8 @@ export interface ComposerBarOwnerProps {
   blocked?: { readonly reason: string }
   /** Lock all message actions while preserving the resident composer surface. */
   disabled?: boolean
-  /** Whether the shared Workspace picker is expanded. */
-  workspacePickerOpen?: boolean
-  /** Open the Workspace picker from the inert composer surface. */
-  onRequestWorkspace?: () => void
+  /** Start a fresh workspace-less Session from the inert no-Session composer surface. */
+  onStartSession?: () => void
   placeholder?: string
   /** Optional content rendered above the composer surface. */
   accessory?: ReactNode

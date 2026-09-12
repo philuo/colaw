@@ -168,6 +168,7 @@ function mount(
   const inputActions = wiring.actions
   const stop = vi.fn()
   const open = vi.fn()
+  const startDetached = vi.fn()
   const slotCalls: string[] = []
   const lineageOwners: ConversationHeaderLineageOwnerProps[] = []
   const viewTabs = options.viewTabs ?? [
@@ -314,11 +315,12 @@ function mount(
     renderSlot,
     renderSlotChain,
     selectWorkspace: retargetWorkspace,
+    startDetached,
     t,
   }
   const view = render(<ConversationRoot {...props} />)
   return {
-    view, store, wiring, sink, retargetWorkspace, session, conversation, slotCalls, lineageOwners, seatOwners, open,
+    view, store, wiring, sink, retargetWorkspace, startDetached, session, conversation, slotCalls, lineageOwners, seatOwners, open,
     pickerOwner: () => pickerOwner,
     rerender: () => { view.rerender(<ConversationRoot {...props} />) },
   }
@@ -464,12 +466,11 @@ describe('ConversationRoot resident composer', () => {
   })
 
   it('hero phase: same textarea, hero chrome, no header, picker switches the workspace', () => {
+    // The session belongs to no listed Workspace, so the chip sits in its
+    // unbound posture: the "选择工作区" trigger that opens the picker.
     const b = mount(
       sessionSnapshotOf({ blank: true }),
-      [
-        { ...workspace('one'), sessionIds: [SID] },
-        { ...workspace('second'), title: 'Selected Folder' },
-      ],
+      [{ ...workspace('second'), title: 'Selected Folder' }],
     )
     // Hero chrome is present and the selected View slot remains absent.
     const host = b.view.container.querySelector('[data-conversation-scroll]')
@@ -484,8 +485,8 @@ describe('ConversationRoot resident composer', () => {
     expect(host?.contains(box)).toBe(true)
     act(() => { b.wiring.setDraft('draft in hero') })
     expect(b.store.store.getSnapshot().draft).toBe('draft in hero')
-    // Picker: open through the chip; a pick switches to the other
-    // workspace's blank session (draft carry is apply-layer wiring).
+    // Picker: open through the chip; a pick switches to that workspace's
+    // blank session (draft carry is apply-layer wiring).
     fireEvent.click(b.view.getByRole('button', { name: '选择工作区' }))
     const owner = b.pickerOwner() as { open: boolean; onPick(id: WorkspaceId): void }
     expect(owner.open).toBe(true)
@@ -584,10 +585,7 @@ describe('ConversationRoot resident composer', () => {
     const selectWorkspace = vi.fn(async () => { throw new Error('connect failed') })
     const b = mount(
       sessionSnapshotOf({ blank: true }),
-      [
-        { ...workspace('one'), sessionIds: [SID] },
-        { ...workspace('second'), title: 'Selected Folder' },
-      ],
+      [{ ...workspace('second'), title: 'Selected Folder' }],
       selectWorkspace,
     )
     fireEvent.click(b.view.getByRole('button', { name: '选择工作区' }))
@@ -595,16 +593,31 @@ describe('ConversationRoot resident composer', () => {
     await act(async () => { owner.onPick(wid('second')); await Promise.resolve() })
     expect(selectWorkspace).toHaveBeenCalledWith(wid('second'))
     expect(b.view.queryByText('Selected Folder')).toBeNull()
-    expect(b.view.getByText('one')).toBeTruthy()
+    // The rolled-back chip is the unbound trigger again.
+    expect(b.view.getByRole('button', { name: '选择工作区' })).toBeTruthy()
   })
 
-  it('blank session keeps the interactive picker chip (workspace switchable until the first message)', () => {
+  it('bound blank session shows the workspace chip with the Codex remove affordance', () => {
     const b = mount(sessionSnapshotOf({ blank: true }))
-    const chip = b.view.getByRole('button', { name: '选择工作区' })
-    expect((chip as HTMLButtonElement).disabled).toBe(false)
+    // Bound posture: folder label, no picker trigger; the hover-revealed
+    // remove button detaches the workspace (draft carry is apply wiring).
+    const chip = b.view.container.querySelector('[data-workspace-chip="bound"]')
+    expect(chip?.textContent).toBe('one')
+    expect(b.view.queryByRole('button', { name: '选择工作区' })).toBeNull()
+    fireEvent.click(b.view.getByRole('button', { name: '移除工作区' }))
+    expect(b.startDetached).toHaveBeenCalledTimes(1)
+    // The picker slot stays mounted (the unbound posture re-opens it).
     expect(b.slotCalls).toContain('conversation.hero.workspace')
     // The agent-preset chip sits in the same row, for the same reason: both
     // choices are only open before the first message.
+    expect(b.slotCalls).toContain('conversation.hero.agentPreset')
+  })
+
+  it('unbound blank session keeps the interactive picker chip (workspace attachable until the first message)', () => {
+    const b = mount(sessionSnapshotOf({ blank: true }), [{ ...workspace('one') }])
+    const chip = b.view.getByRole('button', { name: '选择工作区' })
+    expect((chip as HTMLButtonElement).disabled).toBe(false)
+    expect(b.slotCalls).toContain('conversation.hero.workspace')
     expect(b.slotCalls).toContain('conversation.hero.agentPreset')
   })
 

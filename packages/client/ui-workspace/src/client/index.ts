@@ -111,7 +111,7 @@ export function apply(ctx: Context): void {
   }
   const browserInjected = (): WorkspaceBrowserInjected => ({
     // Explicit group actions keep their target; unscoped New Session inherits
-    // the current Session Workspace before the recent-Workspace fallback.
+    // the current Session Workspace or starts workspace-less (no fallback).
     startSession: (workspaceId) => { uiWorkspace.startSession(workspaceId) },
     open: openSession,
     searchSessions,
@@ -144,7 +144,6 @@ export function apply(ctx: Context): void {
   })
   const pickerInjected = (): WorkspacePickerInjected => ({
     createWorkspace: input => workspaces.create(input),
-    startDetached: () => uiWorkspace.startDetachedSession(),
     hooks: { directoryFlow: pickerFlowSource },
   })
   // Each registration declares its directory-flow child in the same call;

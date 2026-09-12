@@ -9,7 +9,7 @@
  * The text surface is the shell-owned Lexical editor bound here through
  * ComposerContentEditable; chips render as decorator portals, and the
  * keymap registers submit/menu/paste gestures on the editor command layer.
- * The no-session state renders the SAME div inert as the Workspace-picker
+ * The no-session state renders the SAME div inert as the start-Session
  * trigger instead of a parallel tree.
  */
 
@@ -46,7 +46,7 @@ export const InputBar = memo(function InputBar({
   toggleCommandMenu, stop, command, t,
   renderSlot, useBusyEnter, useFileUploads, useNotices, useLexicon, useMenuLauncher,
   useProjection, sessionId, variant, disabled: inert = false, blocked,
-  workspacePickerOpen = false, onRequestWorkspace,
+  onStartSession,
   placeholder, accessory,
 }: InputBarProps) {
   const input = useInput(s => s)
@@ -133,12 +133,13 @@ export const InputBar = memo(function InputBar({
   // be disabled do lock it — there is no session to choose a model for.
   const modelSeatLocked = removed || inert || !live
   const machineBusy = input?.phase === 'adjudicating' || input?.phase === 'submitting'
-  // The no-workspace surface remains the resident DOM node but acts as the
-  // existing picker trigger. Message controls stay locked until a Session
-  // exists; the trigger itself is read-only rather than disabled so pointer
-  // and keyboard users can reach the recovery action.
-  const workspaceTrigger = inert && !removed && onRequestWorkspace !== undefined
-  const editorDisabled = removed || (locked && !workspaceTrigger)
+  // The no-Session surface remains the resident DOM node but acts as the
+  // start-Session trigger: one pointer / keyboard gesture opens a fresh
+  // workspace-less Session the composer then binds to. Message controls stay
+  // locked until a Session exists; the trigger itself is read-only rather
+  // than disabled so pointer and keyboard users can reach it.
+  const startTrigger = inert && !removed && onStartSession !== undefined
+  const editorDisabled = removed || (locked && !startTrigger)
   const editable = live && !locked && !machineBusy
   const steeringAvailable = subagent === null || subagent.address.mode === 'continuable'
   const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && steeringAvailable
@@ -332,13 +333,13 @@ export const InputBar = memo(function InputBar({
     if (keyboard !== undefined) toggleCommandMenu?.(keyboard.caretSpan())
   }
 
-  // The no-session Workspace trigger: the resident editable div acts as the
-  // picker trigger for keyboard users (no editor is bound in this state).
-  const onWorkspaceKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
-    if (!workspaceTrigger) return
+  // The no-Session start trigger: the resident editable div acts as the
+  // start gesture for keyboard users (no editor is bound in this state).
+  const onStartKeyDown = (e: KeyboardEvent<HTMLDivElement>): void => {
+    if (!startTrigger) return
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      onRequestWorkspace()
+      onStartSession()
     }
   }
 
@@ -427,15 +428,12 @@ export const InputBar = memo(function InputBar({
       )}
       {/* Trigger clicks land on the card, not the editor: the toolbar row's
           disabled controls swallow clicks otherwise (the CSS state disarms
-          their pointer events), so the WHOLE capsule is the pick target.
-          pointerdown stops here so the Menu's outside-close cannot race the
-          click's reopen (close-then-open flickers the chip's open echo). */}
+          their pointer events), so the WHOLE capsule is the start target. */}
       <div
         ref={cardRef}
-        className={clsx(css.card, workspaceTrigger && css.cardWorkspaceTrigger)}
+        className={clsx(css.card, startTrigger && css.cardStartTrigger)}
         data-composer-card
-        onClick={workspaceTrigger ? onRequestWorkspace : undefined}
-        onPointerDown={workspaceTrigger ? (e) => { e.stopPropagation() } : undefined}
+        onClick={startTrigger ? onStartSession : undefined}
       >
         {sessionId !== undefined && (
           <div className={css.overlayAnchor}>{renderSlot('conversation.input.overlay', {})}</div>
@@ -461,7 +459,7 @@ export const InputBar = memo(function InputBar({
         <div ref={scrollRef} className={css.scroll} data-input-scroll>
           <div className={css.grow}>
             <ComposerContentEditable
-              editor={workspaceTrigger ? null : editor}
+              editor={startTrigger ? null : editor}
               editable={editable}
               className={clsx(css.input, editorDisabled && css.inputDisabled)}
               data-phase={input?.phase ?? 'inert'}
@@ -469,11 +467,9 @@ export const InputBar = memo(function InputBar({
               data-placeholder={placeholderText}
               // The placeholder was the textarea's accessible name; a div's
               // data attribute is not, so the label restores it.
-              aria-label={workspaceTrigger ? t('hero.chooseWorkspace') : placeholderText}
-              aria-haspopup={workspaceTrigger ? 'menu' : undefined}
-              aria-expanded={workspaceTrigger ? workspacePickerOpen : undefined}
-              tabIndex={workspaceTrigger ? 0 : undefined}
-              onKeyDown={workspaceTrigger ? onWorkspaceKeyDown : undefined}
+              aria-label={placeholderText}
+              tabIndex={startTrigger ? 0 : undefined}
+              onKeyDown={startTrigger ? onStartKeyDown : undefined}
               style={hint === null ? undefined : { '--dsh-composer-hint': JSON.stringify(hint) } as CSSProperties}
             />
             {draft === '' && attachments.length === 0 && !claimActive && (
@@ -481,7 +477,7 @@ export const InputBar = memo(function InputBar({
                 {placeholderText}
               </div>
             )}
-            <DecoratorPortals editor={workspaceTrigger ? null : editor} />
+            <DecoratorPortals editor={startTrigger ? null : editor} />
           </div>
         </div>
         <div className={css.row}>

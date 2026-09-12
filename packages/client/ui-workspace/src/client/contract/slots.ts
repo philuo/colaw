@@ -100,7 +100,7 @@ export type WorkspaceBrowserInjected = {
   /**
    * Start a New Session in a Workspace: reuse-or-create its blank session and
    * open it; without an explicit workspace, inherit the current Session
-   * Workspace, then the recent Workspace, or clear into the New Session view.
+   * Workspace or start a workspace-less Session.
    */
   startSession: (workspaceId?: WorkspaceId) => void
   /** Open a real Session. */
@@ -159,8 +159,6 @@ export type WorkspaceBrowserProps =
  * supplies the implicit index signature required by the registry.
  */
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
-  /** Start a chat with no workspace attached (picker's detached entry). */
-  startDetached: () => void
   /** Adopt a picked host directory as a real Workspace before targeting a Session. */
   createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
 }

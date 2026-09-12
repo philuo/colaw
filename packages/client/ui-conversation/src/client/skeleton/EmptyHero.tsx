@@ -3,7 +3,8 @@
 
 import type { ReactNode, RefObject } from 'react'
 import {
-  CatLogo, IconChevronDownOutline14, IconFolderClose16, IconFolderOpen16,
+  CatLogo, IconChevronDownOutline14, IconCircleCloseFill16, IconFolderClose16,
+  IconFolderOpen16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { workspaceTitleOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { ConversationSlotProps } from '../contract/slots.ts'
@@ -24,23 +25,45 @@ export function workspaceLabel(cwd: string): string {
 }
 
 /**
- * The workspace chip (folder + label + chevron), always interactive: before
- * the first message the workspace stays switchable — picking another one
- * moves the New Session flow to that workspace's blank session. Without a
- * label the chip renders its placeholder state: closed folder + the
- * "Choose workspace" call to action.
- * @param props.label - chip label (see {@link workspaceLabel}); omitted → placeholder.
- * @param props.menuOpen - menu expansion echo.
- * @param props.onClick - menu toggle.
- * @returns the chip button element.
+ * The workspace chip, in the two Codex-style postures:
+ *
+ * - bound (label present): a static folder + label row whose icon seat swaps,
+ *   on hover/focus, from the folder glyph to a filled circle-X button; the
+ *   click removes the directory (the flow drops to a workspace-less Session).
+ *   Switching workspaces starts here too — remove first, then pick.
+ * - unbound (label omitted): the closed folder + "Choose workspace" + chevron
+ *   button that opens the picker menu of existing Workspaces.
+ * @param props.label - chip label (see {@link workspaceLabel}); omitted → picker trigger.
+ * @param props.buttonRef - picker anchor (unbound form only).
+ * @param props.menuOpen - menu expansion echo (unbound form only).
+ * @param props.onClick - menu toggle (unbound form only).
+ * @param props.onRemove - directory removal (bound form only).
+ * @returns the chip element.
  */
-export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }: {
+export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, onRemove, t }: {
   buttonRef?: RefObject<HTMLButtonElement>
   label?: string | undefined
   menuOpen?: boolean
   onClick?: () => void
+  onRemove?: () => void
   t: HeroTranslate
 }) {
+  if (label !== undefined && onRemove !== undefined) {
+    return (
+      <span className={css.workspace} data-workspace-chip="bound">
+        <button
+          type="button"
+          className={css.remove}
+          aria-label={t('hero.removeWorkspace')}
+          onClick={onRemove}
+        >
+          <IconFolderOpen16 className={css.removeFolder} size={16} />
+          <IconCircleCloseFill16 className={css.removeX} size={16} />
+        </button>
+        <span className={css.workspaceLabel}>{label}</span>
+      </span>
+    )
+  }
   return (
     <button
       ref={buttonRef}
@@ -51,9 +74,7 @@ export function WorkspaceChip({ buttonRef, label, menuOpen = false, onClick, t }
       aria-expanded={menuOpen}
       onClick={onClick}
     >
-      {label === undefined
-        ? <IconFolderClose16 className={css.folder} size={16} />
-        : <IconFolderOpen16 className={css.folder} size={16} />}
+      <IconFolderClose16 className={css.folder} size={16} />
       <span className={css.workspaceLabel}>{label ?? t('hero.chooseWorkspace')}</span>
       <IconChevronDownOutline14 className={css.chevron} size={12} />
     </button>

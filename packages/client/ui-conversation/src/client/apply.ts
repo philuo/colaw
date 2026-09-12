@@ -91,6 +91,7 @@ interface WorkspaceNavigation {
     workspaceId: Parameters<ConversationInjected['selectWorkspace']>[0],
     beforeOpen: (sessionId: SessionId) => void,
   ): Promise<void>
+  startDetachedSession(beforeOpen?: (sessionId: SessionId) => void): void
 }
 
 /** Action registration used by the composer without importing its command-UI consumer. */
@@ -209,6 +210,29 @@ export function apply(ctx: Context, config: Config = Config({})): void {
   const inputHub = new InputHub(ctx, t)
   const composerBlocks = new ComposerBlockRegistry()
 
+  // Move an unsubmitted draft (text + attachments) from one Session's input
+  // machine to another's: retargeting the New Session flow — switching the
+  // Workspace or removing it — never costs what the operator already typed.
+  const moveDraft = (fromId: SessionId, toId: SessionId): void => {
+    const from = inputHub.shell(fromId)
+    const draft = from.snapshot.draft
+    const attachmentIds = from.snapshot.attachmentIds
+    const next = inputHub.shell(toId)
+    if (attachmentIds.length === 0 || next.addAttachments(attachmentIds)) {
+      if (sessions.binding(toId) === undefined) {
+        throw new Error(`ui-conversation: session "${toId}" resolved no binding`)
+      }
+      concreteConversation(ctx).rebindDraftFiles(toId, attachmentIds)
+      if (draft !== '') {
+        next.setDraft(draft)
+        from.setDraft('')
+      }
+      if (attachmentIds.length > 0) {
+        for (const id of attachmentIds) from.removeAttachment(id)
+      }
+    }
+  }
+
   ctx.inject(['commandUi'], (scope) => {
     const commands = scope.get('commandUi') as FileCommandRegistry
     scope.effect(() => commands.register({
@@ -256,27 +280,17 @@ export function apply(ctx: Context, config: Config = Config({})): void {
       hooks: {
         composerBlock: sessionId === undefined ? ABSENT_BLOCK : composerBlocks.storeFor(sessionId),
       },
+      // Retargeting the New Session flow — to another Workspace or to no
+      // Workspace at all — carries the still-unsubmitted draft with it, so
+      // removing or switching the chip never costs what the operator typed.
       selectWorkspace: workspaceId => workspaceNavigation.openWorkspace(workspaceId, (nextId) => {
-        if (sessionId !== undefined && nextId !== sessionId) {
-          const from = inputHub.shell(sessionId)
-          const draft = from.snapshot.draft
-          const attachmentIds = from.snapshot.attachmentIds
-          const next = inputHub.shell(nextId)
-          if (attachmentIds.length === 0 || next.addAttachments(attachmentIds)) {
-            if (sessions.binding(nextId) === undefined) {
-              throw new Error(`ui-conversation: session "${nextId}" resolved no binding`)
-            }
-            concreteConversation(ctx).rebindDraftFiles(nextId, attachmentIds)
-            if (draft !== '') {
-              next.setDraft(draft)
-              from.setDraft('')
-            }
-            if (attachmentIds.length > 0) {
-              for (const id of attachmentIds) from.removeAttachment(id)
-            }
-          }
-        }
+        if (sessionId !== undefined && nextId !== sessionId) moveDraft(sessionId, nextId)
       }),
+      startDetached: () => {
+        workspaceNavigation.startDetachedSession((nextId) => {
+          if (sessionId !== undefined && nextId !== sessionId) moveDraft(sessionId, nextId)
+        })
+      },
     }),
   }, ConversationRoot)
 

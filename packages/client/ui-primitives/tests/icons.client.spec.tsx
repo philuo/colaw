@@ -18,7 +18,7 @@ const iconNames = Object.keys(icons)
 
 describe('ic_ds_ icon set', () => {
   it('exports the full icon set (every glyph the barrel ships)', () => {
-    expect(iconNames.length).toBe(81)
+    expect(iconNames.length).toBe(82)
     // The composer menu's own glyphs, pinned by name.
     expect(iconNames).toEqual(expect.arrayContaining(['IconPlanOutline14', 'IconCompactOutline16', 'IconShieldOutline16']))
   })
