@@ -63,13 +63,14 @@
 
 /* Settled-flow identity boundary. It is neutral until it becomes the natural
    measurement/mount unit for a virtualizer without changing the column gap.
-   Offscreen rows skip layout and paint entirely (the browser keeps each
-   row's last remembered size for the scrollbar), so long transcripts scroll
-   on the compositor instead of re-laying-out every loaded message. */
+   Deliberately NO `content-visibility: auto`: offscreen rows would lay out
+   for the first time while the reader scrolls through them, and each row's
+   real height replacing the intrinsic estimate shifts the whole flow —
+   visible as scrollbar jumps on the first pass through a freshly opened
+   session. The per-scroll-frame layout cost is the cheaper side of that
+   trade; revisit only with real measured heights per row. */
 .flowItem {
   min-width: 0;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 160px;
 }
 
 /* A closed process reads as one summary immediately followed by its answer.
