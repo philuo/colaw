@@ -40,10 +40,11 @@
 
 .image {
   display: block;
-  /* The box comes inline from the quantized pane shape (percentage fallback
-   * pre-measure), so dragging the sidebar never re-samples per frame;
-   * containment and the aspect are object-fit's guarantee inside any box. */
-  object-fit: contain;
+  /* The element box carries the contained size inline (pure aspect math,
+   * quantized through the resample scheduler), so the bitmap renders through
+   * WebKit's native image path — crisp at any scale — instead of the
+   * object-fit drawing path, which rasterizes large bitmaps at reduced
+   * quality on Retina displays. */
   user-select: none;
   -webkit-user-drag: none;
   transform-origin: center center;

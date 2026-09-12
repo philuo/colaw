@@ -271,7 +271,11 @@ export function AppFrame({
     let raf: number | null = null
     let disposed = false
     const measure = () => {
-      const width = el.getBoundingClientRect().width
+      // The frame fills the webview, so the window is its physical ceiling:
+      // without the clamp, a frame whose content momentarily overflows feeds
+      // its own grown box back as the viewport, and the concession loop
+      // chases it (a persisted wide layout would reopen off-window forever).
+      const width = Math.min(el.getBoundingClientRect().width, window.innerWidth)
       if (width > 0) actions.setViewportWidth(width)
     }
     measure()
@@ -309,7 +313,7 @@ export function AppFrame({
       }
     }
     stamp(document)
-    const observer = new MutationObserver(mutations => {
+    const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
         for (const node of mutation.addedNodes) {
           if (!(node instanceof HTMLElement)) continue
@@ -319,7 +323,7 @@ export function AppFrame({
       }
     })
     observer.observe(document.body, { childList: true, subtree: true })
-    return () => observer.disconnect()
+    return () => { observer.disconnect() }
   }, [])
 
   // Desktop chrome: double-clicking the title bar toggles the window's zoom —
@@ -417,6 +421,20 @@ export function AppFrame({
     <MainPanel usePanelInfo={usePanelInfo} renderSlot={renderSlot} />
   ), [usePanelInfo, renderSlot])
   const overlays = useMemo(() => renderSlot('shell.overlay', {}), [renderSlot])
+  // The right pane's rendered width rides the --dsh-rightbar-width var below,
+  // and its React subtree is memoized on drag-stable keys — so dragging the
+  // divider re-renders only this frame (grid tracks + the var) and the pane's
+  // whole tree (dock, tabs, previews) never re-renders per drag frame. The
+  // numeric width prop stays in the contract for seats that read it, read
+  // through a ref so the memo never captures a stale closure of it.
+  const rightbarOpen = normal.rightbar > 0
+  const rightbarWidthProp = useRef(normal.rightbar)
+  rightbarWidthProp.current = normal.rightbar
+  const rightbar = useMemo(() => renderSlot('rightbar', {
+    width: rightbarWidthProp.current,
+    viewportWidth: viewport,
+    canShow: rightbarOpen,
+  }), [renderSlot, viewport, rightbarOpen])
   // Render-site slot call with live concession output: a closed sidebar keeps
   // the mounted slot at the compact-rail width, and the component sees its
   // rendered state as owner params decided here (collapsed follows the resolved
@@ -438,6 +456,9 @@ export function AppFrame({
       style={{
         gridTemplateColumns:
           `${sidebarTrack}px minmax(0, 1fr) ${cols.rightbar}px`,
+        ...(({
+          '--dsh-rightbar-width': `${normal.rightbar}px`,
+        }) as CSSProperties),
         ...(desktopChrome
           ? ({
             '--dsh-titlebar-inset': `${desktopMarker.titlebarInset ?? 32}px`,
@@ -501,7 +522,7 @@ export function AppFrame({
       <>
         <CenterColumn>{main}</CenterColumn>
         <RightbarColumn>
-          {renderSlot('rightbar', { width: normal.rightbar, viewportWidth: viewport, canShow: normal.rightbar > 0 })}
+          {rightbar}
         </RightbarColumn>
       </>
       <div className={css.overlayLayer} data-shell-overlay>

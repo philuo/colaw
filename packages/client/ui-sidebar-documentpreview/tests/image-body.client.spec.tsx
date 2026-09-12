@@ -94,6 +94,12 @@ function setPaneSize(element: HTMLElement, pane: { width: number; height: number
   Object.defineProperty(element, 'clientHeight', { configurable: true, value: pane.height })
 }
 
+/** Wait out the gesture-commit idle so React state catches up with the
+ * imperative transform the hot path wrote. */
+async function settleGestures(): Promise<void> {
+  await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
+}
+
 describe('ImageBody', () => {
   it.each([
     ['png', 'image/png'],
@@ -135,6 +141,10 @@ describe('ImageBody', () => {
     await act(async () => { await Promise.resolve() })
     // No transform at rest: the browser rasterizes at the laid-out size.
     expect(image.style.transform).toBe('')
+    // The element box IS the contained size (layout-sized, never object-fit —
+    // WebKit's object-fit drawing path is what blurred large bitmaps).
+    expect(image.style.width).toBe('400px')
+    expect(image.style.height).toBe('200px')
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe('true')
     expect(viewport.getAttribute('data-pannable')).toBe(null)
     expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('20%')
@@ -151,11 +161,20 @@ describe('ImageBody', () => {
     fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 100, clientY: 75 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toContain('scale(2')
+    // The layer promotion rides the in-flight gesture only — a pinned
+    // raster is what made zoomed images blurry.
+    expect(image.style.willChange).toBe('transform')
     // cx = 100 - 200 = -100; tx = -100 - (-100 * 2) = 100. The contained
     // 200-tall height doubles to 400 in a 300-tall pane: slack 50 caps ty.
     expect(image.style.transform).toContain('translate(100px, 50px)')
+    // React state (badge enable, cursor attrs) follows the idle commit.
+    await settleGestures()
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe(null)
     expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('40%')
+    // Committed zoom keeps the transform but releases the layer promotion,
+    // so WebKit re-rasterizes at the settled scale and stays sharp.
+    expect(image.style.willChange).toBe('')
+    expect(image.style.transform).toContain('scale(2')
     // A plain wheel over a contained image is not a zoom or a pan.
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 100, clientY: 75 })
     await act(async () => { await Promise.resolve() })
@@ -224,10 +243,12 @@ describe('ImageBody', () => {
     fireEvent.wheel(viewport, { deltaY: 100, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toBe('')
-    // Zoom in, then the badge returns to the contained posture.
+    // Zoom in, then the badge returns to the contained posture. The badge's
+    // enabled state follows the idle commit, so settle before clicking.
     fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).not.toBe('')
+    await settleGestures()
     fireEvent.click(screen.getByRole('button', { name: 'Reset zoom' }))
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toBe('')
@@ -235,6 +256,7 @@ describe('ImageBody', () => {
     fireEvent.dblClick(viewport, { clientX: 120, clientY: 90 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toContain('scale(2')
+    await settleGestures()
     fireEvent.dblClick(viewport, { clientX: 120, clientY: 90 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toBe('')
@@ -252,6 +274,8 @@ describe('ImageBody', () => {
       await act(async () => { await Promise.resolve() })
     }
     expect(image.style.transform).toContain('scale(8')
+    // The pan affordance (cursor attr, pointerdown gate) follows the commit.
+    await settleGestures()
     expect(viewport.getAttribute('data-pannable')).toBe('true')
     const grab = (dx: number, dy: number): void => {
       fireEvent.pointerDown(viewport, { button: 0, pointerId: 1, clientX: 200, clientY: 150 })

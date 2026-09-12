@@ -281,14 +281,16 @@ function PanelChrome({ sessionId, fullscreen, autoFullscreen, actions, t }: Pick
  * on the reseeded guide, the panel's home view — and the way in while collapsed
  * is the conversation header's toggle button (`SidebarToggle.tsx`).
  */
-function SidebarPanel(panel: PanelProps & { width: number; panelRef: RefObject<HTMLDivElement> }): ReactNode {
-  const { sessionId, surface, actions, t, renderSlot, openTab, width, reportRoom, fullscreen, autoFullscreen, panelRef } = panel
+function SidebarPanel(panel: PanelProps & { panelRef: RefObject<HTMLDivElement> }): ReactNode {
+  const { sessionId, surface, actions, t, renderSlot, openTab, reportRoom, fullscreen, autoFullscreen, panelRef } = panel
   const { expanded } = surface.layout
   return (
     <div
       ref={panelRef}
       className={css.panel}
-      style={{ width: fullscreen ? '100%' : width }}
+      // The frame sets --dsh-rightbar-width per layout change; the pane thus
+      // re-flows on drags without re-rendering this whole subtree.
+      style={{ width: fullscreen ? '100%' : 'var(--dsh-rightbar-width, 100%)' }}
       data-sidebar-right-panel={fullscreen ? 'fullscreen' : 'push'}
       data-sidebar-right-open={expanded || undefined}
       // Off-edge is out of reach: the stylesheet's visibility flip takes the
@@ -351,7 +353,7 @@ function Floats(panel: PanelProps): ReactNode {
  * this seat also means it reads the very store instance the panel does.
  */
 export function RightbarSeat({
-  sessionId, width, viewportWidth, canShow, useStore, actions, t, renderSlot, syncPresentation, bindService, openTab,
+  sessionId, viewportWidth, canShow, useStore, actions, t, renderSlot, syncPresentation, bindService, openTab,
   useTabTypes, useTabNavigation, occurrence,
 }: RightbarSeatProps): ReactNode {
   // One store instance per session, so this map holds this session's surface.
@@ -427,7 +429,7 @@ export function RightbarSeat({
   return (
     <>
       {toggle}
-      <SidebarPanel {...panel} width={width} panelRef={panelRef} />
+      <SidebarPanel {...panel} panelRef={panelRef} />
       <Floats {...panel} />
     </>
   )

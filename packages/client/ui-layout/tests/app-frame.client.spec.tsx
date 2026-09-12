@@ -54,6 +54,7 @@ function flushFrames(): void {
 
 function resize(width: number): void {
   frameWidth = width
+  vi.stubGlobal('innerWidth', width)
   act(() => {
     for (const observer of observers) if (!observer.disconnected) observer.fire()
     flushFrames()
@@ -434,7 +435,10 @@ describe('AppFrame right panel presentation', () => {
     expect(rightOwner().width).toBe(420)
     drag(handleFor(frame, 'rightbar'), 680, 690)
     expect(instance.getSnapshot().layoutInfo.rightbar).toBe(410)
-    expect(rightOwner().width).toBe(410)
+    // Drag frames deliver the width through the frame's CSS var (the pane's
+    // React tree is deliberately frozen out of the gesture), so the owner
+    // props keep their drag-stable snapshot while the panel still re-flows.
+    expect(frame.style.getPropertyValue('--dsh-rightbar-width')).toBe('410px')
     expect(tracks(frame)[1]).toBe(0)
   })
 })
@@ -469,20 +473,20 @@ describe('AppFrame pointer resizing', () => {
     expect(handle.style.left).toBe('680px')
     drag(handle, 680, 690)
     expect(instance.getSnapshot().layoutInfo.rightbar).toBe(410)
-    expect(rightOwner().width).toBe(410)
+    expect(frame.style.getPropertyValue('--dsh-rightbar-width')).toBe('410px')
     expect(tracks(frame)[1]).toBe(410)
     expect(handle.style.left).toBe('690px')
   })
 
   it('widens to the 70% limit and shrinks to 300px through pointer input', () => {
     frameWidth = 3000
-    const { frame, instance, rightOwner } = mountFrame()
+    const { frame, instance } = mountFrame()
     act(() => { instance.actions.toggleSidebar(); instance.actions.openRightbar(true, false) })
     drag(handleFor(frame, 'rightbar'), 1650, 0)
-    expect(rightOwner().width).toBe(2100)
+    expect(frame.style.getPropertyValue('--dsh-rightbar-width')).toBe('2100px')
     expect(tracks(frame)[1]).toBe(2100)
     drag(handleFor(frame, 'rightbar'), 900, 3000)
-    expect(rightOwner().width).toBe(300)
+    expect(frame.style.getPropertyValue('--dsh-rightbar-width')).toBe('300px')
     expect(tracks(frame)[1]).toBe(300)
   })
 
