@@ -153,6 +153,23 @@ const processBoundTests = [
   'packages/workflow/workflow-worker-thread/tests/session.spec.ts',
 ]
 
+/**
+ * zod must be inlined, per project.
+ *
+ * zod's ESM entry is `import * as z from './v4/classic/external.js'; export *
+ * from './v4/classic/external.js'; export { z }`. When the SSR runner
+ * externalizes the package, that single local re-export is lost — the namespace
+ * keeps the star-exported names and `default` but has no `z` — so a source file
+ * saying `import { z } from 'zod'` fails at import time with "undefined is not
+ * an object (evaluating 'z.string')". Inlining routes the package through the
+ * transform pipeline, which preserves the re-export.
+ *
+ * Per project, not at the root: a project config does not inherit the root's
+ * `server.deps`. The pattern is the resolved path, not the bare name — a 'zod'
+ * string also matches the unrelated zod-to-json-schema directory.
+ */
+const zodInteropInline = { server: { deps: { inline: [/\/node_modules\/zod\//] } } }
+
 export default defineConfig({
   plugins: [pathsPlugin(), standardDecoratorPlugin()],
   test: {
@@ -166,6 +183,7 @@ export default defineConfig({
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
         test: {
+          ...zodInteropInline,
           name: 'thread-safe',
           execArgv: vitestExecArgv,
           // Node 24 has aborted in its CJS lexer (v8::ToLocalChecked Empty
@@ -184,6 +202,7 @@ export default defineConfig({
       {
         plugins: [pathsPlugin(), standardDecoratorPlugin()],
         test: {
+          ...zodInteropInline,
           name: 'process-bound',
           execArgv: vitestExecArgv,
           pool: 'forks',
