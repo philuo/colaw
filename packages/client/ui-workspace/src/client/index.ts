@@ -171,12 +171,25 @@ export function apply(ctx: Context): void {
   // The trash page in the settings panel: archived sessions with preview,
   // restore, and permanent deletion. Registered from this package because it
   // is the workspace/archive domain's own surface.
+  //
+  // Both destructive verbs delete the Session from the Host for good, so both
+  // end with an authoritative Session-list pull: the list feed only hears
+  // about a live Session's teardown (`api-session/removed`), and permanent
+  // deletion also covers Sessions the Host never admitted this run — without
+  // the re-pull those rows would keep rendering from the cached list, which
+  // reads as the deletion having restored the Session instead.
   const trashInjected = (): TrashSettingsSectionInjected => ({
     trash: {
       entries: () => workspaces.trashEntries(),
       unarchive: sessionId => workspaces.unarchiveSession(sessionId),
-      remove: sessionId => workspaces.deleteArchivedSession(sessionId),
-      clear: () => workspaces.clearTrash(),
+      remove: async (sessionId) => {
+        await workspaces.deleteArchivedSession(sessionId)
+        await sessions.refresh()
+      },
+      clear: async () => {
+        await workspaces.clearTrash()
+        await sessions.refresh()
+      },
     },
   })
   ctx.slots.inject('settings.section', () => ctx.slots.register({

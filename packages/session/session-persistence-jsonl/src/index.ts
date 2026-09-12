@@ -504,6 +504,19 @@ class JsonlSessionPersistence extends SessionPersistence {
     const signal = options?.signal
     await this.ensureRootEncoding()
     const selected = await this.findLog(id, signal)
+    // Revoke this process's traces of the id BEFORE the artifact leaves:
+    // a write handle still bound to the id would otherwise re-materialize the
+    // log from its routed buffer — deletion that "restores" the session — and a
+    // created-but-unmaterialized entry would keep the id listed from memory.
+    // A revoked id is written by nobody and listed by nobody here.
+    try {
+      await this.tracker.revoke(id)
+    } catch (error: unknown) {
+      this.ctx.logger.warn(
+        `session-persistence: revoking session "${id}" failed; its artifact is still removed: ${String(error)}`,
+      )
+    }
+    this.coldLogMemo.delete(id)
     if (selected === undefined) throw new SessionPersistenceNotFoundError(id)
     signal?.throwIfAborted()
     // The whole per-session directory goes — the generation log, its lock, and

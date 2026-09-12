@@ -216,13 +216,23 @@ export class WorkspaceCommands {
 
   /**
    * Remove one archived session from disk for good: the durable log, the
-   * archive record, and every workspace accounting slot. An id that is not
-   * archived is refused; there is deliberately no live-session refusal —
-   * the host session store keeps admitted instances for any session opened
-   * this run (archiving alone does not evict them), so a residency probe
-   * would reject exactly the sessions the trash exists to delete. The
-   * conversation surface already guarantees an archived session is not the
-   * open conversation (archiving clears the selection and hides the row).
+   * archive record, the live store entry, and every workspace accounting slot.
+   * An id that is not archived is refused; there is deliberately no
+   * live-session refusal — the host session store keeps admitted instances for
+   * any session opened this run (archiving alone does not evict them), so a
+   * residency probe would reject exactly the sessions the trash exists to
+   * delete. The conversation surface already guarantees an archived session is
+   * not the open conversation (archiving clears the selection and hides the
+   * row).
+   *
+   * Deletion ENDS the session; it never merely unhides it. Every trace that
+   * would outlive the artifact is retired in the same transaction, because any
+   * survivor reads as "the session came back": a live store entry keeps the id
+   * in the session list (and so back in the sidebar) once the archive record
+   * is gone, and the persistence backend's own write route would re-materialize
+   * the log from its buffered events. `session/disposed` is the single pairing
+   * edge, so consumers (the session list feed included) observe one normal
+   * teardown rather than a resurrection.
    * @param request - the archived session to delete permanently.
    * @returns the complete resulting archive set.
    */
@@ -249,6 +259,12 @@ export class WorkspaceCommands {
       }
       // Already gone on disk: the accounting cleanup below still runs.
     }
+    // The durable artifact is gone, so an admitted instance is now only a
+    // listing that outlives its session. Retire it after the removal (never
+    // before): the persistence backend must already have dropped the id's
+    // write route, or its `session/disposed` teardown would drain the routed
+    // buffer straight back onto the disk.
+    this.ctx.sessions.retire(sessionId)
     // Session-scoped temp artifacts (spilled tool results under the OS temp
     // area) leave with the session; the contract is best-effort, so a spill
     // backend that is absent or fails never fails the deletion itself.

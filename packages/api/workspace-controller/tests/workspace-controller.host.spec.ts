@@ -375,18 +375,33 @@ describe('WorkspaceController trash', () => {
 
   it('deletes an archived session that is still admitted in the session store', async () => {
     const { removed, persistence } = recordingPersistence()
-    const { controller, admitted } = await archivedPair(persistence)
+    const { controller, ctx, admitted } = await archivedPair(persistence)
+    const disposed: SessionId[] = []
+    ctx.on('session/disposed', (session) => { disposed.push(session.id) })
+
     await expect(controller.deleteArchivedSession({ sessionId: admitted.id }))
       .resolves.toEqual({ archivedSessionIds: [SessionId('idle-archived')] })
     expect(removed).toEqual([admitted.id])
+    // Deletion ENDS the session: the admitted instance must leave the store in
+    // the same transaction, or the id stays listed (and the sidebar row comes
+    // back the moment the archive record is gone) — a deletion that reads as a
+    // restore. One paired disposal edge tells every consumer the truth.
+    expect(ctx.sessions.get(admitted.id)).toBeUndefined()
+    expect(disposed).toEqual([admitted.id])
   })
 
   it('clears every entry, including sessions opened this run', async () => {
     const { removed, persistence } = recordingPersistence()
-    const { controller, admitted, idle } = await archivedPair(persistence)
+    const { controller, ctx, admitted, idle } = await archivedPair(persistence)
+    const disposed: SessionId[] = []
+    ctx.on('session/disposed', (session) => { disposed.push(session.id) })
+
     await expect(controller.clearTrash()).resolves.toEqual({ archivedSessionIds: [] })
     expect(removed.sort()).toEqual([admitted.id, idle.id].sort())
     await expect(controller.trashEntries()).resolves.toEqual({ entries: [] })
+    expect(ctx.sessions.get(admitted.id)).toBeUndefined()
+    expect(ctx.sessions.get(idle.id)).toBeUndefined()
+    expect(disposed.sort()).toEqual([admitted.id, idle.id].sort())
   })
 
   it('keeps clearing the remaining entries when one deletion fails, and reports the survivor', async () => {

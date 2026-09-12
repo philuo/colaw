@@ -430,6 +430,14 @@ interface SessionEntry {
   appending: boolean
   detachRequested: boolean
   detach(): void
+  /**
+   * The once-only capability {@link SessionStore.enter} returned alongside
+   * this entry, retained so {@link SessionStore.retire} can end the entry
+   * without owning the entering effect. One shared closure: whoever calls
+   * first (the entering fiber's disposer or an explicit retirement) removes
+   * the entry and publishes the paired disposal; the second call no-ops.
+   */
+  retire(): void
 }
 
 /** Store attachment for the append path; module-private to keep Session store-agnostic publicly. */
@@ -1039,19 +1047,6 @@ export class SessionStore extends Service {
     // preparation. Only one exact same-id transaction can publish.
     if (this.store.has(id)) throw new Error(`session "${id}" already exists`)
     if (attachments.has(session)) throw new Error(`session "${id}" is already attached to a store`)
-    const entry: SessionEntry = {
-      id,
-      session,
-      carrier,
-      emitCtx: this.ctx,
-      announced: false,
-      announcing: false,
-      appending: false,
-      detachRequested: false,
-      detach: () => { this.detachEntered(entry) },
-    }
-    this.store.set(id, entry)
-    attachments.set(session, entry)
     let entered = true
     const detach = (): void => {
       if (!entered) return
@@ -1065,7 +1060,42 @@ export class SessionStore extends Service {
       }
       entry.detach()
     }
+    const entry: SessionEntry = {
+      id,
+      session,
+      carrier,
+      emitCtx: this.ctx,
+      announced: false,
+      announcing: false,
+      appending: false,
+      detachRequested: false,
+      detach: () => { this.detachEntered(entry) },
+      // The very same once-only capability returned below, so an explicit
+      // retirement and the entering effect's disposer cannot both run.
+      retire: detach,
+    }
+    this.store.set(id, entry)
+    attachments.set(session, entry)
     return detach
+  }
+
+  /**
+   * End one live session's store lifecycle NOW, without waiting for the fiber
+   * that entered it (permanent deletion: the callers' durable artifact is
+   * already gone, and a surviving entry would keep the id listed and let its
+   * writer re-materialize the very log being removed). Removal is the same
+   * single lifecycle edge as a normal teardown — the entry leaves the store,
+   * its attachment is dropped, `session/disposed` publishes once, and every
+   * later `get()` misses.
+   * @param id - the live session to retire.
+   * @returns whether an entered session was retired; an unknown id is a
+   *   no-op, so repeated deletions stay idempotent.
+   */
+  retire(id: SessionId): boolean {
+    const entry = this.store.get(id)
+    if (entry === undefined) return false
+    entry.retire()
+    return true
   }
 
   /** Remove one exact entered session and emit its paired disposal when announced. */

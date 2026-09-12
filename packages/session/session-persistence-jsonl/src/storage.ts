@@ -265,6 +265,35 @@ export class JsonlSessionHandle implements SessionHandle {
   }
 
   /**
+   * Abandon this handle: drop its routed-but-unwritten events and release its
+   * write claim WITHOUT draining. Permanent deletion owns the artifact's fate,
+   * so the drain {@link close} performs would re-create the very log being
+   * removed — the one direction a deletion must never take. Everything already
+   * in flight settles first, so the bytes on disk are stable when this
+   * resolves; the handle refuses all later work with
+   * `SessionHandleClosedError`, and a later {@link close} returns this same
+   * settlement instead of draining.
+   * @returns settlement of the release.
+   */
+  revoke(): Promise<void> {
+    return this.closing ??= (async () => {
+      // The routed-but-unwritten events die with the handle.
+      this.buffered.length = 0
+      if (this.batchTimer !== undefined) {
+        clearTimeout(this.batchTimer)
+        this.batchTimer = undefined
+      }
+      this.drainPaused = true
+      await this.chain
+      // Free the in-process claim BEFORE the lock: a failing lock release must
+      // not wedge the id here behind a lock the kernel may already have
+      // dropped, and the artifact is being removed either way.
+      this.storage.releaseHandle(this, this.state.materialized)
+      await this.lease?.release()
+    })()
+  }
+
+  /**
    * Buffer one published live session event and arm the bounded batching
    * window when it is idle. The routing installer is the only caller.
    * @param event - the live event, retained as a persistence-owned copy.
@@ -471,6 +500,23 @@ export class JsonlBackendTracker {
    */
   materialized(id: SessionId): void {
     this.pending.delete(id)
+  }
+
+  /**
+   * Discard every in-process trace of one session: its created-but-
+   * unmaterialized entry, its write route, and its write handle — revoked
+   * WITHOUT draining, so no buffered event can re-create the artifact a
+   * permanent deletion is removing. Afterwards the id is listed by nothing
+   * here and routes nothing, exactly as if this process had never seen it.
+   * @param id - the removed session.
+   * @returns settlement of the handle revocation.
+   */
+  async revoke(id: SessionId): Promise<void> {
+    this.pending.delete(id)
+    const writer = this.writers.get(id)
+    this.writers.delete(id)
+    if (writer === null || writer === undefined) return
+    await writer.revoke()
   }
 
   /**

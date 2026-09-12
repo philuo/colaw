@@ -1499,6 +1499,31 @@ describe('SessionStore', () => {
     expect(observed).toBe(0)
   })
 
+  it('retires one live session on demand without waiting for its entering fiber', async () => {
+    const ctx = new Context()
+    await ctx.plugin(SessionStore)
+    const disposed: SessionId[] = []
+    ctx.on('session/disposed', (session) => { disposed.push(session.id) })
+
+    let ownerCtx!: Context
+    const owner = await ctx.plugin(Object.assign((inner: Context) => { ownerCtx = inner }, { inject: ['sessions'] }))
+    const session = ownerCtx.sessions.create(SessionId('retired'))
+    expect(ctx.sessions.get(SessionId('retired'))).toBe(session)
+
+    expect(ctx.sessions.retire(SessionId('retired'))).toBe(true)
+    expect(ctx.sessions.get(SessionId('retired'))).toBeUndefined()
+    expect(disposed).toEqual(['retired'])
+
+    // An unknown id is an idempotent no-op, so a repeated deletion stays safe.
+    expect(ctx.sessions.retire(SessionId('retired'))).toBe(false)
+    expect(disposed).toEqual(['retired'])
+
+    // Retirement shares the entering effect's single-shot capability: unloading
+    // the owner afterwards publishes no second lifecycle edge.
+    await owner.dispose()
+    expect(disposed).toEqual(['retired'])
+  })
+
   it('pairs a partial session/created announcement with disposal during rollback', async () => {
     const ctx = new Context()
     await ctx.plugin(SessionStore)

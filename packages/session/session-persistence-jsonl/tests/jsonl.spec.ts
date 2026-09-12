@@ -8,6 +8,7 @@ import { scheduler } from 'node:timers/promises'
 import { SESSION_FORMAT_VERSION, SessionLogOffset, SessionSeq, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+import { SessionHandleClosedError } from '@deepseek-ai/dsh-session-persistence'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {
   assertNoRetiredHeaderFields, encodeSegment, eventLines, generationLogFilename, generationLogPath,
@@ -2440,6 +2441,68 @@ describe('JsonlSessionPersistence: edge cases', () => {
       name: 'SessionPersistenceNotFoundError',
     })
     expect((await readAll(ctx.sessionPersistence, SessionId('survivor'))).meta.id).toBe(SessionId('survivor'))
+  })
+
+  it('remove drops a created-but-unmaterialized session instead of leaving it listed', async () => {
+    // Such a session has no artifact yet, but this process still lists it from
+    // memory. Deletion must retire that listing: a survivor reads as a session
+    // that came back, and its writer would materialize the log on the next
+    // routed append.
+    const header = meta('pending-doomed', '/proj')
+    const writer = await ctx.sessionPersistence.create(header)
+    expect((await ctx.sessionPersistence.list()).map(snapshot => snapshot.header.id)).toEqual([header.id])
+
+    // Nothing durable existed, so the documented not-found refusal still holds…
+    await expect(ctx.sessionPersistence.remove(header.id)).rejects.toMatchObject({
+      name: 'SessionPersistenceNotFoundError',
+    })
+    // …while every in-process trace is gone: unlisted, unobservable, and its
+    // revoked writer refuses the append that would re-create the artifact.
+    expect(await ctx.sessionPersistence.list()).toEqual([])
+    await expect(ctx.sessionPersistence.stat(header.id)).resolves.toBeUndefined()
+    await expect(writer.append(oneTurnLog())).rejects.toBeInstanceOf(SessionHandleClosedError)
+    await expect(stat(rawLogPath(root, '/proj', header.id))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('remove revokes a live materialized writer so it cannot rewrite the log', async () => {
+    const header = meta('live-doomed', '/proj')
+    const writer = await ctx.sessionPersistence.create(header) as JsonlSessionHandle
+    await writer.append(oneTurnLog())
+    // One routed event is still inside its batching window: revoking must drop
+    // it, because writing it is exactly how a deleted session comes back.
+    const tail = oneTurnLog().at(-1) as SessionEvent
+    writer.enqueueLive({ ...tail, seq: SessionSeq(oneTurnLog().length) }, () => {})
+    expect((await stat(rawLogPath(root, '/proj', header.id))).isFile()).toBe(true)
+
+    await ctx.sessionPersistence.remove(header.id)
+    expect(await ctx.sessionPersistence.list()).toEqual([])
+    await expect(stat(rawLogPath(root, '/proj', header.id))).rejects.toMatchObject({ code: 'ENOENT' })
+    // Repeated revocation is the same settlement, and neither it nor a later
+    // close drains the dropped batch back onto the disk.
+    await expect(writer.revoke()).resolves.toBeUndefined()
+    await expect(writer.close()).resolves.toBeUndefined()
+    await expect(writer.flush()).rejects.toBeInstanceOf(SessionHandleClosedError)
+    await expect(writer.append(oneTurnLog())).rejects.toBeInstanceOf(SessionHandleClosedError)
+    await expect(stat(rawLogPath(root, '/proj', header.id))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('removes the artifact even when revoking the writer loses its write lock', async () => {
+    // A failed lock release must not turn a deletion into a half-deletion: the
+    // artifact goes, the listing forgets the id, and the failure is reported.
+    const warned: string[] = []
+    vi.spyOn(ctx.logger, 'warn').mockImplementation((message: string) => { warned.push(message) })
+    const lease = { release: async () => { throw new Error('lock lost') } }
+    vi.spyOn(ctx.sessionPersistence as JsonlSessionPersistence, 'acquireWriteLease')
+      .mockResolvedValue(lease as never)
+
+    const header = meta('leaky-lock', '/proj')
+    const writer = await ctx.sessionPersistence.create(header)
+    await writer.append(oneTurnLog())
+    await ctx.sessionPersistence.remove(header.id)
+
+    expect(warned.some(message => message.includes(`revoking session "${header.id}" failed`))).toBe(true)
+    expect(await ctx.sessionPersistence.list()).toEqual([])
+    await expect(stat(rawLogPath(root, '/proj', header.id))).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('quarantines a corrupt log instead of failing the listing, and warns', async () => {

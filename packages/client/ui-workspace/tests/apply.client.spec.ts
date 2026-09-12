@@ -7,6 +7,7 @@ import { apply, inject } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type { WorkspaceBrowserInjected, WorkspacePickerInjected } from '@deepseek-ai/dsh-client-ui-workspace/client'
 import { WorkspaceBrowser } from '../src/client/rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from '../src/client/WorkspacePicker.tsx'
+import type { TrashSettingsSectionInjected } from '../src/client/TrashSettingsSection.tsx'
 import { apply as hostApply } from '../src/index.ts'
 
 async function bench() {
@@ -30,7 +31,12 @@ async function bench() {
   const renameSession = vi.fn(async (title: string) => ({ ok: true, value: { title, seq: 1 } }))
   const binding = vi.fn(() => ({ session: { rename: renameSession } }))
   const fork = vi.fn(async () => 'forked' as never)
+  const refresh = vi.fn(async () => undefined)
   const subscribe = () => () => {}
+  const trashEntries = vi.fn(async () => [])
+  const unarchiveSession = vi.fn(async () => undefined)
+  const deleteArchivedSession = vi.fn(async () => undefined)
+  const clearTrash = vi.fn(async () => undefined)
   ctx.provide('workspaces', {
     list: {
       getSnapshot: () => ({
@@ -44,6 +50,10 @@ async function bench() {
     insertBefore: vi.fn(async () => undefined),
     archiveSession: vi.fn(async () => undefined),
     insertSessionBefore,
+    trashEntries,
+    unarchiveSession,
+    deleteArchivedSession,
+    clearTrash,
   } as never)
   ctx.provide('sessions', {
     list: {
@@ -56,6 +66,7 @@ async function bench() {
     create: vi.fn(async () => 'created' as never),
     open,
     clear,
+    refresh,
     search,
     searchResultLimit: 20,
     binding,
@@ -74,10 +85,15 @@ async function bench() {
   return {
     ctx, slots: ctx.get('slots') as SlotRegistry, locale, create, rename,
     insertSessionBefore, open, clear, selectPanel, search, renameSession, binding, fork, pickDirectory,
+    refresh, trashEntries, unarchiveSession, deleteArchivedSession, clearTrash,
   }
 }
 
-type HoleName = 'sidebar.workspaces' | 'conversation.hero.workspace' | 'conversation.empty.workspace'
+type HoleName =
+  | 'sidebar.workspaces'
+  | 'conversation.hero.workspace'
+  | 'conversation.empty.workspace'
+  | 'settings.section'
 
 /** Declare any subset of the holes with a single root registration ('root' is a single slot). */
 function declare(slots: SlotRegistry, ...names: HoleName[]): () => void {
@@ -192,6 +208,37 @@ describe('ui-workspace apply', () => {
     const browser = (b.slots.entries('sidebar.workspaces')[0]!.inject as () => WorkspaceBrowserInjected)()
     await expect(browser.searchSessions('needle', new AbortController().signal))
       .rejects.toThrow('index unavailable')
+  })
+
+  it('re-pulls the authoritative Session list after a permanent deletion', async () => {
+    const b = await bench()
+    await b.ctx.plugin({ inject: [...inject], apply }).await()
+    declare(b.slots, 'settings.section')
+    await Promise.resolve()
+    // Through `unknown`: unlike the sibling faces, TrashSettingsSectionInjected
+    // is an interface, so it carries no implicit index signature to overlap the
+    // slot registry's Record<string, unknown> inject seam.
+    const trash = (b.slots.entries('settings.section')[0]!.inject as unknown as
+      () => TrashSettingsSectionInjected)().trash
+
+    await expect(trash.remove('session' as never)).resolves.toBeUndefined()
+    expect(b.deleteArchivedSession).toHaveBeenCalledWith('session')
+    // The Session list feed only reports a LIVE Session's teardown, while
+    // permanent deletion also covers Sessions the Host never admitted this
+    // run. Without the re-pull those rows keep rendering from the cached list
+    // — a deletion that reads as the Session having been restored.
+    expect(b.refresh).toHaveBeenCalledTimes(1)
+
+    await expect(trash.clear()).resolves.toBeUndefined()
+    expect(b.clearTrash).toHaveBeenCalledTimes(1)
+    expect(b.refresh).toHaveBeenCalledTimes(2)
+
+    await expect(trash.entries()).resolves.toEqual([])
+    expect(b.trashEntries).toHaveBeenCalledTimes(1)
+    await trash.unarchive('session' as never)
+    expect(b.unarchiveSession).toHaveBeenCalledWith('session')
+    // Restoring only moves the archive slot; the list itself is unchanged.
+    expect(b.refresh).toHaveBeenCalledTimes(2)
   })
 
   it('unregisters every entry on teardown', async () => {
