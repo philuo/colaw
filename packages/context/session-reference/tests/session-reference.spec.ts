@@ -275,6 +275,10 @@ describe('session reference URI and inline mentions', () => {
 })
 
 class RecordingSpill extends SpillStore {
+  override purgeSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
   saves: SaveTextSpill[] = []
   override async saveText(input: SaveTextSpill): Promise<SpillRef> {
     this.saves.push(input)

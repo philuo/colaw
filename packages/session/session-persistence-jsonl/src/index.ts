@@ -13,8 +13,8 @@ import {
   sessionFormatCatalog,
 } from '@deepseek-ai/dsh-session-format-catalog'
 import { readdirSync, type Dirent } from 'node:fs'
-import { open, mkdir, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
-import { dirname, join, resolve } from 'node:path'
+import { open, mkdir, readdir, realpath, rename, link, rm, stat, truncate } from 'node:fs/promises'
+import { basename, dirname, join, resolve } from 'node:path'
 import { performance } from 'node:perf_hooks'
 import { scheduler } from 'node:timers/promises'
 import { randomBytes } from 'node:crypto'
@@ -63,6 +63,14 @@ export type { JsonlCompression } from './format.ts'
  */
 const COLD_LOG_MEMO_MAX_ENTRIES = 2
 
+/**
+ * Root-level bucket a session directory with proven-corrupt bytes is moved
+ * into. Lives under the backend root but outside every project bucket, and
+ * the project listing skips it by name: quarantined sessions stay on disk for
+ * inspection while never re-entering the listing.
+ */
+const QUARANTINE_DIR_NAME = 'quarantine'
+
 const DEFAULT_COMPRESSION: JsonlCompression = 'zstd'
 /**
  * Internal scheduling constant, not deployment configuration: balance
@@ -74,7 +82,10 @@ const ZSTD_DECODE_YIELD_INTERVAL_MS = 500
 /** Assert that the independently decodable first frame contains only the header record. */
 function assertZstdHeaderFrame(plaintext: Buffer): void {
   if (plaintext.length === 0 || plaintext.indexOf(0x0A) !== plaintext.length - 1) {
-    throw new Error('corrupt Zstandard session log: first frame is not exactly one header line')
+    throw new SessionPersistenceCorruptionError(
+      'corrupt Zstandard session log: first frame is not exactly one header line',
+      {},
+    )
   }
 }
 
@@ -487,6 +498,17 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
     signal?.throwIfAborted()
     return snapshots
+  }
+
+  override async remove(id: SessionId, options?: SessionPersistenceListOptions): Promise<void> {
+    const signal = options?.signal
+    await this.ensureRootEncoding()
+    const selected = await this.findLog(id, signal)
+    if (selected === undefined) throw new SessionPersistenceNotFoundError(id)
+    signal?.throwIfAborted()
+    // The whole per-session directory goes — the generation log, its lock, and
+    // any sibling artifacts. There is no undo; the caller owns accounting.
+    await rm(dirname(selected.sourcePath), { recursive: true, force: true })
   }
 
   // --- handle-facing storage internals (package-private via the handle class below) ---
@@ -991,6 +1013,17 @@ class JsonlSessionPersistence extends SessionPersistence {
           // Listing skips a foreign format while opening its id still refuses
           // with the selected physical location.
           if (error instanceof SessionFormatUnsupportedError) continue
+          // A log deleted mid-scan (its session was removed concurrently) is
+          // simply gone; anything transient below the corruption bar still
+          // fails loud — only proven-bad bytes are this loop's to sideline.
+          if (isENOENT(error)) continue
+          // One corrupt session log must not take the listing — and with it
+          // every boot — down: the session directory is moved under the
+          // quarantine root (keeping the bytes for inspection) and skipped.
+          if (error instanceof SessionPersistenceCorruptionError) {
+            await this.quarantineSession(dir, error)
+            continue
+          }
           throw error
         }
         if (header === undefined) continue
@@ -1003,6 +1036,31 @@ class JsonlSessionPersistence extends SessionPersistence {
     }
     signal?.throwIfAborted()
     return artifacts
+  }
+
+  /**
+   * Move one unreadable session directory under the root's quarantine bucket
+   * and say why. The listing stays authoritative for every other session; a
+   * quarantine that itself fails (permissions, a mover race) only downgrades
+   * to a skip-with-warning — the boot must not hinge on the rescue step.
+   * @param dir - The session directory whose log proved corrupt.
+   * @param reason - The corruption error the header read settled with.
+   */
+  private async quarantineSession(dir: string, reason: SessionPersistenceCorruptionError): Promise<void> {
+    const name = basename(dir)
+    const warning = `jsonl: session directory '${name}' quarantined (unreadable header): ${reason.message}`
+    try {
+      const quarantineRoot = join(this.root, QUARANTINE_DIR_NAME)
+      await mkdir(quarantineRoot, { recursive: true })
+      let target = join(quarantineRoot, name)
+      for (let attempt = 1; await this.exists(target); attempt++) {
+        target = join(quarantineRoot, `${name}.${String(attempt)}`)
+      }
+      await rename(dir, target)
+      this.ctx.logger.warn(`${warning}; moved to ${target}`)
+    } catch (error) {
+      this.ctx.logger.warn(`${warning}; quarantine move failed (${String(error)}), session skipped in place`)
+    }
   }
 
   /** Read and translate one selected generation header without inspecting its body. */
@@ -1354,7 +1412,10 @@ class JsonlSessionPersistence extends SessionPersistence {
         } catch (error) {
           /* v8 ignore next -- decoder failure plus concurrent abort is timing-dependent */
           if (signal?.aborted) signal.throwIfAborted()
-          throw new Error('corrupt Zstandard session log: header frame failed validation', { cause: error })
+          throw new SessionPersistenceCorruptionError(
+            'corrupt Zstandard session log: header frame failed validation',
+            { cause: error },
+          )
         }
         signal?.throwIfAborted()
         assertZstdHeaderFrame(plaintext)
@@ -1506,7 +1567,8 @@ class JsonlSessionPersistence extends SessionPersistence {
       signal?.throwIfAborted()
       const entries = await readdir(this.root, { withFileTypes: true })
       signal?.throwIfAborted()
-      return entries.filter(e => e.isDirectory()).map(e => join(this.root, e.name))
+      return entries.filter(e => e.isDirectory() && e.name !== QUARANTINE_DIR_NAME)
+        .map(e => join(this.root, e.name))
     } catch (error) {
       // Only an absent root means no sessions; rethrow every other I/O failure.
       if (isENOENT(error)) return []

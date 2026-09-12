@@ -41,6 +41,7 @@ import {
   readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync,
   writeFileSync,
 } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
@@ -362,7 +363,10 @@ function composeProfileEntries(): { entries: string[]; bundles: string[] } {
     const visit = (rows: readonly unknown[]): void => {
       for (const row of rows) {
         if (row === null || typeof row !== 'object') continue
-        const record = row as { name?: unknown; config?: unknown }
+        const record = row as { name?: unknown; config?: unknown; disabled?: unknown }
+        // A disabled row never mounts at runtime (the loader's `disabled`
+        // semantics), so its package stays out of the shipped closure too.
+        if (record.disabled === true) continue
         if (typeof record.name === 'string' && isBare(record.name)) names.push(record.name)
         if (Array.isArray(record.config)) visit(record.config)
       }
@@ -1140,7 +1144,27 @@ function rewriteDevMarkers(): void {
   writeFileSync(infoPlist, readFileSync(infoPlist, 'utf8').replace('<string>Colaw-dev</string>', '<string>Colaw</string>'))
   const versionJson = join(stableApp, 'Contents', 'Resources', 'version.json')
   const version = JSON.parse(readFileSync(versionJson, 'utf8')) as Record<string, unknown>
-  writeFileSync(versionJson, `${JSON.stringify({ ...version, name: 'Colaw', channel: 'stable', hash: 'stable' })}\n`)
+  // The Updater keys releases off this hash (manifest comparison, `{prefix}-{hash}.patch`
+  // discovery); it must be content-stable and match /^[a-z0-9]{1,13}$/. The
+  // update server root comes from the build environment; empty disables checks.
+  const contentHash = createHash('sha256')
+  ;(function hashTree(dir: string): void {
+    for (const entry of readdirSync(dir).sort()) {
+      const path = join(dir, entry)
+      const identity = statSync(path)
+      contentHash.update(entry)
+      if (identity.isDirectory()) hashTree(path)
+      else contentHash.update(readFileSync(path))
+    }
+  })(stableApp)
+  const updateBaseUrl = process.env.COLAW_UPDATE_BASE_URL ?? ''
+  writeFileSync(versionJson, `${JSON.stringify({
+    ...version,
+    name: 'Colaw',
+    channel: 'stable',
+    hash: contentHash.digest('hex').slice(0, 12),
+    baseUrl: updateBaseUrl,
+  })}\n`)
   const buildJson = join(stableApp, 'Contents', 'Resources', 'build.json')
   const build = JSON.parse(readFileSync(buildJson, 'utf8')) as Record<string, unknown>
   writeFileSync(buildJson, `${JSON.stringify({ ...build, buildEnvironment: 'stable' })}\n`)

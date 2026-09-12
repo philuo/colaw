@@ -18,6 +18,9 @@ import type {
   WorkspaceOrderValue,
   WorkspaceRenameRequest,
   WorkspaceValue,
+  WorkspaceDeleteSessionRequest,
+  WorkspaceTrashValue,
+  WorkspaceUnarchiveSessionRequest,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -107,6 +110,44 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('archiveSession')
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     return this.commands.archiveSession(request)
+  }
+
+  /**
+   * Read the complete trash listing with per-entry previews.
+   * @returns one entry per archived session, newest archive first.
+   */
+  @Remote('trashEntries')
+  trashEntries(): Promise<WorkspaceTrashValue> {
+    return this.commands.trashEntries()
+  }
+
+  /**
+   * Restore one archived session to its grouping surfaces.
+   * @param request - the archived session to restore.
+   * @returns the complete resulting archive set.
+   */
+  @Remote('unarchiveSession')
+  unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    return this.commands.unarchiveSession(request)
+  }
+
+  /**
+   * Remove one archived session from disk for good.
+   * @param request - the archived session to delete permanently.
+   * @returns the complete resulting archive set.
+   */
+  @Remote('deleteArchivedSession')
+  deleteArchivedSession(request: WorkspaceDeleteSessionRequest): Promise<WorkspaceArchiveValue> {
+    return this.commands.deleteArchivedSession(request)
+  }
+
+  /**
+   * Remove every archived session from disk for good.
+   * @returns the complete resulting archive set (empty on success).
+   */
+  @Remote('clearTrash')
+  clearTrash(): Promise<WorkspaceArchiveValue> {
+    return this.commands.clearTrash()
   }
 
   /**

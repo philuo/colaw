@@ -4,7 +4,8 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { WorkspaceView } from '../types.ts'
+import type { WorkspaceView,
+  WorkspaceTrashEntry,} from '../types.ts'
 import type { ClientWorkspaceModel, WorkspaceSnapshot } from './model.ts'
 
 /** Structured create failure for callers that distinguish Host business errors. */
@@ -57,6 +58,25 @@ export interface IWorkspaces {
    * @param beforeWorkspaceId - anchor Workspace; omitted appends.
    */
   insertBefore(workspaceId: WorkspaceId, beforeWorkspaceId?: WorkspaceId): Promise<void>
+  /**
+   * Read the complete trash listing with per-entry previews.
+   * @returns every archived session with its archive time and digest.
+   */
+  trashEntries(): Promise<readonly WorkspaceTrashEntry[]>
+  /**
+   * Restore one archived Session to its grouping surfaces.
+   * @param sessionId - archived Session to restore.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void>
+  /**
+   * Remove one archived Session from disk for good. Unrecoverable.
+   * @param sessionId - archived Session to delete permanently.
+   */
+  deleteArchivedSession(sessionId: SessionId): Promise<void>
+  /**
+   * Remove every archived Session from disk for good. Unrecoverable.
+   */
+  clearTrash(): Promise<void>
   /**
    * Archive a Session from Workspace grouping surfaces.
    * @param sessionId - Session to archive.
@@ -114,6 +134,27 @@ export class WorkspaceController extends Service implements IWorkspaces {
   async archiveSession(sessionId: SessionId): Promise<void> {
     const result = await this.model.archiveSession(sessionId)
     if (!result.ok) throw commandError('session archive', result.error)
+  }
+
+  async trashEntries(): Promise<readonly WorkspaceTrashEntry[]> {
+    const result = await this.model.trashEntries()
+    if (!result.ok) throw commandError('trash listing', result.error)
+    return result.value.entries
+  }
+
+  async unarchiveSession(sessionId: SessionId): Promise<void> {
+    const result = await this.model.unarchiveSession(sessionId)
+    if (!result.ok) throw commandError('session restore', result.error)
+  }
+
+  async deleteArchivedSession(sessionId: SessionId): Promise<void> {
+    const result = await this.model.deleteArchivedSession(sessionId)
+    if (!result.ok) throw commandError('session delete', result.error)
+  }
+
+  async clearTrash(): Promise<void> {
+    const result = await this.model.clearTrash()
+    if (!result.ok) throw commandError('trash clear', result.error)
   }
 
   async insertSessionBefore(

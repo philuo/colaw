@@ -18,6 +18,11 @@
 - id: session-log-download
   disabled: true
 
+# The desktop product has its own support channel; the in-composer feedback
+# command is noise here. Dropped from the "/" menu and the command catalog.
+- id: command-feedback
+  disabled: true
+
 # Don't print the URL or hand off to the default browser; Electrobun owns the
 # window. The loader entry id is `web-runtime` (plugin name `web-app`).
 - id: web-runtime

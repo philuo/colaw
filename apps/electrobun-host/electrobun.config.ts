@@ -6,6 +6,15 @@ export default {
     identifier: "ai.deepseek.harness",
     version: "1.0.0",
   },
+  // The stable release identity (hash, manifest, delta patches) belongs to
+  // Hutch's release packaging; the packer's payload merges in at postWrap.
+  release: {
+    baseUrl: process.env.COLAW_UPDATE_BASE_URL ?? "",
+    generatePatch: true,
+  },
+  scripts: {
+    postBuild: "./scripts/merge-stable-payload.ts",
+  },
   build: {
     // 使用 Bun 作为主进程运行时（完全抛弃 Node.js）
     mainProcess: "bun",

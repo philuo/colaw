@@ -31,6 +31,15 @@ svg,
   -webkit-user-drag: none;
 }
 
+/* A link inside reader-copyable content is content, not chrome: its label
+   selects with the prose around it (a bare link label is often the only
+   readable spelling of the destination). Class-level specificity so it wins
+   over the element-level chrome rule above; drag stays disabled. */
+[data-dsh-selectable] a {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
 /* Reader-copyable content: message bodies, code, and document previews, plus
    everything inside them. Stated at zero specificity so a component's own
    `user-select: none` — code gutters, line numbers — keeps winning on the
@@ -414,6 +423,9 @@ body[data-ds-dark-theme] {
   /* Saturate and lift what is behind: glass concentrates colour instead of
      washing it out, so the pane reads as a lens rather than a grey card. */
   --dsh-glass-filter: blur(48px) saturate(170%) brightness(1.03);
+  --dsh-glass-filter-v0: blur(12px);
+  --dsh-glass-bg: rgba(255, 255, 255, 0.05);
+  --dsh-glass-border: 1px solid rgba(255, 255, 255, 0.1);
   /* Thickness: a bright rim on top, a dark one at the bottom, a hairline around
      it, then a tight contact shadow and a wide one that lifts it off the page. */
   --dsh-glass-edge:

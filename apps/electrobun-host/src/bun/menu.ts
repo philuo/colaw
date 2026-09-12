@@ -176,3 +176,5 @@ export function onApplicationMenuClicked(dispatch: (command: string) => void): v
     if (action === NEW_SESSION || action === TOGGLE_SIDEBAR) dispatch(action)
   })
 }
+
+// v1.0.2 marker

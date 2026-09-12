@@ -29,6 +29,8 @@ import { createWorkspaceViewStore } from './stores.ts'
 import { WorkspaceBrowser } from './rows/WorkspaceBrowser.tsx'
 import { WorkspacePicker } from './WorkspacePicker.tsx'
 import { en, zh, type WorkspaceKey } from './locales.ts'
+import { TrashSettingsSection } from './TrashSettingsSection.tsx'
+import type { TrashSettingsSectionInjected } from './TrashSettingsSection.tsx'
 
 /**
  * Window event the desktop host fires for a native menu command. The host
@@ -166,6 +168,26 @@ export function apply(ctx: Context): void {
     },
     WorkspacePicker,
   ))
+
+  // The trash page in the settings panel: archived sessions with preview,
+  // restore, and permanent deletion. Registered from this package because it
+  // is the workspace/archive domain's own surface.
+  const trashInjected = (): TrashSettingsSectionInjected => ({
+    trash: {
+      entries: () => workspaces.trashEntries(),
+      unarchive: sessionId => workspaces.unarchiveSession(sessionId),
+      remove: sessionId => workspaces.deleteArchivedSession(sessionId),
+      clear: () => workspaces.clearTrash(),
+    },
+  })
+  ctx.slots.inject('settings.section', () => ctx.slots.register({
+    name: 'settings.section',
+    id: 'trash',
+    order: 20,
+    label: () => ctx.locale.bind(NS)('trash.nav'),
+    locale: NS,
+    inject: trashInjected,
+  }, TrashSettingsSection))
 
   // Desktop menu commands: the same two verbs the shell's own controls run, so
   // the menu needs no state of its own.

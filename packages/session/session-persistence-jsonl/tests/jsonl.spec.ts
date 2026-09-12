@@ -2429,6 +2429,46 @@ describe('JsonlSessionPersistence: edge cases', () => {
     expect(ids).toEqual(['p1', 'p2', 'p3'])
   })
 
+  it('remove deletes exactly one session directory from disk, for good', async () => {
+    await writeLog(ctx.sessionPersistence, meta('doomed', '/proj'), oneTurnLog())
+    await writeLog(ctx.sessionPersistence, meta('survivor', '/proj'), oneTurnLog())
+    await ctx.sessionPersistence.remove(SessionId('doomed'))
+    expect((await ctx.sessionPersistence.list()).map(s => s.header.id).sort()).toEqual(['survivor'])
+    await expect(stat(rawLogPath(root, '/proj', SessionId('doomed')))).rejects.toMatchObject({ code: 'ENOENT' })
+    // Removing an absent session refuses loudly; the survivor is untouched.
+    await expect(ctx.sessionPersistence.remove(SessionId('never-existed'))).rejects.toMatchObject({
+      name: 'SessionPersistenceNotFoundError',
+    })
+    expect((await readAll(ctx.sessionPersistence, SessionId('survivor'))).meta.id).toBe(SessionId('survivor'))
+  })
+
+  it('quarantines a corrupt log instead of failing the listing, and warns', async () => {
+    // The realistic corruption is physical: bytes without a zstd frame
+    // structure make the header read settle as SessionPersistenceCorruptionError.
+    const zstdRoot = await freshRoot()
+    const zstdCtx = new Context()
+    await zstdCtx.plugin(JsonlSessionPersistence, { root: zstdRoot, compression: 'zstd' })
+    const warned: string[] = []
+    vi.spyOn(zstdCtx.logger, 'warn').mockImplementation((message: string) => { warned.push(message) })
+    try {
+      await writeLog(zstdCtx.sessionPersistence, meta('healthy', '/proj'), oneTurnLog())
+      await writeLog(zstdCtx.sessionPersistence, meta('broken', '/proj'), oneTurnLog())
+      await writeFile(logPath(zstdRoot, '/proj', SessionId('broken'), 'zstd'), 'not a zstd frame at all')
+
+      const ids = (await zstdCtx.sessionPersistence.list()).map(s => s.header.id)
+      expect(ids).toEqual(['healthy'])
+      // The bad session's directory moved under the quarantine bucket, bytes intact.
+      const quarantined = join(zstdRoot, 'quarantine', encodeSegment(SessionId('broken')))
+      expect((await stat(quarantined)).isDirectory()).toBe(true)
+      expect(warned.some(message => message.includes('quarantined'))).toBe(true)
+      // A later listing is stable: the quarantined session never resurfaces.
+      expect((await zstdCtx.sessionPersistence.list()).map(s => s.header.id)).toEqual(['healthy'])
+    } finally {
+      await zstdCtx.fiber.dispose()
+      await rm(zstdRoot, { recursive: true, force: true })
+    }
+  })
+
   it('groups sessions whose cwd paths normalize to the same project directory', async () => {
     const first = meta('normalized-first', '/a/b-c')
     const second = meta('normalized-second', '/a-b/c')

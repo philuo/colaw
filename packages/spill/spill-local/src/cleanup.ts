@@ -1,9 +1,9 @@
 /** Startup cleanup mechanics for local spill roots. */
-import { lstat, readdir, realpath, rmdir, unlink } from 'node:fs/promises'
+import { lstat, readdir, realpath, rm, rmdir, unlink } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { DEFAULT_ROOT_PREFIX, isErrno } from './store.ts'
+import { DEFAULT_ROOT_PREFIX, isErrno, sessionDir } from './store.ts'
 
 /**
  * A backend-generated default root name: `dsh-spill-` plus the 6-character
@@ -401,6 +401,33 @@ async function discoverDefaultRootRecords(warn: WarnFn, base: string): Promise<R
  * @param base Directory to scan; defaults to the OS temporary directory.
  * @returns Canonical paths of trusted default roots.
  */
+/**
+ * Best-effort removal of one session's spill directory from every given root:
+ * the permanent-deletion path (`session remove`) calls this so a deleted
+ * session's spilled artifacts do not outlive it in the temp area. ENOENT is
+ * the already-gone case; every other filesystem failure is reported to `warn`
+ * and swallowed — cleanup must never reject the deletion it follows.
+ * @param options - the roots (active plus discovered), the owning session id, and the failure sink.
+ * @returns Resolves once every root was attempted (never rejects).
+ */
+export async function purgeSessionSpillDirs(options: {
+  readonly roots: readonly SweepRoot[]
+  readonly sessionId: string
+  readonly warn: WarnFn
+}): Promise<void> {
+  const targets = new Set<string>()
+  for (const root of options.roots) {
+    targets.add(sessionDir(root.path, options.sessionId))
+  }
+  for (const path of targets) {
+    try {
+      await rm(path, { recursive: true, force: true })
+    } catch (error: unknown) {
+      warnSafely(options.warn, `spill-local: failed to purge session directory ${path}: ${String(error)}`)
+    }
+  }
+}
+
 export async function discoverDefaultRoots(warn: WarnFn, base: string = tmpdir()): Promise<string[]> {
   return (await discoverDefaultRootRecords(warn, base)).map(root => root.path)
 }

@@ -109,6 +109,40 @@ export interface WorkspaceArchiveValue {
   readonly archivedSessionIds: readonly SessionId[]
 }
 
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    /** The trash operation targeted a session that is live, or not archived. */
+    'workspace/trash-conflict': { readonly sessionId: SessionId }
+  }
+}
+
+/** One archived Session as the trash surface reads it. */
+export interface WorkspaceTrashEntry {
+  /** Archived Session identity. */
+  readonly sessionId: SessionId
+  /** Epoch-millisecond archive time; absent for pre-`archivedAt` archives. */
+  readonly archivedAt?: number
+  /** Stored display title; absent when the log carries none. */
+  readonly title?: string
+  /** Read-only markdown digest of the conversation's leading messages. */
+  readonly digest?: string
+}
+
+/** Complete trash listing. */
+export interface WorkspaceTrashValue {
+  readonly entries: readonly WorkspaceTrashEntry[]
+}
+
+/** One archived Session requested back onto grouping surfaces. */
+export interface WorkspaceUnarchiveSessionRequest {
+  readonly sessionId: SessionId
+}
+
+/** One archived Session requested removed from disk for good. */
+export interface WorkspaceDeleteSessionRequest {
+  readonly sessionId: SessionId
+}
+
 /** Complete reconnect baseline for Workspace browser state. */
 export interface WorkspaceBaseline {
   readonly items: readonly WorkspaceView[]

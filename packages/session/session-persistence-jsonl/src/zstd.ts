@@ -9,6 +9,7 @@ import {
   constants, zstdCompress, zstdDecompress, type ZstdOptions,
 } from 'node:zlib'
 import { promisify } from 'node:util'
+import { SessionPersistenceCorruptionError } from '@deepseek-ai/dsh-session-persistence'
 import { NodePrivateZstdFrameDecoder } from './zstd-private-decoder.ts'
 import { PublicZstdFrameDecoder } from './zstd-public-decoder.ts'
 
@@ -53,7 +54,7 @@ export function scanZstdFrames(buffer: Buffer, maxFrames = Number.POSITIVE_INFIN
     const start = offset
     if (buffer.length - offset < 4) return { frames, tornStart: start }
     if (buffer.readUInt32LE(offset) !== ZSTD_MAGIC) {
-      throw new Error(`corrupt Zstandard session log: invalid frame magic at byte ${offset}`)
+      throw new SessionPersistenceCorruptionError(`corrupt Zstandard session log: invalid frame magic at byte ${offset}`, {})
     }
     offset += 4
 
@@ -61,7 +62,7 @@ export function scanZstdFrames(buffer: Buffer, maxFrames = Number.POSITIVE_INFIN
     const descriptor = buffer.readUInt8(offset)
     offset += 1
     if ((descriptor & 0x18) !== 0) {
-      throw new Error(`corrupt Zstandard session log: reserved frame-header bit at byte ${offset - 1}`)
+      throw new SessionPersistenceCorruptionError(`corrupt Zstandard session log: reserved frame-header bit at byte ${offset - 1}`, {})
     }
 
     const contentSizeFlag = descriptor >>> 6
@@ -84,7 +85,7 @@ export function scanZstdFrames(buffer: Buffer, maxFrames = Number.POSITIVE_INFIN
       const blockType = (blockHeader >>> 1) & 0x03
       const blockSize = blockHeader >>> 3
       if (blockType === 0x03) {
-        throw new Error(`corrupt Zstandard session log: reserved block type at byte ${offset - 3}`)
+        throw new SessionPersistenceCorruptionError(`corrupt Zstandard session log: reserved block type at byte ${offset - 3}`, {})
       }
       const payloadBytes = blockType === 0x01 ? 1 : blockSize
       if (buffer.length - offset < payloadBytes) return { frames, tornStart: start }

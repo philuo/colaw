@@ -16,6 +16,7 @@ import {
   type ApiSessionAgentResult,
 } from './agent.ts'
 import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { SessionCommandController } from './commands.ts'
 import { SessionControlController } from './control.ts'
 import { SessionHistoryController } from './history.ts'
@@ -122,11 +123,13 @@ export class SessionController extends TypertRemoteService {
     super(ctx, 'sessionController', { namespace: 'session' })
     installModelSelectionProjection(ctx)
     this.agents = new ApiSessionAgentController(ctx)
-    // A detached (workspace-less) session lands in the user's home, never in
-    // whatever directory the app was launched from — that is inside the
+    // A detached (workspace-less) session lands on the user's Desktop, never
+    // in whatever directory the app was launched from — that is inside the
     // package, and pointing the file panel and tools at the app's own files
-    // is both noise and a disclosure of internals.
-    this.commands = new SessionCommandController(ctx, this.agents, homedir())
+    // is both noise and a disclosure of internals. The home root itself is
+    // avoided too: listing it drags in dot-directories (.Trash) the panel
+    // cannot read.
+    this.commands = new SessionCommandController(ctx, this.agents, join(homedir(), 'Desktop'))
     ctx.effect(() => ctx.fileUploads.registerAgentResolver(async (sessionId) => {
       const result = await this.agents.resolveAgent(sessionId)
       if ('error' in result) throw result.error

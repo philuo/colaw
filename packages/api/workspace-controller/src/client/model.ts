@@ -4,9 +4,11 @@ import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import { isRemoteFailure } from '@deepseek-ai/dsh-api-gateway/client'
 import type { RemoteFailure, RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
+  WorkspaceTrashValue,
   WorkspaceBaseline,
   WorkspaceCreateRequest,
   WorkspaceCreateValue,
@@ -166,6 +168,43 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
     sessionId: WorkspaceArchiveSessionRequest['sessionId'],
   ): Promise<RemoteResult<WorkspaceArchiveValue>> {
     const result = await this.remote.archiveSession({ sessionId })
+    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    return result
+  }
+
+  /**
+   * Read the complete trash listing with per-entry previews.
+   * @returns every archived session with its archive time and digest.
+   */
+  async trashEntries(): Promise<RemoteResult<WorkspaceTrashValue>> {
+    return await this.remote.trashEntries()
+  }
+
+  /**
+   * Restore one archived session to its grouping surfaces.
+   * @param sessionId - the archived session to restore.
+   */
+  async unarchiveSession(sessionId: SessionId): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const result = await this.remote.unarchiveSession({ sessionId })
+    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    return result
+  }
+
+  /**
+   * Remove one archived session from disk for good.
+   * @param sessionId - the archived session to delete permanently.
+   */
+  async deleteArchivedSession(sessionId: SessionId): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const result = await this.remote.deleteArchivedSession({ sessionId })
+    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    return result
+  }
+
+  /**
+   * Remove every archived session from disk for good.
+   */
+  async clearTrash(): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const result = await this.remote.clearTrash()
     if (result.ok) this.installArchived(result.value.archivedSessionIds)
     return result
   }

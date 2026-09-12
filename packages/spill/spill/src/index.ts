@@ -41,6 +41,9 @@ declare module '@deepseek-ai/cordis' {
  * - `saveText` REJECTS on a real storage failure (permissions, ENOSPC, backend
  *   unavailable); the caller decides how to degrade (the spill policy treats a
  *   rejection as best-effort and keeps the inline result).
+ * - `purgeSession` is best-effort and never rejects: it removes everything the
+ *   implementation can attribute to that session and reports (never throws)
+ *   what it cannot.
  */
 export abstract class SpillStore extends Service {
   constructor(ctx: Context) {
@@ -53,6 +56,16 @@ export abstract class SpillStore extends Service {
    * @returns the saved artifact's {@link SpillRef}; rejects on a storage failure.
    */
   abstract saveText(input: SaveTextSpill): Promise<SpillRef>
+
+  /**
+   * Remove every stored artifact one session owns. The permanent-deletion
+   * path calls this so spilled temp files do not outlive their session;
+   * implementations are best-effort — this NEVER rejects, and a filesystem
+   * failure reports and swallows rather than failing the deletion it follows.
+   * @param sessionId - the session whose artifacts are removed.
+   * @returns resolution once every location was attempted (never rejects).
+   */
+  abstract purgeSession(sessionId: string): Promise<void>
 }
 
 export default SpillStore

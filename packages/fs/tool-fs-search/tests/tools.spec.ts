@@ -166,6 +166,10 @@ class FakeSubprocess extends SubprocessRuntime {
 
 /** A recording spill backend; arm `failWith` to script a storage failure. */
 class FakeSpill extends SpillStore {
+  override purgeSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
   saves: SaveTextSpill[] = []
   failWith?: Error
 

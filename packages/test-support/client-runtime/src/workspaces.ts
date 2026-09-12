@@ -142,4 +142,19 @@ export class TestWorkspaces implements IWorkspaces {
       draft.archivedSessionIds = [...draft.archivedSessionIds, sessionId]
     })
   }
+  trashEntries(): Promise<readonly import('@deepseek-ai/dsh-api-workspace-controller/client').WorkspaceTrashEntry[]> {
+    return Promise.resolve([])
+  }
+
+  unarchiveSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  deleteArchivedSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  clearTrash(): Promise<void> {
+    return Promise.resolve()
+  }
 }

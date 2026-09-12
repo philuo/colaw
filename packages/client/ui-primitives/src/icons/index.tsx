@@ -509,6 +509,14 @@ export const IconTrashOutline16 = ({ size = 16, className }: IconProps) => (
   </svg>
 )
 
+/** ic_ds_undo_outline_16 — the undo arrow: restore affordance (trash rows). */
+export const IconUndoOutline16 = ({ size = 16, className }: IconProps) => (
+  <svg width={size} height={size} className={className} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <path d="M6 9.33 2.67 6 6 2.67" />
+    <path d="M2.67 6h7a3.67 3.67 0 0 1 3.66 3.67v0a3.67 3.67 0 0 1-3.66 3.66H7.33" />
+  </svg>
+)
+
 /** ic_ds_warning_outline_16 */
 export const IconWarningOutline16 = ({ size = 14, className }: IconProps) => (
   <svg width={size} height={size} className={className} viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">

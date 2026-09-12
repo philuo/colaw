@@ -27,6 +27,10 @@ const testToolSignal = new AbortController().signal
 
 /** A stub spill backend recording its saves; `fail` exercises the best-effort fallback. */
 class StubStore extends SpillStore {
+  override purgeSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
   saves: SaveTextSpill[] = []
   fail = false
   /** Per-save hang hook: each call awaits the returned promise before completing. */

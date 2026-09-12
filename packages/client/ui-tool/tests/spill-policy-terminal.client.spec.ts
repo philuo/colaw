@@ -19,6 +19,10 @@ const spillReference = {
 }
 
 class MemorySpillStore extends SpillStore {
+  override purgeSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
   readonly saves: { input: SaveTextSpill; bytes: Buffer }[] = []
 
   async saveText(input: SaveTextSpill): Promise<SpillRef> {

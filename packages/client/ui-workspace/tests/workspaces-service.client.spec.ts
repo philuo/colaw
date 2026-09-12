@@ -135,6 +135,22 @@ class FakeWorkspaces implements IWorkspaces {
     }))
   }
 
+  trashEntries(): Promise<readonly import('@deepseek-ai/dsh-api-workspace-controller/client').WorkspaceTrashEntry[]> {
+    return Promise.resolve([])
+  }
+
+  unarchiveSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  deleteArchivedSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
+  clearTrash(): Promise<void> {
+    return Promise.resolve()
+  }
+
   declare readonly create: IWorkspaces['create']
   declare readonly rename: IWorkspaces['rename']
   declare readonly delete: IWorkspaces['delete']

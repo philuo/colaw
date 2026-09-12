@@ -8,6 +8,17 @@ import {
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
+import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
+// Type-only: pulls the SpillStore Context merge (ctx.spillStore) into this program.
+import type {} from '@deepseek-ai/dsh-spill'
+import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
+import { trashDigest } from './trash-digest.ts'
+import type {
+  WorkspaceDeleteSessionRequest,
+  WorkspaceTrashEntry,
+  WorkspaceTrashValue,
+  WorkspaceUnarchiveSessionRequest,
+} from './types.ts'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import { workspaceView } from './feed.ts'
 import type {
@@ -156,6 +167,102 @@ export class WorkspaceCommands {
     } catch (error) {
       if (!(error instanceof WorkspaceUnknownSessionError)) throw error
       throw new RemoteError('session/not-found', error.message, { sessionId: request.sessionId }, { cause: error })
+    }
+    return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+  }
+
+  /**
+   * Read the complete trash listing with per-entry previews.
+   * @returns one entry per archived session, newest archive first.
+   */
+  async trashEntries(): Promise<WorkspaceTrashValue> {
+    const registry = this.ctx.workspaceRegistry
+    const persistence = this.ctx.get('sessionPersistence') as SessionPersistence | undefined
+    const entries: WorkspaceTrashEntry[] = []
+    for (const sessionId of [...registry.archivedSessionIds].reverse()) {
+      const archivedAt = registry.archivedEntries[sessionId]
+      let preview: { title?: string, digest?: string } = {}
+      if (persistence !== undefined) {
+        try {
+          const handle = await persistence.open(sessionId, 'read')
+          try {
+            preview = trashDigest((await handle.read()).events)
+          } finally {
+            await handle.close()
+          }
+        } catch {
+          // An archived log that cannot be read previews empty; the entry
+          // stays listed so it can still be restored or deleted.
+        }
+      }
+      entries.push({
+        sessionId,
+        ...(archivedAt === undefined ? {} : { archivedAt }),
+        ...preview,
+      })
+    }
+    return { entries }
+  }
+
+  /**
+   * Restore one archived session to its grouping surfaces.
+   * @param request - the archived session to restore.
+   * @returns the complete resulting archive set.
+   */
+  async unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    await this.ctx.workspaceRegistry.unarchiveSession(request.sessionId)
+    return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
+  }
+
+  /**
+   * Remove one archived session from disk for good: the durable log, the
+   * archive record, and every workspace accounting slot. Live sessions are
+   * refused — an open conversation is closed or archived first.
+   * @param request - the archived session to delete permanently.
+   * @returns the complete resulting archive set.
+   */
+  async deleteArchivedSession(request: WorkspaceDeleteSessionRequest): Promise<WorkspaceArchiveValue> {
+    const sessionId = request.sessionId
+    const registry = this.ctx.workspaceRegistry
+    if (!registry.archivedSessionIds.includes(sessionId)) {
+      throw new RemoteError('workspace/trash-conflict', `session "${sessionId}" is not archived`, { sessionId })
+    }
+    if (this.ctx.get('sessions')?.get(sessionId) !== undefined) {
+      throw new RemoteError('workspace/trash-conflict', `session "${sessionId}" is live; close it before deleting`, { sessionId })
+    }
+    const persistence = this.ctx.get('sessionPersistence') as SessionPersistence | undefined
+    if (persistence === undefined) {
+      throw new RemoteError('gateway/internal', 'session persistence is unavailable', {})
+    }
+    try {
+      await persistence.remove(sessionId)
+    } catch (error) {
+      if (!(error instanceof SessionPersistenceNotFoundError)) {
+        throw new RemoteError(
+          'gateway/internal',
+          `session "${sessionId}" could not be removed: ${errorMessage(error)}`,
+          { sessionId },
+          { cause: error },
+        )
+      }
+      // Already gone on disk: the accounting cleanup below still runs.
+    }
+    // Session-scoped temp artifacts (spilled tool results under the OS temp
+    // area) leave with the session; the contract is best-effort, so a spill
+    // backend that is absent or fails never fails the deletion itself.
+    const spill = this.ctx.get('spillStore') as { purgeSession?: (id: string) => Promise<void> } | undefined
+    if (spill?.purgeSession !== undefined) await spill.purgeSession(sessionId)
+    await registry.purgeSession(sessionId)
+    return { archivedSessionIds: [...registry.archivedSessionIds] }
+  }
+
+  /**
+   * Remove every archived session from disk for good.
+   * @returns the complete resulting archive set (empty on success).
+   */
+  async clearTrash(): Promise<WorkspaceArchiveValue> {
+    for (const sessionId of [...this.ctx.workspaceRegistry.archivedSessionIds]) {
+      await this.deleteArchivedSession({ sessionId })
     }
     return { archivedSessionIds: [...this.ctx.workspaceRegistry.archivedSessionIds] }
   }

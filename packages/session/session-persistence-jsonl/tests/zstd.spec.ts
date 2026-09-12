@@ -10,7 +10,7 @@ import type { SessionEvent, SessionHeader } from '@deepseek-ai/dsh-session'
 import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import {
-  generationLogPath, logPath, scanLog, sessionDir, toHeaderLine, type JsonlCompression,
+  encodeSegment, generationLogPath, logPath, scanLog, sessionDir, toHeaderLine, type JsonlCompression,
 } from '../src/format.ts'
 import {
   compressZstdFrame, createZstdFrameDecoder, decompressZstdFrame, decompressZstdPrefix, scanZstdFrames,
@@ -803,9 +803,13 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       JSON.stringify({ type: 'turn/start' }),
       '',
     ].join('\n')))
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/first frame is not exactly one header line/)
+    // The listing quarantines a malformed-header session instead of rejecting
+    // (one corrupt log must not take the boot's session list down with it);
+    // the targeted open still fails loud with the physical reason.
+    expect(await ctx.sessionPersistence.list()).toEqual([])
+    expect((await stat(join(root, 'quarantine', encodeSegment(twoLinesId)))).isDirectory()).toBe(true)
     await expect(ctx.sessionPersistence.open(twoLinesId, 'read'))
-      .rejects.toThrow(/first frame is not exactly one header line/)
+      .rejects.toThrow(/not found/)
   })
 
   it('rejects missing, empty, and checksum-corrupt header frames on targeted reads', async () => {
@@ -824,7 +828,14 @@ describe('JsonlSessionPersistence: default Zstandard encoding', () => {
       .rejects.toThrow(/empty or header-less Zstandard session log/)
     await expect(ctx.sessionPersistence.open(SessionId('empty-header'), 'read'))
       .rejects.toThrow(/first frame is not exactly one header line/)
-    await expect(ctx.sessionPersistence.list()).rejects.toThrow(/header frame failed validation/)
+    // The checksum-corrupt session is quarantined by the listing (same
+    // policy as every malformed medium); the incomplete partial-only log is
+    // only skipped, because EOF inside the first frame is not proven damage.
+    expect(await ctx.sessionPersistence.list()).toEqual([])
+    for (const id of ['empty-header', 'bad-checksum']) {
+      expect((await stat(join(root, 'quarantine', encodeSegment(SessionId(id))))).isDirectory()).toBe(true)
+    }
+    expect((await stat(sessionDir(root, undefined, SessionId('partial-only')))).isDirectory()).toBe(true)
   })
 })
 

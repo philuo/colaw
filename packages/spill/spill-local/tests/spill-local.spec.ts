@@ -21,6 +21,7 @@ import type { SaveTextSpill } from '@deepseek-ai/dsh-spill'
 import LocalSpillStore, {
   DEFAULT_ROOT_PREFIX,
   discoverDefaultRoots,
+  purgeSessionSpillDirs,
   encodeSegment,
   isErrno,
   privateRoot,
@@ -580,5 +581,41 @@ describe('isErrno', () => {
     expect(isErrno(err, 'EPERM')).toBe(false)
     expect(isErrno('not an error', 'ENOENT')).toBe(false)
     expect(isErrno(new Error('no code'), 'ENOENT')).toBe(false)
+  })
+})
+
+
+describe('purgeSessionSpillDirs', () => {
+  it('removes exactly one session directory across roots, never rejecting', async () => {
+    const rootA = mkdtempSync(join(tmpdir(), 'dsh-spill-purge-a'))
+    const rootB = mkdtempSync(join(tmpdir(), 'dsh-spill-purge-b'))
+    try {
+      const doomed = SessionId('purge-doomed')
+      const keeper = SessionId('purge-keeper')
+      for (const root of [rootA, rootB]) {
+        await saveTextFile({ root, sessionId: doomed, suggestedName: 'out.txt', content: 'x' })
+        await saveTextFile({ root, sessionId: keeper, suggestedName: 'keep.txt', content: 'y' })
+      }
+      const warned: string[] = []
+      const warn = (message: string) => { warned.push(message) }
+      await purgeSessionSpillDirs({
+        roots: [
+          { path: rootA, pruneWhenEmpty: false },
+          { path: rootB, pruneWhenEmpty: true },
+        ],
+        sessionId: doomed,
+        warn,
+      })
+      expect(existsSync(sessionDir(rootA, doomed))).toBe(false)
+      expect(existsSync(sessionDir(rootB, doomed))).toBe(false)
+      expect(existsSync(sessionDir(rootA, keeper))).toBe(true)
+      expect(warned).toEqual([])
+      // A session that never spilled resolves silently.
+      await purgeSessionSpillDirs({ roots: [{ path: rootA, pruneWhenEmpty: false }], sessionId: SessionId('purge-absent'), warn })
+      expect(warned).toEqual([])
+    } finally {
+      rmSync(rootA, { recursive: true, force: true })
+      rmSync(rootB, { recursive: true, force: true })
+    }
   })
 })

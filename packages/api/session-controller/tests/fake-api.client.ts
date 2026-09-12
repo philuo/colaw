@@ -254,6 +254,10 @@ export class FakeApiClient {
         ),
       },
       workspace: {
+        trashEntries: () => Promise.resolve({ ok: true as const, value: { entries: [] } }),
+        unarchiveSession: () => Promise.resolve({ ok: true as const, value: { archivedSessionIds: [] } }),
+        deleteArchivedSession: () => Promise.resolve({ ok: true as const, value: { archivedSessionIds: [] } }),
+        clearTrash: () => Promise.resolve({ ok: true as const, value: { archivedSessionIds: [] } }),
         create: payload => this.record('workspace.create', payload, this.onWorkspaceCreate(payload)),
         rename: payload => this.record('workspace.rename', payload, this.onWorkspaceRename(payload)),
         delete: payload => this.record('workspace.delete', payload, this.onWorkspaceDelete(payload)),

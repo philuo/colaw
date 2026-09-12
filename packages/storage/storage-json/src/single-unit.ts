@@ -9,7 +9,7 @@
  * @module @deepseek-ai/dsh-storage-json/src/single-unit
  */
 
-import { readFile } from 'node:fs/promises'
+import { readFile, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StorageError } from '@deepseek-ai/dsh-storage'
 import type { KvUnit, KvUnitDescriptor } from '@deepseek-ai/dsh-storage'
@@ -20,15 +20,26 @@ import type { UnitState } from './format.ts'
 /**
  * Open (load or lazily create) one `single`-layout unit under `root`: the
  * unit file is `<root>/<name>.json`.
+ *
+ * A medium that fails shape validation (`malformed-medium`) is rescued
+ * rather than fatal: the bad file is renamed to a `.corrupt-<timestamp>`
+ * sibling and the unit opens empty (the next write republishes it whole).
+ * One unreadable unit file must not take the host's boot down with it; the
+ * renamed original keeps the bytes for inspection. Every other failure — a
+ * `version-mismatch` above all — still rejects: a schema the build cannot
+ * honor is not damage to heal around.
  * @param descriptor - Static identity and shape of the unit.
  * @param root - Absolute backend root directory.
  * @param onClose - Backend callback releasing the unit's open-slot.
+ * @param warn - Logger for the rescue decision; a default no-op keeps the
+ * unit's contract testable without a logging harness.
  * @returns the opened unit.
  */
 export async function openSingleUnit(
   descriptor: KvUnitDescriptor,
   root: string,
   onClose: () => void,
+  warn: (message: string) => void = () => {},
 ): Promise<KvUnit> {
   const path = join(root, `${descriptor.name}.json`)
   let text: string | undefined
@@ -38,15 +49,24 @@ export async function openSingleUnit(
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
     // Missing file = empty unit; materialization defers to the first write.
   }
-  const state: UnitState =
-    text === undefined
-      ? {
-        version: descriptor.version,
-        global: null,
-        tables: new Map(descriptor.tables.map(table => [table, new Map<string, unknown>()])),
-      }
-      : parse(text, descriptor)
-  return new SingleJsonUnit(descriptor, path, state, onClose)
+  let state: UnitState | undefined
+  if (text !== undefined) {
+    try {
+      state = parse(text, descriptor)
+    } catch (error) {
+      if (!(error instanceof StorageError) || error.code !== 'malformed-medium') throw error
+      const backup = `${path}.corrupt-${new Date().toISOString().replace(/[:.]/g, '-')}`
+      await rename(path, backup)
+      warn(`storage-json: unit '${descriptor.name}' medium was unreadable (${error.message}); `
+        + `moved to ${backup} and opened empty`)
+    }
+  }
+  const opened: UnitState = state ?? {
+    version: descriptor.version,
+    global: null,
+    tables: new Map(descriptor.tables.map(table => [table, new Map<string, unknown>()])),
+  }
+  return new SingleJsonUnit(descriptor, path, opened, onClose)
 }
 
 class SingleJsonUnit implements KvUnit {

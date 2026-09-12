@@ -43,7 +43,10 @@ export class JsonStorageBackend implements StorageBackend {
   private readonly opening = new Map<string, Promise<KvUnit>>()
   private closed = false
 
-  constructor(private readonly root: string) {}
+  constructor(
+    private readonly root: string,
+    private readonly warn: (message: string) => void = () => {},
+  ) {}
 
   readonly kv: KvFacet = {
     // The body up to the first await runs synchronously, so the opening-slot
@@ -68,7 +71,7 @@ export class JsonStorageBackend implements StorageBackend {
     const onClose = () => this.open.delete(descriptor.name)
     const unit = descriptor.layout === 'per-record'
       ? await openPerRecordUnit(descriptor, this.root, onClose)
-      : await openSingleUnit(descriptor, this.root, onClose)
+      : await openSingleUnit(descriptor, this.root, onClose, this.warn)
     if (this.closed) {
       // The backend closed while this open was in flight: do not hand out a
       // live unit past close().
@@ -107,7 +110,7 @@ function validateDescriptor(descriptor: KvUnitDescriptor): void {
  * @param config - Validated configuration.
  */
 export function apply(ctx: Context, config: Config) {
-  const backend = new JsonStorageBackend(config.root)
+  const backend = new JsonStorageBackend(config.root, message => ctx.logger.warn(message))
   ctx.effect(() => {
     const unregister = ctx.storage.backend.register('json', backend)
     return async () => {

@@ -52,15 +52,26 @@ describe('json backend specifics', () => {
     await backend.close()
   })
 
-  it('rejects a malformed medium', async () => {
+  it('heals a malformed medium: backup, warn, empty open, next write republishes', async () => {
     const root = await freshRoot()
     await writeFile(join(root, 'shape.json'), 'not json at all', 'utf8')
-    const backend = new JsonStorageBackend(root)
-    await expect(backend.kv.open(descriptor)).rejects.toMatchObject({ code: 'malformed-medium' })
+    const warned: string[] = []
+    const backend = new JsonStorageBackend(root, message => { warned.push(message) })
+    const unit = await backend.kv.open(descriptor)
+    expect((await unit.loadAll()).tables).toEqual({ t: {} })
+    const backups = (await readdir(root)).filter(name => name.startsWith('shape.json.corrupt-'))
+    expect(backups).toHaveLength(1)
+    expect(await readFile(join(root, backups[0] as string), 'utf8')).toBe('not json at all')
+    expect(warned.some(message => message.includes('opened empty'))).toBe(true)
+    // The healed unit is writable: the first publish replaces the medium whole.
+    await unit.putRecord('t', 'k', { v: 1 })
+    expect(JSON.parse(await readFile(join(root, 'shape.json'), 'utf8'))).toMatchObject({
+      tables: { t: { k: { v: 1 } } },
+    })
     await backend.close()
   })
 
-  it('rejects a foreign unit header', async () => {
+  it('heals a foreign unit header the same way', async () => {
     const root = await freshRoot()
     await writeFile(
       join(root, 'shape.json'),
@@ -68,7 +79,8 @@ describe('json backend specifics', () => {
       'utf8',
     )
     const backend = new JsonStorageBackend(root)
-    await expect(backend.kv.open(descriptor)).rejects.toMatchObject({ code: 'malformed-medium' })
+    const unit = await backend.kv.open(descriptor)
+    expect((await unit.loadAll()).tables).toEqual({ t: {} })
     await backend.close()
   })
 
@@ -156,28 +168,27 @@ describe('json backend specifics', () => {
     await backend.close()
   })
 
-  it('rejects malformed table shapes and foreign versions distinctly', async () => {
+  it('heals malformed table shapes and bare documents, but rejects foreign versions', async () => {
     const root = await freshRoot()
-    await writeFile(
-      join(root, 'shape.json'),
-      JSON.stringify({ unit: { name: 'shape', version: 1 }, global: null, tables: { t: ['not', 'an', 'object'] } }),
-      'utf8',
-    )
-    const backend = new JsonStorageBackend(root)
-    await expect(backend.kv.open(descriptor)).rejects.toMatchObject({ code: 'malformed-medium' })
+    // Each healed case opens (and holds) its unit, so each gets a fresh backend.
+    const openHealed = async (content: string): Promise<void> => {
+      await writeFile(join(root, 'shape.json'), content, 'utf8')
+      const backend = new JsonStorageBackend(root)
+      const unit = await backend.kv.open(descriptor)
+      expect((await unit.loadAll()).tables).toEqual({ t: {} })
+      await backend.close()
+    }
+    await openHealed(JSON.stringify({ unit: { name: 'shape', version: 1 }, global: null, tables: { t: ['not', 'an', 'object'] } }))
+    await openHealed(JSON.stringify({ unit: { name: 'shape', version: 1 }, global: null }))
+    await openHealed(JSON.stringify('just a string'))
 
     await writeFile(
       join(root, 'shape.json'),
       JSON.stringify({ unit: { name: 'shape', version: 9 }, global: null, tables: {} }),
       'utf8',
     )
+    const backend = new JsonStorageBackend(root)
     await expect(backend.kv.open(descriptor)).rejects.toMatchObject({ code: 'version-mismatch' })
-
-    await writeFile(join(root, 'shape.json'), JSON.stringify({ unit: { name: 'shape', version: 1 }, global: null }), 'utf8')
-    await expect(backend.kv.open(descriptor)).rejects.toMatchObject({ code: 'malformed-medium' })
-
-    await writeFile(join(root, 'shape.json'), JSON.stringify('just a string'), 'utf8')
-    await expect(backend.kv.open(descriptor)).rejects.toMatchObject({ code: 'malformed-medium' })
     await backend.close()
   })
 

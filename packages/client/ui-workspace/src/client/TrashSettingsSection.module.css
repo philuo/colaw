@@ -1,0 +1,314 @@
+/* Trash settings section: one column that swaps between the archived-session
+   list and a selected session's preview; destructive verbs confirm in a modal. */
+
+.section {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+  width: min(560px, 100%);
+  color: var(--dsw-alias-label-primary);
+}
+
+.header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+
+.headerRow .intro {
+  margin: 0;
+}
+
+.heading {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.error {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-danger, rgb(220, 38, 38));
+}
+
+.empty {
+  margin: 32px 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+/* ── Buttons ── */
+
+/* Real button chrome comes from the design-system Button atom; the section
+   only owns the danger verb, which the atom set has no variant for. */
+.buttonDanger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 28px;
+  border: 0;
+  border-radius: 14px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter 120ms ease, opacity 120ms ease;
+  background: var(--dsw-alias-fill-danger, rgb(220, 38, 38));
+  color: rgb(255, 255, 255);
+}
+
+.buttonDanger:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.buttonDanger:active:not(:disabled) {
+  filter: brightness(0.9);
+}
+
+.buttonDanger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.clearButton {
+  flex-shrink: 0;
+}
+
+/* ── List view ── */
+
+.listWrap {
+  min-height: 0;
+  overflow-y: auto;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 6px;
+}
+
+.list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.row:hover {
+  background: var(--dsw-alias-fill-secondary);
+}
+
+.rowMain {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  padding: 8px 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+
+.rowTitle {
+  font-size: 13px;
+  line-height: 18px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowTime {
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.rowTools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  margin: 0 8px 0 6px;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.iconButton:active:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-active);
+}
+
+.iconButton:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.iconDanger:hover:not(:disabled) {
+  color: var(--dsw-alias-label-danger, rgb(220, 38, 38));
+}
+
+/* ── Preview view ── */
+
+.preview {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.previewHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.back {
+  flex-shrink: 0;
+}
+
+.previewTools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.previewMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 2px;
+}
+
+.previewTitle {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.previewBody {
+  min-height: 0;
+  overflow-y: auto;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+/* ── Confirmation modal ── */
+
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modalMask {
+  position: absolute;
+  inset: 0;
+  background: rgb(0 0 0 / 38%);
+}
+
+.modalCard {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(360px, calc(100vw - 64px));
+  border-radius: 14px;
+  padding: 22px 24px 18px;
+  background: var(--dsw-alias-bg-layer-2);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 22%);
+  text-align: center;
+}
+
+.modalIcon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  background: var(--dsw-alias-fill-danger, rgb(220, 38, 38));
+  color: rgb(255, 255, 255);
+}
+
+.modalTitle {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.modalBody {
+  margin: 0;
+  font-size: 13px;
+  line-height: 19px;
+  color: var(--dsw-alias-label-tertiary);
+  word-break: break-all;
+}
+
+.modalTools {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+}

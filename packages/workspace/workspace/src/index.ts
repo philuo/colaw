@@ -258,6 +258,63 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * The archive record as the trash surface reads it: when each archived
+   * session was archived. Ids absent from the map are pre-`archivedAt`
+   * archives (their ordering fact was never recorded).
+   * @returns archived session id → epoch-millisecond archive time.
+   */
+  get archivedEntries(): Readonly<Record<SessionId, number>> {
+    return this.requireState().archivedAt
+  }
+
+  /**
+   * Restore one archived session to its grouping surfaces: the archive-set
+   * slot and its recorded time both leave, and the session's workspace
+   * accounting is untouched — its `sessionIds` position survived the archive.
+   * An id that is not archived resolves without writing.
+   * @param sessionId - The session to restore.
+   * @returns resolution after durability.
+   */
+  unarchiveSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      if (!state.archivedSessionIds.includes(sessionId)) return
+      const archivedAt = { ...state.archivedAt }
+      delete archivedAt[sessionId]
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+        archivedAt,
+      })
+    })
+  }
+
+  /**
+   * Drop every registry trace of one session: the archive-set slot with its
+   * recorded time, and the `sessionIds` membership of any workspace whose
+   * accounting holds it. The durable session artifact is the caller's to
+   * remove — this is the accounting half of a permanent deletion, so an id
+   * that leaves nothing behind resolves without writing.
+   * @param sessionId - The session whose registry traces are dropped.
+   * @returns resolution after durability.
+   */
+  purgeSession(sessionId: SessionId): Promise<void> {
+    return this.enqueueOperation(async () => {
+      const state = this.requireState()
+      const archivedAt = { ...state.archivedAt }
+      delete archivedAt[sessionId]
+      await this.setState({
+        ...state,
+        archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
+        archivedAt,
+      })
+      for (const entity of this.entities.values()) {
+        if (entity.sessionIds.includes(sessionId)) await entity.detachSession(sessionId)
+      }
+    })
+  }
+
+  /**
    * Whether a session is live, header-indexed, or present in a fresh
    * persistence listing. Only a definite miss returns false — a failing
    * `sessionPersistence.list()` propagates so storage faults never

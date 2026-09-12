@@ -511,6 +511,9 @@ importers:
       '@deepseek-ai/dsh-web-frontend':
         specifier: workspace:*
         version: link:../web
+      '@deepseek-ai/schemastery':
+        specifier: link:../../vendor/schemastery
+        version: link:../../vendor/schemastery
       electrobun:
         specifier: 2.0.2-beta.19
         version: 2.0.2-beta.19

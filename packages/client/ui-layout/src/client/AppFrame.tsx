@@ -295,6 +295,33 @@ export function AppFrame({
   const desktopMarker = desktopChromeMarker()
   const desktopChrome = desktopMarker !== undefined
 
+  // Buttons never join the Tab ring (product decision: this is a chat-first
+  // desktop shell whose typing target is the composer; Tab hopping through
+  // toolbars and message controls is noise, and native shortcuts already
+  // reach every action). Stamped in the DOM rather than per-component so the
+  // rule covers every button, present and future; an author's explicit
+  // tabIndex wins, and -1 keeps the element focusable programmatically
+  // (focus traps, .focus()) — only sequential traversal is removed.
+  useEffect(() => {
+    const stamp = (root: ParentNode): void => {
+      for (const button of root.querySelectorAll<HTMLButtonElement>('button')) {
+        if (!button.hasAttribute('tabindex')) button.tabIndex = -1
+      }
+    }
+    stamp(document)
+    const observer = new MutationObserver(mutations => {
+      for (const mutation of mutations) {
+        for (const node of mutation.addedNodes) {
+          if (!(node instanceof HTMLElement)) continue
+          if (node instanceof HTMLButtonElement && !node.hasAttribute('tabindex')) node.tabIndex = -1
+          stamp(node)
+        }
+      }
+    })
+    observer.observe(document.body, { childList: true, subtree: true })
+    return () => observer.disconnect()
+  }, [])
+
   // Desktop chrome: double-clicking the title bar toggles the window's zoom —
   // what macOS itself runs on that gesture. The strip's drag is started by the
   // host's preload on mousedown, and the native window move that follows swallows

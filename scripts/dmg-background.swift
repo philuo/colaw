@@ -40,10 +40,16 @@ let ts = title.size()
 title.draw(at: NSPoint(x: (460-ts.width)/2, y: 230))
 let arrow = NSBezierPath()
 arrow.move(to: NSPoint(x: 136, y: 131))
-arrow.curve(to: NSPoint(x: 290, y: 131), controlPoint1: NSPoint(x: 190, y: 152), controlPoint2: NSPoint(x: 245, y: 152))
+arrow.curve(to: NSPoint(x: 290, y: 131), controlPoint1: NSPoint(x: 190, y: 110), controlPoint2: NSPoint(x: 245, y: 110))
 arrow.lineWidth = 5; arrow.lineCapStyle = .round; NSColor(calibratedWhite: 0.42, alpha: 1).setStroke(); arrow.stroke()
+let headAngle = atan2(21.0, 45.0)
 let head = NSBezierPath()
-head.move(to: NSPoint(x: 293, y: 144)); head.line(to: NSPoint(x: 300, y: 131)); head.line(to: NSPoint(x: 291, y: 118)); head.close()
+for (index, offset) in [(10.0, 0.0), (-3.0, 11.0), (-3.0, -11.0)].enumerated() {
+  let rotated = (x: offset.0 * cos(headAngle) - offset.1 * sin(headAngle), y: offset.0 * sin(headAngle) + offset.1 * cos(headAngle))
+  let point = NSPoint(x: 290 + rotated.x, y: 131 + rotated.y)
+  if index == 0 { head.move(to: point) } else { head.line(to: point) }
+}
+head.close()
 NSColor(calibratedWhite: 0.42, alpha: 1).setFill(); head.fill()
 NSGraphicsContext.restoreGraphicsState()
 try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: out))

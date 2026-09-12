@@ -14,6 +14,10 @@ import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
 
 /** Minimal concrete backend: records the last request, returns a fixed ref. */
 class StubStore extends SpillStore {
+  override purgeSession(): Promise<void> {
+    return Promise.resolve()
+  }
+
   last: SaveTextSpill | undefined
 
   async saveText(input: SaveTextSpill): Promise<SpillRef> {

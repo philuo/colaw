@@ -9,7 +9,10 @@
  * absolute HTTP(S), raw HTML renders as literal text (no HTML enters the
  * DOM), and KaTeX runs without trusted commands. Fragment-anchor URLs fail
  * the allowlist, so footnote references and back-references render as plain
- * text rather than in-page links.
+ * text rather than in-page links. Anchor destinations additionally classify:
+ * http(s) opens the default browser, a `file:` URI or absolute POSIX path is
+ * handed to the host for opening with the document's default application
+ * (extension allowlist lives host-side), and a bare domain upgrades to https.
  *
  * Merge-extensible node unions fall through the documented default (render
  * nothing) rather than ending in assertNever: grammars registered elsewhere
@@ -22,7 +25,7 @@ import clsx from 'clsx'
 import type * as Md from 'mdast'
 import type {} from 'mdast-util-math'
 import { normalizeUri } from 'micromark-util-sanitize-uri'
-import { copyExternal, openExternal } from '../external-link.ts'
+import { copyExternal, openExternal, openPathExternal } from '../external-link.ts'
 import { CodeBlock } from './CodeBlock.tsx'
 import { renderTexToReact } from './katex.tsx'
 import { LinkIcon, classifyLinkPath } from '../LinkIcon.tsx'
@@ -57,6 +60,71 @@ function sanitizeUrl(url: string): string {
     // Relative and otherwise unparsable destinations are disallowed alongside
     // disallowed protocols; new URL() has no other failure mode for strings.
     return ''
+  }
+}
+
+/**
+ * Where one anchor destination may go; each surviving kind carries its own
+ * leave-the-app policy, and a dead destination renders as plain text.
+ * - `web`: http(s) — desktop bridge to the default browser, plain-browser tab.
+ * - `file`: a `file:` URI or absolute POSIX path naming a local document —
+ *   the desktop bridge asks the host to open it with its default application
+ *   (the host enforces the document-extension allowlist).
+ * - `mailto`: renders as an anchor without affordances, as before.
+ */
+type LinkDestination =
+  | { readonly kind: 'web'; readonly href: string }
+  | { readonly kind: 'file'; readonly href: string; readonly path: string }
+  | { readonly kind: 'mailto'; readonly href: string }
+  | { readonly kind: 'dead' }
+
+/** A scheme-less destination that names a domain: labels like `example.com/x?a=1`. */
+const BARE_DOMAIN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+(?:[:/?#][^\s]*)?$/iu
+
+/**
+ * Sort one anchor destination into its leave-the-app policy. Destinations the
+ * destination protocols allowlist refuses (javascript:, data:, fragments,
+ * relative paths) stay dead; a bare domain upgrades to https exactly as a
+ * browser's address bar would; a `file:` URI decodes to the local path it
+ * names (a remote-host file URI is unreachable and stays dead).
+ * @param destination - The anchor destination as the document authored it.
+ * @returns The destination's policy kind with its normalized href or path.
+ */
+function classifyDestination(destination: string): LinkDestination {
+  let parsed: URL
+  try {
+    parsed = new URL(destination)
+  } catch {
+    if (destination.startsWith('/')) return { kind: 'file', href: destination, path: decodePath(destination) }
+    if (BARE_DOMAIN.test(destination)) return { kind: 'web', href: `https://${destination}` }
+    return { kind: 'dead' }
+  }
+  switch (parsed.protocol) {
+    case 'http:':
+    case 'https:':
+      return { kind: 'web', href: destination }
+    case 'file:':
+      if (parsed.hostname !== '' && parsed.hostname !== 'localhost') return { kind: 'dead' }
+      return { kind: 'file', href: destination, path: decodePath(parsed.pathname) }
+    case 'mailto:':
+      return { kind: 'mailto', href: destination }
+    default:
+      return { kind: 'dead' }
+  }
+}
+
+/**
+ * Decode the percent-escapes a URI spelling carries (normalizeUri encodes
+ * spaces; `file:` pathnames encode non-ASCII bytes) so the host receives the
+ * path as the filesystem spells it.
+ * @param path - The possibly percent-encoded path.
+ * @returns The decoded path, or the input when it holds no valid escaping.
+ */
+function decodePath(path: string): string {
+  try {
+    return decodeURIComponent(path)
+  } catch {
+    return path
   }
 }
 
@@ -526,36 +594,69 @@ function anchorWrapsOnlyImages(children: Md.PhrasingContent[]): boolean {
   return children.length > 0 && children.every(child => child.type === 'image' || child.type === 'imageReference')
 }
 
-/** Anchor over an already-authored href: allowlisted or unwrapped, external links get the safe attributes. */
+/** Anchor over an already-authored href: routed by destination policy — web links open the browser, file links the default application, dead destinations render as text. */
 function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = true): ReactNode {
-  const safeHref = sanitizeUrl(href)
-  if (safeHref === '') return <Fragment key={key}>{children}</Fragment>
-  const external = ['http:', 'https:'].includes(new URL(safeHref).protocol)
+  const destination = classifyDestination(href)
+  if (destination.kind === 'dead') return <Fragment key={key}>{children}</Fragment>
+  const desktop = (globalThis as { __electrobunSendToHost?: unknown }).__electrobunSendToHost !== undefined
   // In the desktop shell an external link must leave through the host to the
   // default browser (the webview never navigates away); in a plain browser
   // the default target=_blank behaviour stands. Right-click copies the URL
   // itself — the text stays selectable for the ordinary copy path.
-  const onClick = external && (globalThis as { __electrobunSendToHost?: unknown }).__electrobunSendToHost !== undefined
-    ? (event: MouseEvent) => {
-        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-        event.preventDefault()
-        openExternal(safeHref)
-      }
-    : undefined
-  const onContextMenu = external
-    ? (event: MouseEvent) => {
-        event.preventDefault()
-        copyExternal(safeHref)
-      }
-    : undefined
+  if (destination.kind === 'web') {
+    const onClick = desktop
+      ? (event: MouseEvent) => {
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+          event.preventDefault()
+          openExternal(destination.href)
+        }
+      : undefined
+    return (
+      <a
+        key={key}
+        href={destination.href}
+        target="_blank"
+        rel="noopener noreferrer"
+        {...(onClick !== undefined ? { onClick } : {})}
+        onContextMenu={(event: MouseEvent) => {
+          event.preventDefault()
+          copyExternal(destination.href)
+        }}
+      >
+        {glyph && <LinkIcon kind="url" className={css.linkIcon} />}
+        {children}
+      </a>
+    )
+  }
+  // A local file leaves through the host's `open` into its default
+  // application — WPS for .docx, Preview for PDFs — never a webview
+  // navigation; the host's document-extension allowlist decides what is
+  // openable. Right-click copies the path itself.
+  if (destination.kind === 'file') {
+    return (
+      <a
+        key={key}
+        href={destination.href}
+        title={destination.path}
+        {...(desktop ? {
+          onClick: (event: MouseEvent) => {
+            if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+            event.preventDefault()
+            openPathExternal(destination.path)
+          },
+        } : {})}
+        onContextMenu={(event: MouseEvent) => {
+          event.preventDefault()
+          copyExternal(destination.path)
+        }}
+      >
+        {glyph && <LinkIcon kind={classifyLinkPath(destination.path)} className={css.linkIcon} />}
+        {children}
+      </a>
+    )
+  }
   return (
-    <a
-      key={key}
-      href={safeHref}
-      {...(external ? { target: '_blank', rel: 'noopener noreferrer' } : {})}
-      {...(onClick !== undefined ? { onClick } : {})}
-      {...(onContextMenu !== undefined ? { onContextMenu } : {})}
-    >
+    <a key={key} href={destination.href}>
       {glyph && <LinkIcon kind="url" className={css.linkIcon} />}
       {children}
     </a>

@@ -65,7 +65,7 @@ export const zh = {
   'context.tools': '工具定义',
   'context.messages': '对话消息',
   'settings.enter.title': '繁忙时的发送行为',
-  'settings.enter.description': '智能体运行时 Enter 键和发送按钮的行为；Cmd/Ctrl+Enter 使用另一行为',
+  'settings.enter.description': '智能体运行时 ↵ 键和发送按钮的行为；⌘ + ↵ 使用另一行为',
   'settings.enter.queue': '排队发送',
   'settings.enter.steer': '插话发送',
   'access.preset.readOnly': '仅可查看',

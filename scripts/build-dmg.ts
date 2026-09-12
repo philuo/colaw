@@ -72,21 +72,26 @@ console.log('creating the volume…')
 spawn('/usr/bin/hdiutil', ['create', '-volname', name, '-srcfolder', stage, '-fs', 'HFS+', '-format', 'UDRW', '-size', '400m', raw])
 spawn('/usr/bin/hdiutil', ['attach', raw, '-mountpoint', `/Volumes/${name}`, '-nobrowse'])
 console.log('arranging the installer window…')
+// Offscreen window, closed at the end, never re-opened: the arrangement
+// lands in the volume's .DS_Store while nothing draws on the build machine's
+// screen. (The classic open-close-open recipe re-opens the window to force
+// Finder to commit view options; the offscreen bounds plus the update call
+// commit them without any visible window.)
 spawn('/usr/bin/osascript', ['-e', `tell application "Finder"
   tell disk "${name}"
     open
+    set bounds of container window to {-2200, -2200, -1640, -1710}
     set current view of container window to icon view
     set toolbar visible of container window to false
     set statusbar visible of container window to false
-    set bounds of container window to {300, 300, 760, 645}
     set viewOptions to icon view options of container window
     set arrangement of viewOptions to not arranged
     set icon size of viewOptions to 54
     set background picture of viewOptions to (POSIX file "/Volumes/${name}/.background/bg.png")
     set position of item "Colaw.app" to {70, 187}
     set position of item "Applications" to {312, 187}
+    update without registering applications
     close
-    open
   end tell
 end tell`])
 spawn('/bin/sleep', ['2'])

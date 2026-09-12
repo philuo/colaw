@@ -15,11 +15,11 @@ import { tmpdir } from 'node:os'
 import z from '@deepseek-ai/schemastery'
 import { SpillLocator, SpillStore } from '@deepseek-ai/dsh-spill'
 import type { SaveTextSpill, SpillRef } from '@deepseek-ai/dsh-spill'
-import { gatherSweepRoots, sweepSpillRoots } from './cleanup.ts'
+import { gatherSweepRoots, purgeSessionSpillDirs, sweepSpillRoots } from './cleanup.ts'
 import type { SweepRoot, WarnFn } from './cleanup.ts'
 import { privateRoot, saveTextFile } from './store.ts'
 
-export { discoverDefaultRoots, sweepSpillRoots } from './cleanup.ts'
+export { discoverDefaultRoots, purgeSessionSpillDirs, sweepSpillRoots } from './cleanup.ts'
 export type { SweepOptions, SweepRoot, WarnFn } from './cleanup.ts'
 export { DEFAULT_ROOT_PREFIX, encodeSegment, isErrno, privateRoot, saveTextFile, sessionDir } from './store.ts'
 export type { SavedText, SaveTextOptions } from './store.ts'
@@ -144,6 +144,14 @@ export class LocalSpillStore extends SpillStore {
    */
   protected defaultRootsBase(): string {
     return tmpdir()
+  }
+
+  override async purgeSession(sessionId: string): Promise<void> {
+    const warn: WarnFn = (message) => { this.ctx.logger.warn(message) }
+    // Every root this deployment ever wrote under: the active/configured root
+    // plus each discovered prior-default `dsh-spill-*` temp root.
+    const roots = await this.gatherRoots(warn)
+    await purgeSessionSpillDirs({ roots, sessionId, warn })
   }
 
   async saveText(input: SaveTextSpill): Promise<SpillRef> {

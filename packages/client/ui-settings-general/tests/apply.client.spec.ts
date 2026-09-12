@@ -15,6 +15,7 @@ import { LOCALE_SETTINGS_NAMESPACE, LocaleSettingsSchema } from '@deepseek-ai/ds
 import { inject } from '../src/client/index.ts'
 import { CloseLabel, HeaderContent, TriggerContent } from '../src/client/chrome.tsx'
 import { GeneralSection } from '../src/client/GeneralSection.tsx'
+import { AboutSettingsSection } from '../src/client/AboutSettingsSection.tsx'
 import { SettingsDocumentAction } from '../src/client/SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from '../src/client/SettingsDocumentAction.tsx'
 
@@ -33,6 +34,7 @@ const SEATS = [
   ['settings.action', SettingsDocumentAction],
   ['settings.close', CloseLabel],
   ['settings.section', GeneralSection],
+  ['settings.section', AboutSettingsSection],
 ] as const
 
 /** One Host view of the locale preference, including its revision fence. */
@@ -76,8 +78,13 @@ function actionInjectedOf(c: TestClient): SettingsDocumentActionInjected {
 }
 
 function expectSeated(c: TestClient): void {
+  const expected = new Map<(typeof SEATS)[number][0], unknown[]>()
   for (const [name, component] of SEATS) {
-    expect(ownEntries(c, name).map(entry => entry.component)).toEqual([component])
+    expected.set(name, [...(expected.get(name) ?? []), component])
+  }
+  for (const [name, components] of expected) {
+    const own = ownEntries(c, name)
+    expect(own.map(entry => entry.component)).toEqual(components)
   }
 }
 
@@ -149,7 +156,7 @@ describe('ui-settings-general apply', () => {
     // subscription), not re-registration.
     SEATS.forEach(([name], i) => {
       expect(c.ctx.slots.getVersion(name)).toBe(zhVersions[i]!)
-      expect(ownEntries(c, name)).toHaveLength(1)
+      expect(ownEntries(c, name)).toHaveLength(name === 'settings.section' ? 2 : 1)
     })
     expect(generalLabel(c)).toBe('General')
     await vi.waitFor(() => {

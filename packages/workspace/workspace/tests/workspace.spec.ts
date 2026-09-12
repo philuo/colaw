@@ -235,7 +235,37 @@ describe('WorkspaceRegistry lifecycle and bootstrap', () => {
       initialized: true,
       workspaceIds: result.registry.list().map(workspace => workspace.id),
       archivedSessionIds: [],
+      archivedAt: {},
     })
+  })
+
+  it('unarchives a session back onto its surfaces and records archive times', async () => {
+    const dir = await makeDir('unarchive-proj')
+    const first = await harness({ sessions: [header('arch-me', dir, 300), header('keep-me', dir, 400)] })
+    await first.registry.archiveSession(SessionId('arch-me'))
+    expect(first.registry.archivedSessionIds).toEqual([SessionId('arch-me')])
+    expect(typeof first.registry.archivedEntries[SessionId('arch-me')]).toBe('number')
+    await first.registry.unarchiveSession(SessionId('arch-me'))
+    expect(first.registry.archivedSessionIds).toEqual([])
+    expect(first.registry.archivedEntries[SessionId('arch-me')]).toBeUndefined()
+    // The workspace accounting survived the archive round-trip.
+    const kept = first.registry.list().find(workspace => workspace.path === dir)
+    expect(kept?.sessionIds).toEqual([SessionId('keep-me'), SessionId('arch-me')])
+    // Unarchiving an id that is not archived resolves without writing.
+    await first.registry.unarchiveSession(SessionId('keep-me'))
+    expect(first.registry.archivedSessionIds).toEqual([])
+    await first.fiber.dispose()
+  })
+
+  it('purges every registry trace of one session', async () => {
+    const dir = await makeDir('purge-proj')
+    const first = await harness({ sessions: [header('purge-me', dir, 500), header('stays', dir, 600)] })
+    await first.registry.archiveSession(SessionId('purge-me'))
+    await first.registry.purgeSession(SessionId('purge-me'))
+    expect(first.registry.archivedSessionIds).toEqual([])
+    const kept = first.registry.list().find(workspace => workspace.path === dir)
+    expect(kept?.sessionIds).toEqual([SessionId('stays')])
+    await first.fiber.dispose()
   })
 
   it('breaks equal bootstrap timestamps by session id and canonical path', async () => {
@@ -561,6 +591,7 @@ describe('WorkspaceRegistry create and lookup', () => {
       initialized: true,
       workspaceIds: [],
       archivedSessionIds: [],
+      archivedAt: {},
       pendingMutation: { operation: 'delete', workspaceId: workspace.id },
     })
     const reregistered = await first.registry.create(dir)
@@ -569,6 +600,7 @@ describe('WorkspaceRegistry create and lookup', () => {
       initialized: true,
       workspaceIds: [reregistered.id],
       archivedSessionIds: [],
+      archivedAt: {},
     })
     await first.fiber.dispose()
 

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { JsonBlock, MarkdownText } from './markdown-test-components.tsx'
 import { cjkFriendlyStrong } from '../src/markdown/cjkFriendlyStrong.ts'
 import { mathCompatibility } from '../src/markdown/mathCompatibility.ts'
@@ -283,7 +283,7 @@ describe('MarkdownText', () => {
     }
   })
 
-  it('neutralizes raw HTML, unsafe or relative links, and unsupported images', () => {
+  it('neutralizes raw HTML, unsafe links, and unsupported images; an absolute path becomes a file anchor', () => {
     const markdown = [
       '<script>globalThis.compromised = true</script>',
       '<img src="x" onerror="globalThis.compromised = true">',
@@ -299,9 +299,8 @@ describe('MarkdownText', () => {
 
     expect(container.querySelector('script')).toBeNull()
     expect(container.querySelector('img')).toBeNull()
-    const neutralized = [...container.querySelectorAll('p')]
-      .find(paragraph => paragraph.textContent === 'script relative')
-    expect(neutralized?.querySelector('a')).toBeNull()
+    expect(screen.queryByRole('link', { name: 'script' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'relative' }).getAttribute('href')).toBe('/settings')
     expect(screen.getByRole('link', { name: 'mail' }).getAttribute('target')).toBeNull()
     expect(screen.getByRole('link', { name: 'web' }).getAttribute('rel')).toBe('noopener noreferrer')
     expect(screen.getByRole('link', { name: 'upper' }).getAttribute('target')).toBe('_blank')
@@ -310,6 +309,40 @@ describe('MarkdownText', () => {
     expect(screen.getByText('file diagram')).toBeTruthy()
     expect(screen.getByText('script diagram')).toBeTruthy()
     expect(screen.getByText('mail diagram')).toBeTruthy()
+  })
+
+  it('routes file anchors through the desktop bridge, copies paths, and upgrades bare domains to https', () => {
+    const sent: string[] = []
+    vi.stubGlobal('__electrobunSendToHost', (message: string) => { sent.push(message) })
+    const writeText = vi.fn()
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const markdown = [
+      '[合同](file:///Users/fanchong/Desktop/%E5%90%88%E5%90%8C.docx)',
+      '[报告](/Users/fanchong/Desktop/报告.pdf)',
+      '[帮助](www.example.com/faq)',
+      '[邮件](mailto:dev@example.com)',
+    ].join('\n\n')
+    render(<MarkdownText text={markdown} />)
+
+    fireEvent.click(screen.getByRole('link', { name: '合同' }))
+    expect(sent).toEqual([JSON.stringify({ kind: 'open-path', path: '/Users/fanchong/Desktop/合同.docx' })])
+    expect(screen.getByRole('link', { name: '合同' }).getAttribute('title'))
+      .toBe('/Users/fanchong/Desktop/合同.docx')
+
+    const report = screen.getByRole('link', { name: '报告' })
+    fireEvent.click(report)
+    expect(sent[1]).toBe(JSON.stringify({ kind: 'open-path', path: '/Users/fanchong/Desktop/报告.pdf' }))
+    fireEvent.contextMenu(report)
+    expect(writeText).toHaveBeenCalledWith('/Users/fanchong/Desktop/报告.pdf')
+
+    fireEvent.click(screen.getByRole('link', { name: '帮助' }))
+    expect(sent[2]).toBe(JSON.stringify({ kind: 'open-url', url: 'https://www.example.com/faq' }))
+
+    // mailto keeps its no-affordance anchor: no bridge message for it, ever.
+    fireEvent.click(screen.getByRole('link', { name: '邮件' }))
+    expect(sent).toHaveLength(3)
+    vi.unstubAllGlobals()
+    Reflect.deleteProperty(navigator, 'clipboard')
   })
 
   it('keeps incomplete streaming Markdown renderable', () => {

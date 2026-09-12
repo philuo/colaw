@@ -8,14 +8,15 @@
  * @module @deepseek-ai/dsh-electrobun-host
  */
 
-import { BrowserView, BrowserWindow, Tray } from 'electrobun/bun'
+import { BrowserView, BrowserWindow, Tray, Updater } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
 import {
-  applicationIsActive, hideApplication, openExternalUrl, setAppearance, setApplicationIcon,
+  applicationIsActive, hideApplication, setAppearance, setApplicationIcon,
   setBundleIcon, systemIsDark, type AppearancePreference,
 } from './app-appearance.ts'
-import { spawnSync } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
+import { homedir } from 'node:os'
 
 /**
  * This bundle's own URL at runtime. The bytecode CJS build freezes
@@ -34,10 +35,11 @@ const bundleUrl = (): string => {
   return typeof __filename === 'string' ? pathToFileURL(__filename).href : import.meta.url
 }
 import { dshHomePath, migrateLegacyDshHome } from '@deepseek-ai/dsh-home-paths'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname, join, resolve } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, extname, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
+import Schema from '@deepseek-ai/schemastery'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import {
   boot,
@@ -76,6 +78,9 @@ const ROOT_CONFIG_FILENAME = 'electrobun.cordis.yml'
 
 /** File the window frame is remembered in, beside the profile's composition root. */
 const WINDOW_STATE_FILENAME = 'window-state.json'
+
+/** The installed release identity, read once at boot for the About surface. */
+let installedAbout: { version: string, channel: string, hash: string, baseUrl: string } | undefined
 
 /** Where the window first appears when nothing was remembered. */
 const DEFAULT_WINDOW_FRAME = { x: 100, y: 100, width: 1400, height: 900 } as const
@@ -248,8 +253,137 @@ function runWindowCommand(event: ElectrobunEvent<{ detail: unknown }, unknown>):
   desktopCommands.get(command.id)?.()
 }
 
+/**
+ * Decode one `host-message` webview event into its message object.
+ *
+ * The wire carries two shapes: a page that passes an object through
+ * `__electrobunSendToHost` delivers it as `event.data.detail` already parsed
+ * (the native event bridge JSON-parses host-message details), while a page
+ * that passes a JSON string delivers that string verbatim (the preload's
+ * stringify and the bridge's parse cancel out). Both decode to the same
+ * object here; anything else is not ours.
+ * @param event - One inbound host-message event.
+ * @param kind - The message kind this caller owns.
+ * @returns The message when it carries that kind, otherwise undefined.
+ */
+function bridgeMessage<T extends { kind: string }>(
+  event: ElectrobunEvent<{ detail: unknown }, unknown>,
+  kind: T['kind'],
+): T | undefined {
+  const detail = event.data.detail
+  const message: unknown = typeof detail === 'string' ? safeJsonParse(detail) : detail
+  if (typeof message !== 'object' || message === null) return undefined
+  return (message as T).kind === kind ? message as T : undefined
+}
+
+/** JSON.parse that returns undefined instead of throwing for foreign payloads. */
+function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
+}
+
 /** Custom event the menu handler fires in the window so the shell runs a command. */
 const DESKTOP_COMMAND_EVENT = 'dsh:desktop-command'
+
+/**
+ * Local files a markdown file anchor may open with their default application:
+ * documents, images, and archives only. LaunchServices would happily execute
+ * whatever a wider list names (.app, .sh, .command), and model-authored
+ * markup is not a trustworthy source of file paths, so anything extensionless
+ * or outside this list is ignored.
+ */
+const OPENABLE_DOCUMENT_EXTENSIONS = new Set([
+  '.csv', '.doc', '.docx', '.gif', '.gz', '.heic', '.jpeg', '.jpg', '.key', '.md',
+  '.numbers', '.pages', '.pdf', '.png', '.ppt', '.pptx', '.rtf', '.svg', '.tar',
+  '.tif', '.tiff', '.tsv', '.txt', '.webp', '.xls', '.xlsx', '.zip',
+])
+
+/**
+ * Hand one URL or local path to LaunchServices via `/usr/bin/open`: the
+ * default browser for http(s), the document's default application for a file.
+ * Callers own the policy (protocol allowlist, extension allowlist); this is
+ * only the mechanics, with failures logged instead of swallowed.
+ * @param target - The validated URL or absolute path to open.
+ */
+/**
+ * One-time macOS folder-consent warmup. The detached-session default cwd and
+ * the file panel both read `~/Desktop`, whose first read from this app makes
+ * macOS surface the one-time folder-consent prompt; doing that read once,
+ * deliberately, right after the first window appears gathers the prompt at a
+ * predictable moment instead of scattering it into whatever feature touches
+ * the folder first. The marker survives in the Colaw home; a denied or failed
+ * probe leaves no marker, so a later launch retries after the user consents.
+ */
+function warmDesktopFolderConsent(): void {
+  const marker = dshHomePath('.desktop-consent-probed')
+  if (existsSync(marker)) return
+  try {
+    readdirSync(join(homedir(), 'Desktop'))
+    writeFileSync(marker, `${new Date().toISOString()}\n`)
+  } catch {
+    // The attempt itself is the warmup: it surfaced the system prompt (or the
+    // folder is genuinely unreadable, which later features will report).
+  }
+}
+
+function openWithSystem(target: string): void {
+  const opened = spawn('/usr/bin/open', [target], { stdio: 'ignore' })
+  opened.on('error', (error) => {
+    console.error(`[electrobun-host] open failed for ${target}: ${String(error)}`)
+  })
+}
+
+/**
+ * Replace the forever-booting page with a boot-failure notice: the reason the
+ * deferred tree mount settled with, plus the one action that helps — opening
+ * the data directory for inspection (quarantined sessions, corrupt-domain
+ * backups, logs). Rendered by injecting into the page the window already
+ * shows; the button rides the same host-message bridge the shell's own
+ * commands use, so it keeps working no matter which plugin failed.
+ * @param main - The main window, already showing the boot page.
+ * @param reason - The mount failure as a printable string.
+ */
+function renderBootFailure(main: BrowserWindow, reason: string): void {
+  const view = BrowserView.getById(main.webviewId)
+  if (view === undefined) return
+  const zh = readLocalePreferenceEarly() === 'zh'
+  const copy = {
+    title: zh ? 'Colaw 启动失败' : 'Colaw failed to start',
+    body: zh
+      ? '部分组件加载失败，应用无法继续启动。数据没有丢失；下面是失败原因和数据目录位置。'
+      : 'A component failed to load and the app cannot finish starting. Your data is intact; the reason and the data directory are below.',
+    reasonLabel: zh ? '失败原因' : 'Reason',
+    dataLabel: zh ? '数据目录' : 'Data directory',
+    button: zh ? '打开数据目录' : 'Open data directory',
+    dataDir: dshHomePath(),
+    reason: reason.slice(0, 800),
+  }
+  view.executeJavascript(`(() => {
+    const copy = ${JSON.stringify(copy)}
+    window.__colawOpenDataDir = () => window.__electrobunSendToHost?.({ id: 'open-data-dir' })
+    document.title = copy.title
+    document.body.innerHTML = ''
+      + '<div style="box-sizing:border-box;min-height:100vh;display:flex;align-items:center;justify-content:center;'
+      + 'background:rgb(24,24,27);color:rgb(228,228,231);font:14px/1.6 -apple-system,\'SF Pro Text\',sans-serif;padding:32px">'
+      + '<div style="max-width:560px;width:100%">'
+      + '<h1 style="font-size:20px;margin:0 0 8px">' + copy.title + '</h1>'
+      + '<p style="margin:0 0 20px;color:rgb(161,161,170)">' + copy.body + '</p>'
+      + '<p style="margin:0 0 6px;color:rgb(161,161,170);font-size:12px">' + copy.reasonLabel + '</p>'
+      + '<pre style="margin:0 0 20px;padding:12px;border-radius:8px;background:rgb(39,39,42);'
+      + 'overflow:auto;font:12px/1.5 ui-monospace,monospace;white-space:pre-wrap;word-break:break-all">'
+      + copy.reason.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c] ?? c)
+      + '</pre>'
+      + '<p style="margin:0 0 6px;color:rgb(161,161,170);font-size:12px">' + copy.dataLabel + '</p>'
+      + '<p style="margin:0 0 24px;font:12px/1.5 ui-monospace,monospace;word-break:break-all">' + copy.dataDir + '</p>'
+      + '<button type="button" onclick="__colawOpenDataDir()" '
+      + 'style="font:inherit;padding:8px 18px;border-radius:999px;border:1px solid rgb(82,82,91);'
+      + 'background:rgb(39,39,42);color:rgb(228,228,231);cursor:pointer">' + copy.button + '</button>'
+      + '</div></div>'
+  })()`)
+}
 
 /** Namespaces the shell keeps its own preferences in. */
 const THEME_NAMESPACE = 'ui-theme'
@@ -390,6 +524,11 @@ async function webserverAlive(port: number): Promise<boolean> {
  * Boot dsh core and open the Electrobun window.
  */
 async function main(): Promise<void> {
+  // The devkit resolves its installed identity (`../Resources/version.json`)
+  // against the process working directory, which macOS leaves wherever the
+  // launcher was invoked from — pin it to the executable's own directory so
+  // the updater reads the real identity under every launch style.
+  process.chdir(dirname(process.execPath))
   // Use a dedicated directory as the dsh project/profile root. The legacy-home
   // migration and the profile directory only matter to the boot below; the
   // window must not wait on filesystem work it does not need.
@@ -474,6 +613,23 @@ async function main(): Promise<void> {
     await new Promise(resolve => setTimeout(resolve, 50))
     spawnSync('/usr/bin/osascript', ['-e', 'tell application id "ai.deepseek.harness" to activate'])
     process.exit(0)
+  }
+
+  // A previously downloaded update installs now: with a prepared update on
+  // disk the helper swaps the bundle and relaunches into the new version
+  // before anything else owns the foreground; without one this settles as a
+  // quiet no-op that never blocks the boot.
+  try {
+    installedAbout = await Updater.getLocalInfo()
+    console.log(`[updater] boot identity: ${JSON.stringify(installedAbout)}`)
+    if (installedAbout.baseUrl !== '' && installedAbout.channel !== 'dev') {
+      console.log('[updater] boot: applying prepared update if any…')
+      await Updater.applyUpdate()
+      console.log('[updater] boot: applyUpdate returned')
+      pruneStaleUpdateTars()
+    }
+  } catch (error) {
+    console.error(`[updater] boot apply failed: ${String(error)}`)
   }
 
   // The window is created only when the authenticated URL exists (~1s: the
@@ -612,6 +768,10 @@ async function main(): Promise<void> {
       followAppearance(readAppearancePreferenceEarly())
     }, delay)
   }
+  // First run only: gather macOS folder-consent prompts at one predictable
+  // moment (delayed so the window and the first paint own the foreground).
+  setTimeout(warmDesktopFolderConsent, 1500)
+
   // The splash is on screen: the profile-directory work the window never
   // needed runs now instead of ahead of it.
   migrateLegacyDshHome()
@@ -700,10 +860,16 @@ async function main(): Promise<void> {
   // block below); session-family entries lead so the mounted shell's first
   // data RPCs meet ready services.
   const restRank = (id: string): number => /session|storage|settings/.test(id) ? 0 : 1
+  // Eight entries per group: each group pays one `cordis:include` load and
+  // one macrotask yield, and with one entry per group those fixed costs
+  // dominated the deferred mount (~300 groups ≈ 800ms). Eight keeps every
+  // synchronous block well under the webserver-starvation bound the
+  // interleaving exists for while amortizing the per-group overhead.
+  const REST_ENTRIES_PER_CHUNK = 8
   const restChunks: Record<string, unknown>[][] = []
   for (const [index, entry] of ofStage('rest')
     .sort((a, b) => restRank(String(a.id)) - restRank(String(b.id))).entries()) {
-    const chunkIndex = Math.floor(index / 1)
+    const chunkIndex = Math.floor(index / REST_ENTRIES_PER_CHUNK)
     ;(restChunks[chunkIndex] ??= []).push(entry)
   }
 
@@ -770,6 +936,18 @@ async function main(): Promise<void> {
           name: '__DSH_DESKTOP_APPEARANCE__',
           value: pageAppearanceFor(readShellPreferences(hostCtx).appearance),
         })
+        if (installedAbout !== undefined) {
+          table.push({
+            kind: 'global',
+            name: '__DSH_ABOUT__',
+            value: {
+              version: installedAbout.version,
+              channel: installedAbout.channel,
+              hash: installedAbout.hash,
+              autoUpdate: installedAbout.baseUrl !== '',
+            },
+          })
+        }
       })
       if (bootProfile) {
         // Event-driven per-plugin attribution: the vendored Cordis fires
@@ -786,6 +964,18 @@ async function main(): Promise<void> {
     },
   )
   current = ctx
+  // The About surface's settings namespace: the auto-update preference the
+  // silent checker reads and the client checkbox writes. Registered here (not
+  // in a settings-owning plugin) because the desktop host is its only owner.
+  {
+    const aboutSchema = Schema.object({ autoUpdate: Schema.boolean().default(false) })
+    await ctx.plugin({
+      inject: ['settings'],
+      apply: (sctx: { settings?: { register: (ns: string, schema: unknown, options?: { base?: unknown }) => unknown } }) => {
+        void sctx.settings?.register('about', aboutSchema, { base: { autoUpdate: false } })
+      },
+    })
+  }
   if (bootProfile) console.log(`[profile] ${bootMs()} boot() returned`)
 
   // Verify required services (the early loader cleared the interval when it
@@ -848,6 +1038,9 @@ async function main(): Promise<void> {
       bootProfileStop = undefined
     } catch (error) {
       console.error(`[electrobun-host] deferred tree mount failed: ${String(error)}`)
+      // The window may not exist yet on an ultra-fast failure; without it
+      // there is no page to render into, and the boot log keeps the record.
+      if (mainWindow !== undefined) renderBootFailure(mainWindow, String(error))
     }
   })()
 
@@ -897,14 +1090,33 @@ async function main(): Promise<void> {
       if (pageAppearance === pushedAppearance) return
       pushedAppearance = pageAppearance
       const view = BrowserView.getById(mainWindow.webviewId)
-      if (view === undefined) return
-      view.executeJavascript(
-        `window.__DSH_DESKTOP_APPEARANCE__=${JSON.stringify(pageAppearance)};`
-        + "window.dispatchEvent(new Event('dsh:desktop-appearance'))",
-      )
+      if (view !== undefined) {
+        view.executeJavascript(
+          `window.__DSH_DESKTOP_APPEARANCE__=${JSON.stringify(pageAppearance)};`
+          + "window.dispatchEvent(new Event('dsh:desktop-appearance'))",
+        )
+      }
     }
     syncNativeChrome()
-    const nativeChromeWatch = setInterval(syncNativeChrome, NATIVE_CHROME_POLL_MS)
+    // App-level activity is the show/hide signal: macOS `hide` keeps the
+    // NSWindow "visible" while the application stops being active, and a Dock
+    // re-activation flips it back — either transition is one silent check.
+    let wasActive: boolean | undefined
+    const watchAppActivity = (): void => {
+      const active = applicationIsActive()
+      if (wasActive !== undefined && active !== wasActive) {
+        void runUpdateCheck(false)
+      }
+      wasActive = active
+    }
+    const nativeChromeWatch = setInterval(() => {
+      syncNativeChrome()
+      watchAppActivity()
+    }, NATIVE_CHROME_POLL_MS)
+    // One check shortly after the window settles: the About panel's manual
+    // button aside, a launch-time look catches overnight releases without
+    // waiting for the first visibility transition.
+    setTimeout(() => { void runUpdateCheck(false) }, 3000)
     ctx.on('settings/updated', syncNativeChrome)
 
     // macOS fullscreen hides the traffic lights, so the shell's title-bar
@@ -963,35 +1175,194 @@ async function main(): Promise<void> {
       }, ZOOM_SETTLE_MS)
     }
     desktopCommands.set('toggle-window-zoom', toggleWindowZoom)
+    // The boot-failure page's only action: hand the data directory to Finder.
+    desktopCommands.set('open-data-dir', () => openWithSystem(dshHomePath()))
+
+    // ── Silent updates (Electrobun Updater): check on window visibility
+    // transitions when auto-update is on; download (patch-first, full-bundle
+    // fallback) with a single-flight guard and a 15-minute budget; never
+    // restart — the next launch applies what landed. The About panel hears
+    // every lifecycle step through one window event.
+    let updateDownloading = false
+    const UPDATE_DOWNLOAD_BUDGET_MS = 15 * 60_000
+    const pushAboutEvent = (detail: Record<string, unknown>): void => {
+      const view = BrowserView.getById(mainWindow.webviewId)
+      if (view === undefined) return
+      view.executeJavascript(
+        `window.dispatchEvent(new CustomEvent('dsh:about-update', `
+        + `{ detail: ${JSON.stringify(JSON.stringify(detail))} }))`,
+      )
+    }
+    const ABOUT_FORWARDED_STATUSES = new Set([
+      'update-available', 'downloading-patch', 'downloading-full-bundle',
+      'download-complete', 'no-update', 'error',
+    ])
+    Updater.onStatusChange(entry => {
+      if (ABOUT_FORWARDED_STATUSES.has(entry.status)) {
+        pushAboutEvent({ kind: 'status', status: entry.status })
+      }
+    })
+    const autoUpdateWanted = (): boolean => {
+      try {
+        const settings = current?.get('settings') as
+          | { get: (namespace: string) => unknown }
+          | undefined
+        const about = settings?.get('about') as { autoUpdate?: unknown } | undefined
+        const wanted = about?.autoUpdate === true
+        console.log(`[updater] autoUpdate setting: ${JSON.stringify(about ?? null)} → ${String(wanted)}`)
+        return wanted
+      } catch {
+        return false
+      }
+    }
+    // Old payloads must not accumulate: every successful update retains one
+    // {hash}.tar and the helper leaves prior ones behind. Keep exactly the
+    // current identity's tar plus whatever a prepared (not yet applied)
+    // update references; drop the rest.
+    const pruneStaleUpdateTars = (): void => {
+      try {
+        const installed = installedAbout
+        if (installed === undefined || installed.baseUrl === '') return
+        // The updater's per-channel root on macOS: ~/Library/Application
+        // Support/<identifier>/<channel> (the devkit's resolveInstalledChannelRoot).
+        const channelRoot = join(homedir(), 'Library', 'Application Support', installed.identifier, installed.channel)
+        const extraction = join(channelRoot, 'self-extraction')
+        let preparedTar: string | undefined
+        try {
+          // The prepared record lives inside the extraction folder, beside
+          // the tars it names (the devkit's preparedUpdatePathFor).
+          const prepared = JSON.parse(
+            readFileSync(join(extraction, '.electrobun-prepared-update.json'), 'utf8'),
+          ) as { retained_tar_path?: unknown }
+          if (typeof prepared.retained_tar_path === 'string') preparedTar = prepared.retained_tar_path
+        } catch { /* no prepared update outstanding */ }
+        for (const entry of readdirSync(extraction)) {
+          const match = /^([a-z0-9]{1,13})\.tar$/.exec(entry)
+          if (match === null) continue
+          const path = join(extraction, entry)
+          if (match[1] === installed.hash || path === preparedTar) continue
+          rmSync(path, { force: true })
+          console.log(`[updater] pruned stale payload ${entry}`)
+        }
+      } catch { /* pruning is best-effort housekeeping */ }
+    }
+    desktopCommands.set('restart-to-update', () => {
+      // The About panel's "restart now" affordance: applyUpdate restarts into
+      // a prepared update, or settles as a quiet no-op when none is ready.
+      void Updater.applyUpdate()
+    })
+    const runUpdateCheck = async (manual: boolean): Promise<void> => {
+      if (updateDownloading) return
+      console.log(`[updater] check start (${manual ? 'manual' : 'auto'})`)
+      const installed = await Updater.getLocalInfo()
+      console.log(`[updater] local identity: ${JSON.stringify(installed)}`)
+      if (installed.baseUrl === '' || installed.channel === 'dev') {
+        if (manual) pushAboutEvent({ kind: 'unavailable' })
+        return
+      }
+      if (!manual && !autoUpdateWanted()) return
+      try {
+        const result = await Updater.checkForUpdate()
+        console.log(`[updater] check ${manual ? 'manual' : 'auto'}: ${JSON.stringify(result)}`)
+        if (manual) {
+          pushAboutEvent({
+            kind: 'result',
+            version: result.version,
+            updateAvailable: result.updateAvailable,
+            updateReady: result.updateReady,
+            ...(result.error === '' ? {} : { error: result.error }),
+          })
+        }
+        if (!result.updateAvailable || result.updateReady) return
+        // The manifest is plain static JSON; a `notes` field (optional,
+        // release-notes markdown) rides along outside the validated schema.
+        let notes: string | undefined
+        try {
+          const prefix = `${installed.channel}-macos-arm64`
+          const manifestResponse = await fetch(
+            `${installed.baseUrl.replace(/\/+$/, '')}/${prefix}-update.json?notes=${Date.now()}`,
+            { signal: AbortSignal.timeout(10_000) },
+          )
+          if (manifestResponse.ok) {
+            const manifest = await manifestResponse.json() as { notes?: unknown }
+            if (typeof manifest.notes === 'string' && manifest.notes !== '') notes = manifest.notes
+          }
+        } catch { /* notes are optional decoration */ }
+        pushAboutEvent({
+          kind: 'result',
+          version: result.version,
+          updateAvailable: result.updateAvailable,
+          updateReady: result.updateReady,
+          ...(notes === undefined ? {} : { notes }),
+        })
+        updateDownloading = true
+        try {
+          await Promise.race([
+            Updater.downloadUpdate(),
+            new Promise<never>((_, reject) => {
+              setTimeout(() => { reject(new Error('update download timed out')) }, UPDATE_DOWNLOAD_BUDGET_MS)
+            }),
+          ])
+        } finally {
+          updateDownloading = false
+        }
+      } catch (error) {
+        console.error(`[updater] check failed: ${String(error)}`)
+        if (manual) pushAboutEvent({ kind: 'error', message: String(error) })
+      }
+    }
+    desktopCommands.set('check-update', () => { void runUpdateCheck(true) })
     electrobunEventEmitter.on('host-message', runWindowCommand)
     // Links leave through the default browser, never this webview: the page
     // forwards external anchor clicks over the bridge, the host keeps the
     // http(s)-only allowlist (an http page opener is a phishing primitive).
-    electrobunEventEmitter.on('host-message', (payload: unknown) => {
+    // `/usr/bin/open` is the whole mechanism: it resolves the default handler
+    // exactly like LaunchServices with none of the FFI machinery.
+    electrobunEventEmitter.on('host-message', (event: ElectrobunEvent<{ detail: unknown }, unknown>) => {
+      const message = bridgeMessage(event, 'open-url')
+      if (message === undefined) return
       try {
-        const message = JSON.parse(String(payload)) as { kind?: string, url?: string }
-        if (message.kind !== 'open-url' || typeof message.url !== 'string') return
         const protocol = new URL(message.url).protocol
-        if (protocol === 'http:' || protocol === 'https:') openExternalUrl(message.url)
-      } catch { /* not ours */ }
+        if (protocol === 'http:' || protocol === 'https:') openWithSystem(message.url)
+      } catch (error) {
+        console.error(`[electrobun-host] open-url rejected ${message.url}: ${String(error)}`)
+      }
+    })
+    // File anchors ask for the default application instead: LaunchServices
+    // routes .docx to WPS, PDFs to Preview. The extension allowlist above is
+    // the injection guard — an unopenable path is dropped silently, exactly
+    // like a non-http(s) URL.
+    electrobunEventEmitter.on('host-message', (event: ElectrobunEvent<{ detail: unknown }, unknown>) => {
+      const message = bridgeMessage(event, 'open-path')
+      if (message === undefined) return
+      const path = message.path
+      if (!path.startsWith('/') || path.includes('\0')) return
+      if (!OPENABLE_DOCUMENT_EXTENSIONS.has(extname(path).toLowerCase())) return
+      openWithSystem(path)
     })
     // Zero-invasive boot evidence: the page reports its own timeline (resource
     // totals, DOM milestones, whether the shell or the boot page owns the mount
     // point) through the same bridge the window controls use. COLAW_BOOT_PROFILE
     // schedules the polls; the numbers land in the host log beside the phases.
     if (bootProfile) {
-      const probeListener = (payload: unknown): void => {
-        try {
-          const message = JSON.parse(String(payload)) as { kind?: string }
-          if (message.kind === 'colaw-probe') console.log(`[profile] ${bootMs()} webview ${JSON.stringify(message)}`)
-        } catch { /* not ours */ }
+      // Diagnostics for the webview↔host bridge: every inbound host-message
+      // is echoed with its detail, and the probe round asks the page to
+      // report its own boot timeline through the same channel.
+      const messageListener = (event: ElectrobunEvent<{ detail: unknown }, unknown>): void => {
+        console.log(`[profile] host-message inbound: ${JSON.stringify(event.data.detail).slice(0, 160)}`)
+        const message = bridgeMessage<{ kind: 'colaw-probe' } & Record<string, unknown>>(event, 'colaw-probe')
+        if (message !== undefined) console.log(`[profile] ${bootMs()} webview ${JSON.stringify(message)}`)
       }
-      electrobunEventEmitter.on('host-message', probeListener)
+      electrobunEventEmitter.on('host-message', messageListener)
       const probe = '(() => {try{const n=performance.getEntriesByType("navigation")[0];const r=performance.getEntriesByType("resource");let t=0,mt=0,mf="";const f404=[];for(const e of r){t+=e.duration;if(e.duration>mt){mt=e.duration;mf=e.name}if(e.responseStatus===404&&f404.length<3)f404.push(e.name.slice(0,90))}const b=document.querySelector("[data-dsh-boot]");__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",dcl:Math.round(n?.domContentLoadedEventEnd??-1),res:r.length,resMs:Math.round(t),worstMs:Math.round(mt),worst:mf.slice(0,80),page:b?"boot":"shell",bootText:(b?.textContent??"").slice(0,160),nf404:r.filter(e=>e.responseStatus===404).length,e404:f404,t:Math.round(performance.now())}))}catch(e){__electrobunSendToHost(JSON.stringify({kind:"colaw-probe",err:String(e)}))}})()'
       for (const at of [600, 1500, 3000, 6000]) {
         setTimeout(() => {
           const view = BrowserView.getById(mainWindow.webviewId)
-          view?.executeJavascript(probe)
+          if (view === undefined) {
+            console.log(`[profile] probe at ${String(at)}ms: BrowserView.getById(${String(mainWindow.webviewId)}) found nothing`)
+            return
+          }
+          view.executeJavascript(probe)
         }, at)
       }
     }

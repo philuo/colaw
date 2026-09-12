@@ -10,6 +10,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import type { SessionEvent, SessionHeader, SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import type { SessionHandle, SessionAccess } from './handle.ts'
 import type { SessionPersistenceRevision } from './revision.ts'
+import { SessionPersistenceNotFoundError } from './errors.ts'
 
 // Re-export the metadata vocabulary so Consumers import it from the Service Definition.
 export type { SessionHeader } from '@deepseek-ai/dsh-session'
@@ -196,6 +197,20 @@ export abstract class SessionPersistence extends Service {
    * @returns one snapshot per stored session.
    */
   abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>
+
+  /**
+   * Remove one stored session's durable artifact for good.
+   *
+   * Backend-optional: a backend without a deletable medium keeps this base
+   * refusal. There is no tombstone, no trash, and no undo — the bytes leave
+   * the disk; callers own every accounting cleanup around the removal.
+   * @param id - the stored session to remove.
+   * @param options - optional cancellation.
+   * @throws {SessionPersistenceNotFoundError} when the session does not exist.
+   */
+  remove(_id: SessionId, _options?: SessionPersistenceListOptions): Promise<void> {
+    return Promise.reject(new SessionPersistenceNotFoundError(_id))
+  }
 }
 
 export default SessionPersistence
