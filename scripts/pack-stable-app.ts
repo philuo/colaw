@@ -37,7 +37,7 @@
  */
 
 import {
-  chmodSync, closeSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync,
+  chmodSync, closeSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync,
   readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync,
   writeFileSync,
 } from 'node:fs'
@@ -164,9 +164,14 @@ function packageRootName(spec: string): string {
   return spec.startsWith('@') ? segments.slice(0, 2).join('/') : segments[0] ?? spec
 }
 
-function run(command: string, args: readonly string[], cwd: string): void {
+function run(
+  command: string,
+  args: readonly string[],
+  cwd: string,
+  environment: Record<string, string | undefined> = process.env,
+): void {
   const result = (globalThis as unknown as { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null } } })
-    .Bun.spawnSync([command, ...args], { cwd, stdout: 'inherit', stderr: 'inherit' })
+    .Bun.spawnSync([command, ...args], { cwd, stdout: 'inherit', stderr: 'inherit', env: environment })
   if (result.exitCode !== 0) {
     console.error(`pack-stable-app: ${command} ${args.join(' ')} exited ${String(result.exitCode)}`)
     process.exit(1)
@@ -1284,9 +1289,25 @@ function reportSize(): void {
   console.log(`pack-stable-app: app size ${mb(total)}`)
 }
 
+/** Copy the packed payload out of the build tree before the official stable build replaces it. */
+function stageStableApp(): void {
+  const stagingRoot = process.env.COLAW_PACK_STAGING
+  if (stagingRoot === undefined || stagingRoot === '') return
+  const stagedApp = join(stagingRoot, 'Colaw.app')
+  rmSync(stagedApp, { recursive: true, force: true })
+  mkdirSync(stagingRoot, { recursive: true })
+  cpSync(stableApp, stagedApp, { recursive: true })
+  console.log(`pack-stable-app: staged ${stagedApp}`)
+}
+
 async function main(): Promise<void> {
   ensureBuilds()
-  run(process.execPath, [join(hostDir, 'node_modules', 'electrobun', 'bin', 'electrobun.cjs'), 'build'], hostDir)
+  run(
+    process.execPath,
+    [join(hostDir, 'node_modules', 'electrobun', 'bin', 'electrobun.cjs'), 'build'],
+    hostDir,
+    { ...process.env, COLAW_PACK_BOOTSTRAP: '1' },
+  )
 
   publishStableApp()
 
@@ -1333,6 +1354,7 @@ async function main(): Promise<void> {
   await emitHostBundle(closure)
   auditApp(closure)
   reportSize()
+  stageStableApp()
 }
 
 await main()

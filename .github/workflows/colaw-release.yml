@@ -6,14 +6,15 @@
 #   2. `hutch electrobun build --env=stable` — the OFFICIAL release identity:
 #      version.json hash (Electrobun's algorithm), update.json manifest, and
 #      automatic bsdiff patches against the previously published release on
-#      the update base URL. The packer's closure merges into Hutch's shell
-#      through the postBuild hook (COLAW_PACK_STAGING).
+#      the update base URL. The packer writes its closure to
+#      COLAW_PACK_STAGING; Hutch's postBuild hook merges it into this shell.
 #
 # The update base URL is this repo's GitHub Releases (stable channel via
 # releases/latest/download, per Electrobun's updates guide). Assets:
-#   - Colaw-stable.dmg, Colaw-macos-arm64.app.zip — human downloads
-#   - stable-macos-arm64-Colaw.app.tar.zst, -update.json, -<hash>.patch —
-#     the auto-updater's static files (Release assets double as the server)
+#   - Colaw.dmg, Colaw-macos-arm64.app.zip — human downloads
+#   - stable-macos-arm64-Colaw.app.tar.zst and -update.json — required feed
+#   - stable-macos-arm64-<source-hash>.patch — feed addition from version two
+#     onward (Release assets double as the update server)
 #
 # Triggers: push to main builds artifacts; push of a v* tag (or dispatch with
 # a tag) additionally publishes a GitHub Release with every asset. Same-tag
@@ -70,24 +71,12 @@ jobs:
         run: |
           set -o pipefail
           echo "=== resources before pack ==="; df -h / /tmp; memory_pressure -Q 2>/dev/null | head -3 || sysctl hw.memsize
+          set +e
           bun scripts/pack-stable-app.ts 2>&1 | tee /tmp/pack-ci.log
-          EXIT=$?
-          echo "=== resources after pack (exit=$EXIT) ==="; df -h / /tmp
-          exit $EXIT
-          mkdir -p "$COLAW_PACK_STAGING"
-          cp -R apps/electrobun-host/build/stable-macos-arm64/Colaw.app "$COLAW_PACK_STAGING/"
-
-      - name: Ship the pack log back to the ci-debug branch
-        if: always()
-        run: |
-          git config user.name "ci-debug-bot"
-          git config user.email "ci-debug@users.noreply.github.com"
-          git checkout -B ci-debug
-          STAMP=$(date +%H%M%S)
-          { echo "run: ${{ github.run_id }} commit: ${{ github.sha }}"; echo "df:"; df -h / /tmp; echo; cat /tmp/pack-ci.log 2>/dev/null || echo "(pack log absent — failed before tee)"; } > ".pack-ci-$STAMP.log"
-          git add .pack-ci-*.log
-          git commit -m "ci debug: pack log $STAMP"
-          git push --force origin HEAD:ci-debug
+          PACK_EXIT=${PIPESTATUS[0]}
+          set -e
+          echo "=== resources after pack (exit=$PACK_EXIT) ==="; df -h / /tmp
+          exit "$PACK_EXIT"
 
       - name: Build the official release set (identity, manifest, patches)
         working-directory: apps/electrobun-host
@@ -113,7 +102,10 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: colaw-update-feed
-          path: apps/electrobun-host/artifacts/
+          path: |
+            apps/electrobun-host/artifacts/stable-macos-arm64-Colaw.app.tar.zst
+            apps/electrobun-host/artifacts/stable-macos-arm64-update.json
+            apps/electrobun-host/artifacts/stable-macos-arm64-*.patch
           if-no-files-found: error
 
   publish:

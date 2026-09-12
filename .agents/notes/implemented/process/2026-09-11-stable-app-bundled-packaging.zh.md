@@ -23,6 +23,7 @@ stable 应用**bundle 化，不再 deploy 化**。`pack-stable-app.ts` 用 `dsh-
 5. **宿主在 bundled 启动时 heal 模块 fallback**（以应用内锚点调 `healProfilesModuleFallback`），client-module 解析与树外插件随之自包含；dev 与源码运行保持 checkout 平面。
 6. **stable 拷贝抹掉 dev 标记**——`version.json` 通道、`build.json` 环境、`Colaw-dev` 包名改为 `stable`/`Colaw`，Electrobun SDK 的 install-root 名不再授权构建机上启动仓库 dev watcher。
 7. **审计把门：** `Resources/app` 下零符号链接、零 TypeScript/sourcemap/元数据文件，且每个发布 bundle 的每个裸导入必须在应用内可解析（仓库安装本身解析不到的 specifier——sharp 的跨平台原生件——列为未发布可选项而非失败）。
+8. **发布打包明确分为两阶段。** 打包器把首次 Electrobun dev 构建标为 bootstrap，使仅属于 stable 的合并 hook 不会要求一个此时尚不可能存在的 payload。闭包产出与审计结束后，打包器把 `Colaw.app` 复制到 `COLAW_PACK_STAGING`；随后执行的 `electrobun build --env=stable` 拥有最终壳身份与 feed，其 hook 只合并暂存的 `app`、`install` 与图标 payload。首版 feed 仅含完整 tar 与 `update.json`；此后每版还包含按已安装源 hash 命名的 patch，而 DMG 与 app zip 始终是 feed artifact 之外的人工安装资产。
 
 ### 分析必须自行掌握的解析规则
 
@@ -46,5 +47,5 @@ stable 应用**bundle 化，不再 deploy 化**。`pack-stable-app.ts` 用 `dsh-
 - stable 应用实测 **108 MiB**（壳 66.6 + bundle/数据 41.4），对照 deploy 的 452 MiB；`Resources/app` 下零符号链接、零 TypeScript、零 sourcemap、零 README。
 - 按包摇树是真实但按包为界的：每个包按实际被导入的入口点各出一个 unit，未被引用的 `lib/` 入口被丢弃。同包兄弟 unit 之间可能复制内部模块；web profile 今天不存在这样的子路径对。
 - 按字符串 URL 发布的代码文件（worker 入口）在 `Bun.build` 接受时最小化，不接受时按字节复制。
-- 全链（`tsc` host 面、tsdown host/client 面、Vite、Electrobun 构建、分析、产出、审计）由 `pnpm run build:app:stable` 完整走通；冒烟验收为全新 `DSH_HOME` 启动至 `dsh core booted`，`__DSH_BOOT__` 有内容且 client bundle 批次可服务。
+- 全链（`tsc` host 面、tsdown host/client 面、Vite、bootstrap Electrobun 构建、分析、产出、审计、暂存、官方 stable Electrobun 构建）由发布工作流完整走通；冒烟验收为全新 `DSH_HOME` 启动至 `dsh core booted`，`__DSH_BOOT__` 有内容且 client bundle 批次可服务。
 - 浏览器 client bundle 在打包步骤中最小化；client 面构建本身不变，dev 与快照流程不受影响。
