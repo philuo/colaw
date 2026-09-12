@@ -82,7 +82,7 @@ jobs:
         working-directory: apps/electrobun-host
         run: bun ./node_modules/electrobun/bin/electrobun.cjs build --env=stable
 
-      - name: Build the drag-to-Applications installer image
+      - name: Stage the official drag-to-Applications installer image
         run: bun scripts/build-dmg.ts
 
       - name: Zip the shipped bundle (official identity, permissions-preserving)

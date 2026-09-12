@@ -47,5 +47,5 @@ stable 应用**bundle 化，不再 deploy 化**。`pack-stable-app.ts` 用 `dsh-
 - stable 应用实测 **108 MiB**（壳 66.6 + bundle/数据 41.4），对照 deploy 的 452 MiB；`Resources/app` 下零符号链接、零 TypeScript、零 sourcemap、零 README。
 - 按包摇树是真实但按包为界的：每个包按实际被导入的入口点各出一个 unit，未被引用的 `lib/` 入口被丢弃。同包兄弟 unit 之间可能复制内部模块；web profile 今天不存在这样的子路径对。
 - 按字符串 URL 发布的代码文件（worker 入口）在 `Bun.build` 接受时最小化，不接受时按字节复制。
-- 全链（`tsc` host 面、tsdown host/client 面、Vite、bootstrap Electrobun 构建、分析、产出、审计、暂存、官方 stable Electrobun 构建）由发布工作流完整走通；冒烟验收为全新 `DSH_HOME` 启动至 `dsh core booted`，`__DSH_BOOT__` 有内容且 client bundle 批次可服务。
+- 全链（`tsc` host 面、tsdown host/client 面、Vite、bootstrap Electrobun 构建、分析、产出、审计、暂存、官方 stable Electrobun 构建、安装镜像暂存）由发布工作流完整走通。人工安装 DMG 直接采用 Hutch 的官方镜像，其中已经包含 `Colaw.app` 与 `/Applications` 链接；工作流只改名，不再通过 Finder 重建。冒烟验收为全新 `DSH_HOME` 启动至 `dsh core booted`，`__DSH_BOOT__` 有内容且 client bundle 批次可服务。
 - 浏览器 client bundle 在打包步骤中最小化；client 面构建本身不变，dev 与快照流程不受影响。
