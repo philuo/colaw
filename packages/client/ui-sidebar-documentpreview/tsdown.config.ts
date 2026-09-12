@@ -37,6 +37,49 @@ function pdfAssets(): string {
   )])))
 }
 
+/** The parser payload filenames the Office renderers fetch through their `wasmUrl` option. */
+const OOXML_FORMATS = ['docx', 'pptx', 'xlsx'] as const
+
+/**
+ * The installed package root, derived from its entry module: the package does
+ * not export a `./package.json` subpath, so a manifest resolve throws under
+ * strict ESM resolution (the notices generator loads this config file).
+ */
+function ooxmlPackageRoot(): string {
+  return dirname(dirname(require.resolve('@silurus/ooxml')))
+}
+
+/** Keep every parser in the same artifact as the runtime that fetches it. */
+function ooxmlAssets(): string {
+  const dist = join(ooxmlPackageRoot(), 'dist')
+  return JSON.stringify(Object.fromEntries(OOXML_FORMATS.map(format =>
+    [format, readFileSync(join(dist, `${format}_parser_bg.wasm`)).toString('base64')])))
+}
+
+/** The MIT license text must stay visible in the artifact that carries the parsers. */
+function ooxmlLicenseBanner(): string {
+  const notice = readFileSync(join(ooxmlPackageRoot(), 'LICENSE'), 'utf8').trimEnd()
+  return ['//! Bundled @silurus/ooxml license notice', ...notice.split('\n').map(line => `// ${line}`)].join('\n')
+}
+
+/**
+ * The client loader evaluates each bundle with `new Function`, where
+ * `import.meta` is a parse error, and every emitted chunk beside `client.js`
+ * would be dead weight the package walk does not ship. The library's
+ * module-URL references are exactly such dead paths here: the parser payload
+ * arrives through the inlined `wasmUrl` blob, and its worker source is
+ * inlined beside the format code. Rewrite the URL expressions to inert
+ * strings and force one single-file bundle.
+ */
+const ooxmlModuleUrl: NonNullable<UserConfig['plugins']> = [{
+  name: 'dsh-ooxml-module-url',
+  transform(code, id) {
+    if (!id.includes('@silurus/ooxml')) return null
+    const next = code.replace(/new URL\((["'])([^"'`]*)\1,\s*import\.meta\.url\)(?:\.href)?/g, '""')
+    return next === code ? null : { code: next, map: null }
+  },
+}]
+
 /** The dynamic client factory has no module URL from which to resolve a Worker file. */
 const pdfWorker: NonNullable<UserConfig['plugins']> = [{
   name: 'dsh-pdf-worker-source',
@@ -54,8 +97,13 @@ const pdfWorker: NonNullable<UserConfig['plugins']> = [{
 export default (options: Parameters<typeof bundle>[0]): UserConfig[] => bundle(options).map(config =>
   config.name?.endsWith('/client') === true ? {
     ...config,
-    banner: pdfLicenseBanner(),
-    plugins: [config.plugins, pdfWorker],
-    define: { ...config.define, __DSH_PDFJS_ASSETS__: pdfAssets() },
+    banner: [pdfLicenseBanner(), ooxmlLicenseBanner()].join('\n'),
+    outputOptions: { ...config.outputOptions, inlineDynamicImports: true, chunkFileNames: 'client-chunk-[name]-[hash].cjs' },
+    plugins: [config.plugins, pdfWorker, ooxmlModuleUrl],
+    define: {
+      ...config.define,
+      __DSH_PDFJS_ASSETS__: pdfAssets(),
+      __DSH_OOXML_WASM__: ooxmlAssets(),
+    },
   } : config,
 )

@@ -26,6 +26,7 @@ import { IMAGE_BODY_ID } from '../src/client/image/index.ts'
 import { PdfBody } from '../src/client/pdf/PdfBody.tsx'
 import { PDF_BODY_ID } from '../src/client/pdf/index.ts'
 import { CodeBody } from '../src/client/code/CodeBody.tsx'
+import { OFFICE_BODY_IDS } from '../src/client/office/index.ts'
 import { en, zh } from '../src/client/locales.ts'
 import type { textFace } from '../src/client/face.ts'
 import type { TextStore } from '../src/client/store.ts'
@@ -98,6 +99,10 @@ describe('ui-sidebar-documentpreview apply', () => {
       ['sidebar.right.tab.document', IMAGE_BODY_ID, 'sidebarImage', ImageBody],
       ['sidebar.right.tab.document', PDF_BODY_ID, 'sidebarPdf', PdfBody],
       ['sidebar.right.tab.document', '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/code', 'sidebarCodePreview', CodeBody],
+      // The three Office bodies are per-format closures over one implementation.
+      ['sidebar.right.tab.document', OFFICE_BODY_IDS.docx, 'sidebarOffice', expect.any(Function)],
+      ['sidebar.right.tab.document', OFFICE_BODY_IDS.pptx, 'sidebarOffice', expect.any(Function)],
+      ['sidebar.right.tab.document', OFFICE_BODY_IDS.xlsx, 'sidebarOffice', expect.any(Function)],
     ])
     expect(registered[0]?.store).toBeDefined()
     expect(typeof registered[0]?.inject).toBe('function')

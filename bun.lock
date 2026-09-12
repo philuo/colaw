@@ -174,7 +174,7 @@
     },
     "apps/electrobun-host": {
       "name": "@deepseek-ai/dsh-electrobun-host",
-      "version": "0.1.5",
+      "version": "1.0.0",
       "dependencies": {
         "@deepseek-ai/dsh": "workspace:*",
         "@deepseek-ai/dsh-api-gateway": "workspace:*",
@@ -185,8 +185,8 @@
         "@deepseek-ai/dsh-host-webserver": "workspace:*",
         "@deepseek-ai/dsh-launch-environment": "workspace:*",
         "@deepseek-ai/dsh-web-frontend": "workspace:*",
+        "@deepseek-ai/schemastery": "workspace:*",
         "electrobun": "2.0.2-beta.19",
-        "zod": "^4.4.3",
       },
       "devDependencies": {
         "@types/bun": "latest",
@@ -846,7 +846,6 @@
         "@deepseek-ai/dsh-client-ui-input-trigger": "workspace:^",
         "@deepseek-ai/dsh-client-ui-jobs": "workspace:^",
         "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
-        "@deepseek-ai/dsh-client-ui-message-feedback": "workspace:^",
         "@deepseek-ai/dsh-client-ui-model-selection": "workspace:^",
         "@deepseek-ai/dsh-client-ui-open-in-app": "workspace:^",
         "@deepseek-ai/dsh-client-ui-permission-presets": "workspace:^",
@@ -1851,10 +1850,12 @@
         "@deepseek-ai/dsh-client-ui-slots": "workspace:^",
         "@deepseek-ai/dsh-session": "workspace:^",
         "@deepseek-ai/dsh-util-workspace-path": "workspace:^",
+        "@silurus/ooxml": "0.87.0",
         "@testing-library/react": "^16.1.0",
         "@types/react": "~18.3.1",
         "@types/react-dom": "~18.3.0",
         "clsx": "^2.0.0",
+        "fflate": "0.8.3",
         "pdfjs-dist": "6.3.289",
         "react": "^18.2.0",
         "react-dom": "^18.2.0",
@@ -6648,11 +6649,13 @@
       },
       "devDependencies": {
         "@deepseek-ai/cordis": "workspace:^",
+        "@deepseek-ai/dsh-credentials": "workspace:^",
         "@deepseek-ai/dsh-launch-environment": "workspace:^",
         "@deepseek-ai/dsh-web": "workspace:^",
       },
       "peerDependencies": {
         "@deepseek-ai/cordis": "workspace:^",
+        "@deepseek-ai/dsh-credentials": "workspace:^",
         "@deepseek-ai/dsh-launch-environment": "workspace:^",
         "@deepseek-ai/dsh-web": "workspace:^",
       },
@@ -8304,6 +8307,8 @@
     "@shikijs/types": ["@shikijs/types@4.4.3", "https://registry.npmmirror.com/@shikijs/types/-/types-4.4.3.tgz", { "dependencies": { "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.5" } }, "sha512-UEJxmRR++MAGR6hugn0vgVS2W/6lWAts84FFSrnlH9sP0LNol7E5+NQ792pH8liWUhyMyjhTgSUH3k7iD7tc5g=="],
 
     "@shikijs/vscode-textmate": ["@shikijs/vscode-textmate@10.0.2", "https://registry.npmmirror.com/@shikijs/vscode-textmate/-/vscode-textmate-10.0.2.tgz", {}, "sha512-83yeghZ2xxin3Nj8z1NMd/NCuca+gsYXswywDy5bHvwlWL8tpTQmzGeUuHd9FC3E/SBEMvzJRwWEOz5gGes9Qg=="],
+
+    "@silurus/ooxml": ["@silurus/ooxml@0.87.0", "https://registry.npmmirror.com/@silurus/ooxml/-/ooxml-0.87.0.tgz", {}, "sha512-Wj6j2vRrtSBpuk9vbaKelG/rW3yll53rGYbI+PSInTlc76Ifm1QLvR09mkVmX+QVIi0szVFUgRP7cLO3lYs9zA=="],
 
     "@sindresorhus/merge-streams": ["@sindresorhus/merge-streams@4.0.0", "https://registry.npmmirror.com/@sindresorhus/merge-streams/-/merge-streams-4.0.0.tgz", {}, "sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ=="],
 

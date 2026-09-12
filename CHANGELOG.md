@@ -8,6 +8,15 @@
 
 ### 新增
 
+- **Office 文件直读预览（Word / PowerPoint / Excel）**：右侧栏文件预览
+  新增 `.docx`、`.pptx`、`.xlsx`/`.xlsm` 渲染器，采用纯前端方案
+  `@silurus/ooxml@0.87.0`（锁定精确版本；Rust/WASM 解析 + Canvas 渲染），
+  **无需 LibreOffice 转换、零服务端依赖**。xlsx 支持多 sheet 标签、冻结
+  窗格、合并单元格、条件格式与图表；pptx 逐张翻页（含中文）；docx 逐页
+  浏览并默认适应面板宽度。解析器 WASM 随包 base64 内联、worker 走库内置
+  的自包含回退，全程离线可用。已知边界（来自官方能力表）：SmartArt/3D
+  效果、数据透视表不支持；docx 批注仅解析不内联渲染；旧二进制格式
+  （.doc/.ppt/.xls）不支持。预览插件载荷因此增大约 10MB（本地加载）。
 - **模型输入类型：声明、配置与「视觉」徽标**：模型能力从
   `text | image` 扩展为 `text | image | video | file`，对齐
   GLM-5.3-Flash 等多模态模型的官方输入面（视频 `video_url`、文件
