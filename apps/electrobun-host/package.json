@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-electrobun-host",
-  "version": "0.1.5",
+  "version": "1.0.0",
   "description": "Colaw desktop host for dsh",
   "type": "module",
   "private": true,
@@ -19,7 +19,8 @@
     "@deepseek-ai/dsh-host-webserver": "workspace:*",
     "@deepseek-ai/dsh-launch-environment": "workspace:*",
     "@deepseek-ai/dsh-web-frontend": "workspace:*",
-    "electrobun": "2.0.2-beta.19"
+    "electrobun": "2.0.2-beta.19",
+    "@deepseek-ai/schemastery": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest"

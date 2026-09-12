@@ -4,7 +4,7 @@ export default {
   app: {
     name: "Colaw",
     identifier: "ai.deepseek.harness",
-    version: "0.1.5-alpha.1",
+    version: "1.0.0",
   },
   build: {
     // 使用 Bun 作为主进程运行时（完全抛弃 Node.js）

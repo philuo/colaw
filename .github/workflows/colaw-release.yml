@@ -22,7 +22,7 @@ name: colaw-release
 
 on:
   push:
-    branches: [colaw-release]
+    branches: [main]
     tags: ["v*"]
   workflow_dispatch:
     inputs:
