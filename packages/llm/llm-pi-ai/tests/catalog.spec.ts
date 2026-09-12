@@ -100,7 +100,8 @@ describe('hand-declared providers', () => {
     const ctx = await harness(gateway(`${server.url}/v1`))
 
     expect(await ctx.llm.listModels('acme-gateway')).toEqual([
-      { provider: 'acme-gateway', id: 'acme-large', name: 'Acme Large', inputModalities: ['text'] },
+      // The undeclared model takes the modern default pair.
+      { provider: 'acme-gateway', id: 'acme-large', name: 'Acme Large', inputModalities: ['text', 'image'] },
     ])
     const info = await ctx.llm.resolveModelInfo('acme-gateway', 'acme-large')
     expect(info).toMatchObject({
@@ -212,7 +213,9 @@ describe('hand-declared providers', () => {
     const inputOf = (route: string, id: string): readonly string[] | undefined =>
       resolved.get(route)?.piProvider?.getModels().find(model => model.id === id)?.input
 
-    expect(inputOf('acme-gateway', 'bare')).toEqual(['text'])
+    // The route default is the modern pair: an undeclared model is
+    // vision-capable until the deployment says otherwise.
+    expect(inputOf('acme-gateway', 'bare')).toEqual(['text', 'image'])
     expect(inputOf('acme-gateway', 'seeing')).toEqual(['text', 'image'])
     expect(inputOf('acme-gateway', 'deaf')).toEqual(['text'])
     expect(inputOf('seeing-gateway', 'bare')).toEqual(['text', 'image'])
@@ -246,7 +249,8 @@ describe('hand-declared providers', () => {
     const listed = async (provider: string): Promise<Record<string, readonly string[] | undefined>> =>
       Object.fromEntries((await ctx.llm.listModels(provider)).map(model => [model.id, model.inputModalities]))
 
-    expect(await listed('acme-gateway')).toEqual({ bare: ['text'], seeing: ['text', 'image'] })
+    // The undeclared entry takes the modern route default, not a text floor.
+    expect(await listed('acme-gateway')).toEqual({ bare: ['text', 'image'], seeing: ['text', 'image'] })
     expect(await listed('vision-gateway')).toEqual({ bare: ['text', 'image'], deaf: ['text'] })
     expect((await ctx.llm.resolveModelInfo('acme-gateway', 'seeing')).inputModalities).toEqual(['text', 'image'])
 
@@ -255,6 +259,62 @@ describe('hand-declared providers', () => {
     const vision = getBuiltinModels('anthropic').find(model => model.input.includes('image'))
     if (vision === undefined) throw new Error('the installed catalog ships no anthropic vision model')
     expect((await ctx.llm.resolveModelInfo('anthropic', vision.id)).inputModalities).toEqual(vision.input)
+  })
+
+  it('carries harness-level modalities to the model info without feeding them to pi-ai', async () => {
+    // `video`/`file` are harness vocabulary: a pi-ai Model can only carry the
+    // wire members its serializers emit, so the materialized model keeps the
+    // wire subset while `LlmModelInfo` reports the declaration verbatim.
+    const resolved = resolveProfiles({
+      'acme-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://acme.test',
+        models: [
+          { id: 'full', input: ['text', 'image', 'video', 'file'] },
+          { id: 'motion', input: ['video'] },
+        ],
+      },
+      'clip-gateway': {
+        api: 'openai-completions',
+        baseURL: 'https://clip.test',
+        defaultInput: ['text', 'video'],
+        models: [{ id: 'bare' }],
+      },
+    })
+    const modelInput = (route: string, id: string): readonly string[] | undefined =>
+      resolved.get(route)?.piProvider?.getModels().find(model => model.id === id)?.input
+
+    // The wire model narrows to what its serializer can emit...
+    expect(modelInput('acme-gateway', 'full')).toEqual(['text', 'image'])
+    // ...while the undeclared-wire entry inherits the route's wire members and
+    // keeps its harness-level claim alongside.
+    expect(modelInput('acme-gateway', 'motion')).toEqual(['text', 'image'])
+    expect(modelInput('clip-gateway', 'bare')).toEqual(['text'])
+
+    const dir = await home()
+    const ctx = await bootWithSettings(dir, {
+      providers: {
+        'acme-gateway': {
+          api: 'openai-completions',
+          baseURL: 'https://acme.test/v1',
+          models: [{ id: 'full', input: ['text', 'image', 'video', 'file'] }, { id: 'motion', input: ['video'] }],
+        },
+        'clip-gateway': {
+          api: 'openai-completions',
+          baseURL: 'https://clip.test/v1',
+          defaultInput: ['text', 'video'],
+          models: [{ id: 'bare' }],
+        },
+      },
+    })
+    expect((await ctx.llm.resolveModelInfo('acme-gateway', 'full')).inputModalities)
+      .toEqual(['text', 'image', 'video', 'file'])
+    expect((await ctx.llm.resolveModelInfo('acme-gateway', 'motion')).inputModalities)
+      .toEqual(['text', 'image', 'video'])
+    expect((await ctx.llm.resolveModelInfo('clip-gateway', 'bare')).inputModalities)
+      .toEqual(['text', 'video'])
+    expect((await ctx.llm.resolveModelInfo('acme-gateway', 'full')).inputModalities)
+      .toEqual((await ctx.llm.listModels('acme-gateway')).find(model => model.id === 'full')?.inputModalities)
   })
 
   it('reads an entry’s empty modality list as no answer, and the route’s as unserviceable', () => {
@@ -273,7 +333,9 @@ describe('hand-declared providers', () => {
         models: [{ id: 'bare', input: [] }],
       },
     })
-    expect(resolved.get('acme-gateway')?.piProvider?.getModels()[0]?.input).toEqual(['text'])
+    // The entry's empty list states no answer, so the hand-declared model
+    // takes the route's default — the modern pair, not a text floor.
+    expect(resolved.get('acme-gateway')?.piProvider?.getModels()[0]?.input).toEqual(['text', 'image'])
     expect(resolved.get('deepseek')?.piProvider?.getModels()[0]?.input).toEqual(catalogModel.input)
 
     // Nothing sits below the route value, so its empty list states no answer

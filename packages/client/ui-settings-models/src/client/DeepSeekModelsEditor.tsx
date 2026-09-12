@@ -10,6 +10,7 @@ import type { ReactNode } from 'react'
 import {
   IconChevronDownOutline14, IconChevronRightOutline14, IconPlusOutline16, IconTrashOutline16,
 } from '@deepseek-ai/dsh-client-ui-primitives'
+import { ModelInputTypes } from './ModelInputTypes.tsx'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
@@ -17,7 +18,7 @@ import styles from './ModelsSection.module.css'
 export type DeepSeekModelDraft = Record<string, unknown>
 
 /** The catalog fields this editor writes. */
-type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens'
+type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens' | 'inputModalities'
 
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
@@ -75,6 +76,13 @@ export interface DeepSeekModelsValidationFailure {
   /** Message key owned by the Models settings section. */
   key: 'modelIdRequired' | 'modelIdDuplicate' | 'modelNameInvalid' | 'modelContextInvalid'
   | 'modelMaxTokensInvalid'
+}
+
+/** A row's stored array field, or `undefined` when unset or not a string array. */
+export function arrayOf(value: unknown): readonly string[] | undefined {
+  return Array.isArray(value) && value.every(item => typeof item === 'string')
+    ? value as readonly string[]
+    : undefined
 }
 
 /** Convert a schema-validated catalog value into records without dropping hidden fields. */
@@ -136,6 +144,8 @@ export interface DeepSeekModelsEditorProps {
   t: (key: keyof typeof en) => string
   /** Disable every mutation. */
   disabled: boolean
+  /** Effective per-model modalities the Host resolved, by model id. */
+  resolvedModalities: ReadonlyMap<string, readonly string[]>
   /** Replace the user-owned array after one visible edit. */
   onChange: (models: DeepSeekModelDraft[]) => void
   /** Remove the user-owned array and return to inheritance. */
@@ -343,6 +353,13 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                     <div className={styles['modelAdvanced']}>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
+                      <ModelInputTypes
+                        declared={arrayOf(model['inputModalities'])}
+                        resolved={props.resolvedModalities.get(typeof model['id'] === 'string' ? model['id'] : '')}
+                        t={props.t}
+                        disabled={props.disabled}
+                        onChange={(next) => { update(index, 'inputModalities', next) }}
+                      />
                     </div>
                   )
                   : null}
@@ -354,7 +371,15 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
         type="button"
         className={styles['addModelButton']}
         disabled={props.disabled}
-        onClick={() => { props.onChange([...props.models.map(model => ({ ...model })), { id: '' }]) }}
+        onClick={() => {
+          props.onChange([...props.models.map(model => ({ ...model })), {
+            id: '',
+            // A new row claims the modern default explicitly instead of
+            // inheriting the text-only schema default; the checkboxes let the
+            // user correct either way.
+            inputModalities: ['text', 'image'],
+          }])
+        }}
       >
         <IconPlusOutline16 size={14} />
         {props.t('addModel')}

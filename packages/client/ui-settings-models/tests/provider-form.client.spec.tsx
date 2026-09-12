@@ -311,9 +311,10 @@ describe('model list editing', () => {
 
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalled() })
-    // What lands in settings is always a plain token count.
+    // What lands in settings is always a plain token count — and the new row
+    // carries its modern input default.
     expect(firstMutate(mutate).ops[0]?.value)
-      .toEqual([{ id: 'm', contextWindow: 1_000_000, maxTokens: 1000 }])
+      .toEqual([{ id: 'm', contextWindow: 1_000_000, maxTokens: 1000, input: ['text', 'image'] }])
   })
 
   it('refuses to apply while a capacity is unreadable', async () => {
@@ -805,7 +806,7 @@ describe('hand-declared providers', () => {
           apiKeyEnv: 'ACME_GATEWAY_API_KEY',
           api: 'openai-completions',
           baseURL: 'https://gateway.acme.example/v1',
-          models: [{ id: 'acme-large', contextWindow: 65_536 }],
+          models: [{ id: 'acme-large', contextWindow: 65_536, input: ['text', 'image'] }],
         },
       }],
       // The section this card was drafted over: a route another tab declared
@@ -1324,7 +1325,7 @@ describe('hand-declared providers', () => {
     expect(firstMutate(mutate).ops[0]?.value).toEqual({
       api: 'anthropic-messages',
       baseURL: 'https://acme.test/v1',
-      models: [{ id: 'm' }],
+      models: [{ id: 'm', input: ['text', 'image'] }],
     })
   })
 

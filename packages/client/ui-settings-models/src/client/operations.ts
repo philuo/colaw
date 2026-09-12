@@ -7,7 +7,7 @@
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type {
-  CredentialInfo, LlmDiscoveredModel, LlmModelDiscoveryRequest,
+  CredentialInfo, LlmDiscoveredModel, LlmModelDiscoveryRequest, LlmModelInfo,
   SettingsNamespaceView, SettingsPathOpView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 
@@ -71,6 +71,15 @@ export interface ModelsOperations {
    * @returns the candidates, or the refusal.
    */
   discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest): Promise<ModelDiscoveryOutcome>
+  /**
+   * Read one route's model catalog as the adapter resolves it — the effective
+   * per-model facts (modalities included) that an undeclared settings row
+   * inherits from.
+   * @param provider - the route key.
+   * @returns the models, or `undefined` when the Host refused (a dormant or
+   * unknown route); the card then falls back to its own display default.
+   */
+  listModels(provider: string): Promise<readonly LlmModelInfo[] | undefined>
 }
 
 /**
@@ -104,6 +113,10 @@ export function createModelsOperations(ctx: ClientContext): ModelsOperations {
       return response.ok
         ? { kind: 'found', models: response.value }
         : { kind: 'refused', message: response.error.message }
+    },
+    listModels: async (provider) => {
+      const response = await ctx.remote.llm.listModels(provider)
+      return response.ok ? response.value : undefined
     },
   }
 }

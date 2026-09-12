@@ -124,6 +124,8 @@ export interface ModelCatalogModel {
   readonly name: string
   readonly description?: string
   readonly reasoning?: ModelReasoning
+  /** Request modalities the model accepts; absent when the adapter does not say. */
+  readonly inputModalities?: readonly string[]
 }
 
 /** One provider and its successfully loaded model catalog. */

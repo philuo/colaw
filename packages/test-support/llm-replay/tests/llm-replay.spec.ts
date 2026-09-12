@@ -2203,7 +2203,7 @@ describe('apply (the plugin entry)', () => {
     const providers = [{ id: 'm', models: [{ id: 'm', inputModalities }] }] as unknown as
       NonNullable<Config['providers']>
     expect(() => { apply(ctx, { file, providers }) }).toThrow(
-      'llm-replay: provider "m" model "m" inputModalities must be an array containing only "text" and "image"',
+      'llm-replay: provider "m" model "m" inputModalities must be an array containing only "text", "image", "video", and "file"',
     )
   })
 

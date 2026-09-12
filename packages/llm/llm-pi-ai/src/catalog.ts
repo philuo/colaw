@@ -36,33 +36,49 @@ import type {
  */
 const NO_COST: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
 
-/** One request modality a pi-ai model may accept. */
-export type PiAiModality = Model<Api>['input'][number]
+/**
+ * One request modality a profile may declare. The pi-ai members are the ones
+ * its `Model.input` can carry and its serializers can emit; `video` and `file`
+ * are the harness-level vocabulary — configuration accepts them and the model
+ * info reports them, while a materialized pi-ai `Model` carries only the wire
+ * modalities (see {@link declaredInput}) until an adapter learns to dispatch
+ * the rest.
+ */
+export type PiAiModality = Model<Api>['input'][number] | 'video' | 'file'
 
 /**
- * Every pi-ai request modality. The `Record` key type is a drift gate: a pi-ai
+ * Every request modality a profile may declare. The `Record` key type is a drift gate: a pi-ai
  * upgrade that adds or removes a modality fails compilation here naming the
  * drifted key, instead of silently narrowing what a profile may declare.
  */
 const MODALITY_GATE: Record<PiAiModality, true> = {
   text: true,
   image: true,
+  video: true,
+  file: true,
 }
 
 /** Every request modality a profile may declare. */
 export const MODALITIES = Object.keys(MODALITY_GATE) as readonly PiAiModality[]
 
 /**
- * One entry's modality list, or `undefined` when it states no answer. Absent
- * and empty mean the same thing — `[]` describes a model that accepts nothing
- * and could serve no request — which is what makes an entry naming a catalog
- * model without declaring modalities keep the catalog's, since the config
- * schema materializes `[]` for an absent array.
+ * One entry's modalities as pi-ai's `Model.input` can carry them, or
+ * `undefined` when the entry states no answer. Absent and empty mean the same
+ * thing — `[]` describes a model that accepts nothing and could serve no
+ * request — which is what makes an entry naming a catalog model without
+ * declaring modalities keep the catalog's, since the config schema
+ * materializes `[]` for an absent array. A declaration naming only the
+ * harness-level modalities (`video`/`file`) also inherits: it cannot become a
+ * wire answer on its own, and `[]` would describe a model that accepts
+ * nothing. The full verbatim declaration rides {@link RouteCatalog.configuredInput}.
  * @param configured - the list a `models` or `modelOverrides` entry supplied.
- * @returns the declared modalities, or `undefined` to ask the next level.
+ * @returns the wire-modalities subset, or `undefined` to ask the next level.
  */
 function declaredInput(configured: readonly PiAiModality[] | undefined): Model<Api>['input'] | undefined {
-  return configured === undefined || configured.length === 0 ? undefined : [...configured]
+  if (configured === undefined || configured.length === 0) return undefined
+  const wire = configured.filter((modality): modality is 'text' | 'image' =>
+    modality === 'text' || modality === 'image')
+  return wire.length === 0 ? undefined : [...wire]
 }
 
 /**
@@ -636,8 +652,12 @@ export interface RouteCatalogRequest {
   defaultContextWindow: number
   /** Output capability for a model neither the entry nor the catalog sizes. */
   defaultMaxTokens: number
-  /** Modalities for a model neither the entry nor the catalog declares. */
-  defaultInput: Model<Api>['input']
+  /**
+   * Modalities for a model neither the entry nor the catalog declares. The
+   * full declared vocabulary: wire members feed the materialized model,
+   * harness-level members ride {@link RouteCatalog.configuredInput}.
+   */
+  defaultInput: readonly PiAiModality[]
 }
 
 /** An expected configuration failure that stored-catalog reads may retain for repair. */
@@ -814,6 +834,14 @@ export interface RouteCatalog {
    * picked, so only an explicit configuration lands here.
    */
   configuredMaxTokens: ReadonlyMap<string, number>
+  /**
+   * Modalities an entry declared verbatim, by model id — including `video` and
+   * `file`, which pi-ai's `Model.input` cannot carry but the harness model
+   * info must report. Wire members come from the same resolution the
+   * materialized model got, so the map is the effective declaration, not an
+   * echo of configuration.
+   */
+  configuredInput: ReadonlyMap<string, readonly PiAiModality[]>
 }
 
 /**
@@ -879,6 +907,7 @@ export function resolveRouteModels(
   assertOfferedCompatFields(provider, 'route', request.compat)
   const seen = new Set<string>()
   const configuredMaxTokens = new Map<string, number>()
+  const configuredInput = new Map<string, readonly PiAiModality[]>()
   const resolveEntry = (entry: PiAiModelProfile): Model<Api> => {
     assertOfferedCompatFields(provider, `model "${entry.id}"`, entry.compat)
     if (entry.id.length === 0) invalid(provider, 'has a model with an empty id')
@@ -909,6 +938,30 @@ export function resolveRouteModels(
     // Only a value the profile named is a deployment choice; the catalog's is
     // the model's capability and stays out of request defaults.
     if (entry.maxTokens !== undefined) configuredMaxTokens.set(entry.id, entry.maxTokens)
+    // The wire answer: the entry's declaration wins, then the catalog's, then
+    // the route default's wire members. Only harness-level modalities
+    // (`video`/`file`) are not wire members, so a declaration or default of
+    // them alone would describe a model that accepts nothing — refused.
+    const wire = declaredInput(entry.input) ?? base?.input
+      ?? declaredInput(request.defaultInput) ?? []
+    if (wire.length === 0) {
+      invalid(provider, `model "${entry.id}" resolves no wire modalities; declare at least `
+        + 'one of text or image on the entry or the route defaultInput')
+    }
+    // An entry that declares modalities is the harness-visible answer, its
+    // wire members resolved exactly as the materialized model got them, with
+    // the harness-level members riding along. A model with no catalog base
+    // reports the route default the same way — it is that model's only answer.
+    if (entry.input !== undefined && entry.input.length > 0) {
+      const extras = entry.input.filter(modality => modality !== 'text' && modality !== 'image')
+        .filter(modality => !(wire as readonly string[]).includes(modality))
+      configuredInput.set(entry.id, [...wire, ...extras])
+    } else if (base?.input === undefined) {
+      const defaults = request.defaultInput
+        .filter(modality => modality !== 'text' && modality !== 'image')
+        .filter(modality => !(wire as readonly string[]).includes(modality))
+      configuredInput.set(entry.id, [...wire, ...defaults])
+    }
     return {
       // The installed entry lays the floor, and the fields below override it.
       // Enumerating instead would silently drop every `Model` field this
@@ -921,7 +974,7 @@ export function resolveRouteModels(
       api,
       provider,
       baseUrl,
-      input: declaredInput(entry.input) ?? base?.input ?? [...request.defaultInput],
+      input: wire,
       cost: base?.cost ?? NO_COST,
       contextWindow,
       maxTokens,
@@ -953,5 +1006,5 @@ export function resolveRouteModels(
     invalid(provider, `sets compat "${field}", but no model on the route speaks a protocol that takes it;`
       + ` it exists on ${takers.join(', ')}`)
   }
-  return { models: serviceableModels, configuredMaxTokens, modelErrors }
+  return { models: serviceableModels, configuredMaxTokens, configuredInput, modelErrors }
 }

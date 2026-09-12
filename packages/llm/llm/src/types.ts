@@ -204,6 +204,10 @@ export interface LlmProviderInfo {
 export interface ModelModalityMap {
   text: 'text'
   image: 'image'
+  /** Motion-picture input, dispatched per protocol (GLM's `video_url`, …). */
+  video: 'video'
+  /** Document input, dispatched per protocol (GLM's `file`, …). */
+  file: 'file'
 }
 
 /** Any declared provider model modality. */

@@ -196,6 +196,22 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     return () => { stale = true }
   }, [operations, keyRef])
 
+  // The effective per-model facts (modalities included) an undeclared row
+  // inherits, so the input-type checkboxes show what the model really does
+  // instead of reading as text-only. A route the adapter cannot describe (a
+  // dormant entry, an unknown key) leaves the map empty and the checkboxes
+  // fall back to the text floor.
+  const [resolvedModalities, setResolvedModalities] = useState<ReadonlyMap<string, readonly string[]>>(() => new Map())
+  useEffect(() => {
+    if (layout !== 'deepseek' && layout !== 'pi-ai') return
+    let stale = false
+    void operations.listModels(props.provider).then((models) => {
+      if (stale || models === undefined) return
+      setResolvedModalities(new Map(models.map(model => [model.id, model.inputModalities ?? ['text']])))
+    }).catch(() => { /* the fallback display does not need the host answer */ })
+    return () => { stale = true }
+  }, [operations, props.provider, layout])
+
   const stringAt = (source: unknown, key: string): string | undefined => {
     const value = schema.getPath(source, [key])
     return typeof value === 'string' && value.trim().length > 0 ? value : undefined
@@ -353,6 +369,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       overridden: modelsOverridden,
       t,
       disabled,
+      resolvedModalities,
       onChange: (next: Record<string, unknown>[]) => {
         setDraft(current => schema.setPath(current, ['models'], next))
       },

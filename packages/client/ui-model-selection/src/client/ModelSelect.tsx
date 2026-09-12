@@ -86,6 +86,10 @@ export function ModelSelect(
     : choices.findIndex(c => c.selection.provider === state.current?.provider && c.selection.model === state.current.model)
   const currentChoice = choices[selectedIndex]
   const reasoning = currentChoice?.model.reasoning
+  // The capability chip: the model's resolved modalities claim image input,
+  // so the composer says 视觉. Absent modalities (an adapter that does not
+  // say) keep the chip off rather than claiming a capability.
+  const vision = currentChoice?.model.inputModalities?.includes('image') === true
   const effectiveEffort = state.current?.reasoningEffort ?? reasoning?.defaultEffort
   const effortLabel = reasoning === undefined
     ? undefined
@@ -280,6 +284,7 @@ export function ModelSelect(
       >
         <IconDataOutline16 className={css.triggerIcon} size={16} />
         <span className={css.triggerLabel}>{modelLabel}</span>
+        {vision && <span className={css.triggerBadge}>{t('trigger.visionBadge')}</span>}
         {effortLabel !== undefined && <span className={css.triggerEffort}>{effortLabel}</span>}
         <IconChevronDownOutline14 className={clsx(css.chevron, open && css.chevronOpen)} />
       </button>

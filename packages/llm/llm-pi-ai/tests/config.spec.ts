@@ -63,6 +63,11 @@ describe('modality schema boundary', () => {
     expect(routeWith({ defaultInput: ['text', 'audio'] })).toThrow(/expected/)
   })
 
+  it('accepts the harness-level modalities at either level', () => {
+    expect(configWith({ input: ['text', 'video', 'file'] })).not.toThrow()
+    expect(routeWith({ defaultInput: ['text', 'image', 'video', 'file'] })).not.toThrow()
+  })
+
   it('refuses a route whose models could accept nothing', () => {
     // The pair the settings seam runs: the schema accepts the empty list as
     // well-typed, and the namespace validator is what refuses it. Asserting
@@ -76,12 +81,12 @@ describe('modality schema boundary', () => {
     providers: Record<string, { defaultInput?: unknown; models?: { input?: unknown }[] }>
   }
 
-  it('materializes an absent entry list as empty and an absent route list as text', () => {
+  it('materializes an absent entry list as empty and an absent route list as the modern pair', () => {
     // The empty-list inheritance rule exists because of exactly this: an entry
     // that declares nothing reaches resolution as `[]`, not as `undefined`.
     const absent = configWith({})() as Materialized
     expect(absent.providers['acme-gateway']?.models?.[0]?.input).toEqual([])
-    expect(absent.providers['acme-gateway']?.defaultInput).toEqual(['text'])
+    expect(absent.providers['acme-gateway']?.defaultInput).toEqual(['text', 'image'])
   })
 })
 

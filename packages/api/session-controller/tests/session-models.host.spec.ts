@@ -391,6 +391,18 @@ describe('Web session model selection', () => {
     ctx.llm.registerAdapter(['plain'], new CatalogAdapter('Plain', [
       { provider: 'plain', id: 'plain-model', name: 'Plain Model' },
     ]))
+    ctx.llm.registerAdapter(['vision-claim'], new class extends CatalogAdapter {
+      override resolveModel(provider: string, model: string): Promise<LlmResolvedModelInfo> {
+        return Promise.resolve({
+          provider,
+          id: model,
+          name: model,
+          inputModalities: ['text', 'image', 'video', 'file'],
+        })
+      }
+    }('Vision Claim', [
+      { provider: 'vision-claim', id: 'vision-model', name: 'Vision Model' },
+    ]))
     ctx.llm.registerAdapter(['described-reasoning'], new CatalogAdapter('Described Reasoning', [
       { provider: 'described-reasoning', id: 'reasoning-model', name: 'Reasoning Model' },
     ], {
@@ -410,6 +422,15 @@ describe('Web session model selection', () => {
     const catalog = await buildModelCatalog(ctx)
     expect(catalog.groups).toEqual(expect.arrayContaining([
       { id: 'plain', name: 'Plain', models: [{ id: 'plain-model', name: 'Plain Model' }] },
+      {
+        id: 'vision-claim',
+        name: 'Vision Claim',
+        models: [{
+          id: 'vision-model',
+          name: 'Vision Model',
+          inputModalities: ['text', 'image', 'video', 'file'],
+        }],
+      },
       {
         id: 'described-reasoning',
         name: 'Described Reasoning',

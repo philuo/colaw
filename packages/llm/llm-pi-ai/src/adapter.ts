@@ -276,12 +276,14 @@ export class PiAiAdapter extends LlmAdapter {
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
     return Promise.resolve().then(() => {
       const snapshot = this.current()
-      this.profileOf(snapshot, provider)
+      const profile = this.profileOf(snapshot, provider)
       return snapshot.models.getModels(provider).map(model => ({
         provider,
         id: model.id,
         name: model.name,
-        inputModalities: [...model.input],
+        // The verbatim declaration wins: pi-ai's Model.input cannot carry the
+        // harness-level modalities (video/file) the entry may have declared.
+        inputModalities: [...(profile.configuredInput.get(model.id) ?? model.input)],
       }))
     })
   }
@@ -308,7 +310,9 @@ export class PiAiAdapter extends LlmAdapter {
       provider,
       id: model,
       name: resolvedModel.name,
-      inputModalities: [...resolvedModel.input],
+      // Same precedence as listModels: the verbatim declaration over the
+      // materialized wire modalities.
+      inputModalities: [...(profile.configuredInput.get(model) ?? resolvedModel.input)],
       context: { contextWindow: resolvedModel.contextWindow },
       ...configuredMaxTokens === undefined ? {} : { defaultMaxTokens: configuredMaxTokens },
       ...reasoningInfo(resolvedModel, defaultLevel),

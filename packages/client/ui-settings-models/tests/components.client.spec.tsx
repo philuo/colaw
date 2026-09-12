@@ -16,6 +16,7 @@ import { pathOps } from '../src/client/ProviderEditor.tsx'
 import {
   DeepSeekModelsEditor, formatCapacity, modelDrafts, parseCapacity, validateDeepSeekModels,
 } from '../src/client/DeepSeekModelsEditor.tsx'
+import { ModelListEditor } from '../src/client/ModelListEditor.tsx'
 import { apiKeyFailure } from '../src/client/apiKey.ts'
 import { SettingsDescribeMirror } from '@deepseek-ai/dsh-client-ui-settings/src/client/settings-mirror.ts'
 import { deriveKeyRef, ModelsSettingsStore } from '../src/client/store.ts'
@@ -183,6 +184,12 @@ function scriptedFace(overrides: {
         { provider: 'plain', displayName: 'plain', settingsNs: 'llm-plain', settingsPath: ['profiles', 'plain'], active: false },
       ].map(({ active: _active, ...entry }) => entry)))),
       discoverModels: vi.fn(() => Promise.resolve(remoteOk([]))),
+      listModels: vi.fn(() => Promise.resolve(remoteOk([
+        {
+          provider: 'deepseek-official', id: 'deepseek-v4-flash', name: 'DeepSeek-V4-Flash',
+          inputModalities: ['text', 'image'],
+        },
+      ]))),
     },
     settings: {
       describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, hasDocument: false, namespaces: wireNamespaces() }))),
@@ -658,7 +665,8 @@ describe('ModelsSection', () => {
         path: ['models'],
         value: [
           ...DEFAULT_DEEPSEEK_MODELS,
-          { id: 'private-preview', name: 'Private Preview', contextWindow: 131_072 },
+          // A new row claims the modern default pair explicitly.
+          { id: 'private-preview', name: 'Private Preview', contextWindow: 131_072, inputModalities: ['text', 'image'] },
         ],
       }],
       0,
@@ -968,6 +976,7 @@ describe('ModelsSection', () => {
       overridden={false}
       defaultContextWindow={undefined}
       defaultMaxTokens={undefined}
+      resolvedModalities={new Map()}
       t={t}
       disabled={true}
       onChange={vi.fn()}
@@ -979,6 +988,105 @@ describe('ModelsSection', () => {
       .toBe(en.contextWindowPlaceholder)
     expect(screen.getByLabelText<HTMLInputElement>(`${en.maxTokens} 1`).placeholder)
       .toBe(en.maxTokensPlaceholder)
+  })
+
+  it('edits one row’s declared input types and shows the inherited state when it is silent', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<DeepSeekModelsEditor
+      models={[{ id: 'm', inputModalities: ['text', 'image'] }]}
+      overridden={true}
+      resolvedModalities={new Map()}
+      defaultContextWindow={undefined}
+      defaultMaxTokens={undefined}
+      t={t}
+      disabled={false}
+      onChange={onChange}
+      onReset={vi.fn()}
+    />)
+    expandRow(1)
+    const group = screen.getByRole('group', { name: en.inputTypes })
+    // Text is pinned; the declaration drives the rest.
+    expect((within(group).getByLabelText(en.inputText) as HTMLInputElement).checked).toBe(true)
+    expect((within(group).getByLabelText(en.inputText) as HTMLInputElement).disabled).toBe(true)
+    expect((within(group).getByLabelText(en.inputImage) as HTMLInputElement).checked).toBe(true)
+    expect((within(group).getByLabelText(en.inputVideo) as HTMLInputElement).checked).toBe(false)
+    expect(screen.queryByText(en.inputTypesHint)).toBeNull()
+
+    // Ticking video materializes the full array; unticking images narrows it.
+    fireEvent.click(within(group).getByLabelText(en.inputVideo))
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'm', inputModalities: ['text', 'image', 'video'] }])
+    fireEvent.click(within(group).getByLabelText(en.inputImage))
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'm', inputModalities: ['text'] }])
+
+    // A silent row shows the host-resolved state and says so; text stays pinned.
+    rerender(<DeepSeekModelsEditor
+      models={[{ id: 'm' }]}
+      overridden={true}
+      resolvedModalities={new Map([['m', ['text', 'image', 'file']]])}
+      defaultContextWindow={undefined}
+      defaultMaxTokens={undefined}
+      t={t}
+      disabled={false}
+      onChange={onChange}
+      onReset={vi.fn()}
+    />)
+    const inherited = screen.getByRole('group', { name: en.inputTypes })
+    expect((within(inherited).getByLabelText(en.inputImage) as HTMLInputElement).checked).toBe(true)
+    expect((within(inherited).getByLabelText(en.inputFile) as HTMLInputElement).checked).toBe(true)
+    expect((within(inherited).getByLabelText(en.inputVideo) as HTMLInputElement).checked).toBe(false)
+    expect(screen.getByText(en.inputTypesHint)).toBeTruthy()
+  })
+
+  it('adds rows claiming the modern input default on both editor families', () => {
+    const deepseek = vi.fn()
+    const first = render(<DeepSeekModelsEditor
+      models={[{ id: 'kept' }]}
+      overridden={true}
+      resolvedModalities={new Map()}
+      defaultContextWindow={undefined}
+      defaultMaxTokens={undefined}
+      t={t}
+      disabled={false}
+      onChange={deepseek}
+      onReset={vi.fn()}
+    />)
+    fireEvent.click(screen.getByText(en.addModel))
+    expect(deepseek).toHaveBeenLastCalledWith([
+      { id: 'kept' },
+      { id: '', inputModalities: ['text', 'image'] },
+    ])
+    first.unmount()
+
+    const piAi = vi.fn()
+    render(<ModelListEditor
+      models={[]}
+      onChange={piAi}
+      probe={{ settingsNs: 'llm-pi-ai' }}
+      operations={{} as ModelsOperations}
+      t={t}
+      disabled={false}
+      resolvedModalities={new Map()}
+    />)
+    fireEvent.click(screen.getByText(en.addModel))
+    expect(piAi).toHaveBeenLastCalledWith([{ id: '', input: ['text', 'image'] }])
+  })
+
+  it('writes a declared input-type array through the card to the settings ops', async () => {
+    const { mutate } = await mountDeepSeekCard()
+    fireEvent.click(screen.getByText(en.customized))
+    expandRow(1)
+    // The row declares nothing, so the checkboxes show the host-resolved
+    // state; wait for it before toggling, exactly as a user reads it.
+    const group = screen.getAllByRole('group', { name: en.inputTypes })[0] as HTMLElement
+    await waitFor(() => {
+      expect((within(group).getByLabelText(en.inputImage) as HTMLInputElement).checked).toBe(true)
+    })
+    fireEvent.click(within(group).getByLabelText(en.inputVideo))
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    const ops = mutate.mock.calls[0] as unknown as [string, Array<{ path: string[]; value: unknown }>, number]
+    const models = ops[1].find(op => op.path.join('.') === 'models')?.value as Array<Record<string, unknown>>
+    expect(models[0]).toMatchObject({ id: 'deepseek-v4-flash', inputModalities: ['text', 'image', 'video'] })
   })
 
   it('can empty and reset the model override, then clear optional fields without dropping hidden data', async () => {

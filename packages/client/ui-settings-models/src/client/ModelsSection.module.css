@@ -514,6 +514,35 @@
   line-height: 18px;
 }
 
+/* One model row's input-type group: the label above a horizontal check row,
+   with the inherited-state hint beneath. */
+.inputTypes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.inputTypeChecks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
+.inputTypeCheck {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dsw-alias-label-primary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.inputTypesHint {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 16px;
+}
+
 .modelEmpty {
   padding: 12px;
   border: 1px dashed var(--dsw-alias-border-l3);

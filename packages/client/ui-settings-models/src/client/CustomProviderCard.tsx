@@ -37,6 +37,9 @@ import styles from './ModelsSection.module.css'
 /** The settings namespace a hand-declared provider is written into. */
 const NS = 'llm-pi-ai'
 
+/** The create card's resolved-modality map: no live route, nothing to inherit. */
+const EMPTY_MODALITIES: ReadonlyMap<string, readonly string[]> = new Map()
+
 /**
  * A route id usable as a settings key AND as the stem of a credential name.
  * The leading letter is the second half of that: `deriveKeyRef` uppercases the
@@ -278,6 +281,9 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       <ModelListEditor
         models={models}
         onChange={setModels}
+        // The route does not exist yet, so there is no host-resolved catalog
+        // to inherit from; the rows' own declarations are the only state.
+        resolvedModalities={EMPTY_MODALITIES}
         probe={{
           settingsNs: NS,
           baseURL: normalizedBaseURL,

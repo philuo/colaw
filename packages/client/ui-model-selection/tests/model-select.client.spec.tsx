@@ -251,4 +251,32 @@ describe('ModelSelect reasoning effort', () => {
     expect(screen.queryByRole('button')).toBeNull()
     expect(load).not.toHaveBeenCalled()
   })
+
+  it('shows the vision chip exactly when the selected model claims image input', () => {
+    const renderState = (models: ModelDirectoryState['groups'][number]['models']): void => {
+      cleanup()
+      render(<ModelSelect
+        locked={false}
+        available
+        directory={createSnapshotStore(state({
+          groups: [{ id: 'p', name: 'P', models }],
+          current: { provider: 'p', model: models[0]?.id ?? '' },
+        }))}
+        load={vi.fn()}
+        select={vi.fn().mockResolvedValue(true)}
+        t={t}
+      />)
+    }
+
+    renderState([{ id: 'vision', name: 'Vision Model', inputModalities: ['text', 'image', 'video', 'file'] }])
+    expect(screen.getByText(zh['trigger.visionBadge'])).toBeTruthy()
+
+    renderState([{ id: 'plain', name: 'Plain Model', inputModalities: ['text'] }])
+    expect(screen.queryByText(zh['trigger.visionBadge'])).toBeNull()
+
+    // An adapter that says nothing keeps the chip off rather than claiming
+    // a capability.
+    renderState([{ id: 'silent', name: 'Silent Model' }])
+    expect(screen.queryByText(zh['trigger.visionBadge'])).toBeNull()
+  })
 })

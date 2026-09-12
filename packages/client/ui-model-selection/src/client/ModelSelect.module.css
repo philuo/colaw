@@ -62,6 +62,22 @@
   color: var(--dsw-alias-label-caption);
 }
 
+/* The 视觉/Vision chip: a read-only capability badge for the selected model,
+   shrunk away after the effort does — the name stays legible longest, then
+   the effort, then this. */
+.triggerBadge {
+  flex-shrink: 2000;
+  flex-basis: auto;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-caption);
+  font-size: 10px;
+  line-height: 16px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
 /* Stand-in for the whole text below the icon-only cut: the settings page's
    Models glyph (IconDataOutline16), hidden while any text fits. */
 .triggerIcon {
@@ -80,7 +96,8 @@
   }
 
   .triggerLabel,
-  .triggerEffort {
+  .triggerEffort,
+  .triggerBadge {
     display: none;
   }
 }

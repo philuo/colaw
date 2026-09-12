@@ -68,15 +68,15 @@ export const DEFAULT_MAX_TOKENS = 32_768
 
 /**
  * Modalities assumed for a model neither configuration nor the catalog
- * declares. Text is the floor every supported protocol certainly carries, so
- * this is the absence of a declaration rather than a guess at the endpoint:
- * nothing can interrogate a gateway for its modalities, and the two wrong
- * answers do not cost the same. Under-claiming refuses the image before it is
- * attached, naming the model. Over-claiming admits one the provider then
- * rejects mid-turn, after the message is durable, leaving the session
- * repeating a request that cannot succeed.
+ * declares. Nothing can interrogate a gateway for its modalities, and the two
+ * wrong answers do not cost the same — but the wrong answer here is no longer
+ * text-only: the product treats an undeclared model as vision-capable, because
+ * that is what the overwhelming majority of current models are and because the
+ * settings editor makes the declaration explicit per model (a genuinely
+ * text-only model declares `['text']`; over-claiming then only risks a
+ * mid-turn provider rejection, not a silently lost capability).
  */
-export const DEFAULT_INPUT: readonly PiAiModality[] = ['text']
+export const DEFAULT_INPUT: readonly PiAiModality[] = ['text', 'image']
 
 export type {
   PiAiCompatProfile,
@@ -139,10 +139,10 @@ export interface PiAiProviderProfile {
   /**
    * Request modalities for a model this route lists that neither its entry's
    * {@link PiAiModelProfile.input} nor the installed catalog declares (default
-   * `[text]`). A fallback like the capacities above, not an override: a
+   * `[text, image]`). A fallback like the capacities above, not an override: a
    * catalog model keeps the modalities the catalog records for it, and this
-   * value never narrows one. A gateway serving vision models the catalog does
-   * not describe declares `[text, image]` once here instead of on every entry.
+   * value never narrows one. A gateway serving text-only models the catalog
+   * does not describe declares `['text']` once here instead of on every entry.
    * Unlike an entry's list, this one may not be empty — nothing sits below it
    * to answer instead.
    */
@@ -215,6 +215,8 @@ export interface ResolvedPiAiProviderProfile
    * own, so a catalog capability must not appear here.
    */
   configuredMaxTokens: ReadonlyMap<string, number>
+  /** Modalities an entry declared verbatim, by model id (see {@link RouteCatalog.configuredInput}). */
+  configuredInput: ReadonlyMap<string, readonly PiAiModality[]>
 }
 
 /** Plugin configuration: the provider routes this instance owns. */
@@ -497,6 +499,7 @@ export function resolveProfiles(
       ...rest.headers === undefined ? {} : { headers: { ...rest.headers } },
       ...rest.thinkingBudgets === undefined ? {} : { thinkingBudgets: { ...rest.thinkingBudgets } },
       configuredMaxTokens: catalog?.configuredMaxTokens ?? new Map(),
+      configuredInput: catalog?.configuredInput ?? new Map(),
       modelErrors: catalog?.modelErrors ?? new Map(),
       ...piProvider === undefined ? {} : { piProvider },
       ...catalogError === undefined ? {} : { catalogError },

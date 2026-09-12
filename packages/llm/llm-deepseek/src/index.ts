@@ -127,7 +127,10 @@ const DEFAULT_MODELS: DeepSeekCatalogModel[] = [
   },
 ]
 
-const MODEL_MODALITIES = ['text', 'image'] as const satisfies readonly ModelModality[]
+// The full harness vocabulary: the serializer dispatches only the wire members
+// today (images; files ride handle text), but a stored catalog entry may declare
+// what its endpoint serves, and the model info must carry it verbatim.
+const MODEL_MODALITIES = ['text', 'image', 'video', 'file'] as const satisfies readonly ModelModality[]
 
 /**
  * Plugin config, validated by the same-named schemastery schema and doubling

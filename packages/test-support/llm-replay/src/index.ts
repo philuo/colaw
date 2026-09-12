@@ -1142,10 +1142,11 @@ function validateConfiguredModels(providers: ReplayProviderConfig[] | undefined)
     for (const model of provider.models ?? []) {
       const modalities: unknown = model.inputModalities
       if (modalities !== undefined && (!Array.isArray(modalities)
-        || !modalities.every((modality: unknown) => modality === 'text' || modality === 'image'))) {
+        || !modalities.every((modality: unknown) => modality === 'text' || modality === 'image'
+          || modality === 'video' || modality === 'file'))) {
         throw new Error(
           `llm-replay: provider "${provider.id}" model "${model.id}" inputModalities `
-          + 'must be an array containing only "text" and "image"',
+          + 'must be an array containing only "text", "image", "video", and "file"',
         )
       }
       const imageRequestTokens: unknown = model.imageRequestTokens

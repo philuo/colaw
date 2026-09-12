@@ -18,7 +18,8 @@ import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
 import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
-import { formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
+import { ModelInputTypes } from './ModelInputTypes.tsx'
+import { arrayOf, formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { ModelsOperations } from './operations.ts'
 import type { DeepSeekModelDraft } from './DeepSeekModelsEditor.tsx'
 import type { en } from './locales.ts'
@@ -85,6 +86,8 @@ export interface ModelListEditorProps {
   t: (key: keyof typeof en) => string
   /** Disable every control (read-only deployment or a pending write). */
   disabled: boolean
+  /** Effective per-model modalities the Host resolved, by model id. */
+  resolvedModalities: ReadonlyMap<string, readonly string[]>
 }
 
 /** Disclosure chevron; rotates to point down while its row is open. */
@@ -209,7 +212,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
     })
   }
 
-  const patch = (index: number, next: Record<string, string | number | undefined>): void => {
+  const patch = (index: number, next: Record<string, unknown>): void => {
     onChange(models.map((model, at) => {
       if (at !== index) return model
       // Rebuilt rather than spread over: an emptied optional field has to leave
@@ -433,6 +436,13 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                     onChange={(event) => { editCapacity(index, 'maxTokens', event.target.value) }}
                   />
                 </label>
+                <ModelInputTypes
+                  declared={arrayOf(model['input'])}
+                  resolved={props.resolvedModalities.get(textOf(model, 'id'))}
+                  t={t}
+                  disabled={disabled}
+                  onChange={(next) => { patch(index, { input: next }) }}
+                />
               </div>
             )
             : null}
@@ -442,7 +452,15 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         type="button"
         className={styles['addModelButton']}
         disabled={disabled}
-        onClick={() => { onChange([...models, { id: '' }]) }}
+        onClick={() => {
+          onChange([...models, {
+            id: '',
+            // A new row claims the modern default explicitly instead of
+            // inheriting whatever the route falls back to; the checkboxes let
+            // the user correct either way.
+            input: ['text', 'image'],
+          }])
+        }}
       >
         {t('addModel')}
       </button>
