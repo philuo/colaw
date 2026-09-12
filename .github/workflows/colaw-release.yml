@@ -77,13 +77,17 @@ jobs:
           mkdir -p "$COLAW_PACK_STAGING"
           cp -R apps/electrobun-host/build/stable-macos-arm64/Colaw.app "$COLAW_PACK_STAGING/"
 
-      - name: Upload the pack log (debug side-channel)
+      - name: Ship the pack log back to the ci-debug branch
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pack-log
-          path: /tmp/pack-ci.log
-          if-no-files-found: ignore
+        run: |
+          git config user.name "ci-debug-bot"
+          git config user.email "ci-debug@users.noreply.github.com"
+          git checkout -B ci-debug
+          STAMP=$(date +%H%M%S)
+          { echo "run: ${{ github.run_id }} commit: ${{ github.sha }}"; echo "df:"; df -h / /tmp; echo; cat /tmp/pack-ci.log 2>/dev/null || echo "(pack log absent — failed before tee)"; } > ".pack-ci-$STAMP.log"
+          git add .pack-ci-*.log
+          git commit -m "ci debug: pack log $STAMP"
+          git push --force origin HEAD:ci-debug
 
       - name: Build the official release set (identity, manifest, patches)
         working-directory: apps/electrobun-host
