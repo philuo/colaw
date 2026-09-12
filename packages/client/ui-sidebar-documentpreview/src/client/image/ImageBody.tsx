@@ -36,7 +36,7 @@ type ImageSource =
 /** Wheel zoom grows with the gesture's pixel magnitude, like Preview: a
  * notch is a comfortable step while a trackpad pinch's rapid small deltas
  * compose into one smooth continuous zoom instead of a per-event jump. */
-const WHEEL_ZOOM_SENSITIVITY = 0.0025
+const WHEEL_ZOOM_SENSITIVITY = 0.003
 /** Per-event factor bounds, so one malformed delta cannot leap the view. */
 const GESTURE_FACTOR_MIN = 0.5
 const GESTURE_FACTOR_MAX = 2
@@ -56,11 +56,13 @@ export function imageMediaType(path: string): ImageMediaType | undefined {
 }
 
 /**
- * Present complete image bytes fitted to the pane: the resting posture shows
- * the whole image centered on both axes (never upscaled past its natural
- * pixels). ⌘/Ctrl+wheel (the trackpad pinch gesture) zooms toward the pointer,
- * a drag pans while zoomed in, and a double-click toggles between fit and a
- * close-up — the badge reports the natural-pixel scale and resets on click.
+ * Present complete image bytes: the resting posture is CSS containment — the
+ * whole image centered and complete, never thinner than half the pane (a
+ * width-floored tall image pans with wheel or drag like a scrollable
+ * document). ⌘/Ctrl+wheel (the trackpad pinch gesture) zooms toward the
+ * pointer with a factor proportional to the gesture, a double-click toggles
+ * fit ↔ 2×, and the badge reports the natural-pixel scale and resets on
+ * click.
  * @param props - document bytes, resource identity, and locale.
  * @returns the fitted, zoomable image surface.
  */
@@ -113,19 +115,24 @@ function LoadedImage({ url, name, t }: {
   )
 }
 
-/** The fitted posture plus the operator's zoom and pan on top of it. */
+/** The operator's zoom and pan on top of the CSS-fitted posture. */
 interface ZoomState {
-  /** Display scale in natural pixels; 1 means one image pixel per CSS pixel. */
-  readonly scale: number
+  /** Multiplier over the browser's contain fit; 1 is exactly the whole image. */
+  readonly k: number
   /** Translation from the fitted center, in CSS pixels. */
   readonly tx: number
   readonly ty: number
 }
 
 /**
- * The fitted, zoomable image: resting scale is the contain fit capped at one
- * natural pixel, and every gesture anchors the pixel under the pointer or
- * click so zooming reads as focusing on that detail.
+ * The fitted, zoomable image. The resting posture is pure CSS containment
+ * (`max-width/max-height: 100%` in a bounded, absolutely filled viewport), so
+ * the whole image is centered and complete by construction — no measured
+ * "fit scale" can strand it cropped, whatever the surrounding layout does
+ * during tab restoration or pane transitions. Zoom is a transform on top:
+ * ⌘/Ctrl+wheel anchors the pixel under the pointer, a drag pans with edge
+ * clamping, a double-click toggles fit ↔ 2×, and the floor k = 1 is exactly
+ * the complete view, so zooming out always lands back on the whole image.
  */
 function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   readonly url: string
@@ -136,118 +143,150 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   readonly t: ImageBodyProps['t']
 }): ReactNode {
   const frame = useRef<HTMLDivElement | null>(null)
-  const [natural, setNatural] = useState<{ readonly width: number; readonly height: number } | undefined>()
-  const [pane, setPane] = useState<{ readonly width: number; readonly height: number } | undefined>()
-  const [zoom, setZoom] = useState<ZoomState>({ scale: 1, tx: 0, ty: 0 })
+  const image = useRef<HTMLImageElement | null>(null)
+  const [zoom, setZoom] = useState<ZoomState>({ k: 1, tx: 0, ty: 0 })
   const [panning, setPanning] = useState(false)
+  const [percent, setPercent] = useState<number | undefined>()
+  const [pannable, setPannable] = useState(false)
   const drag = useRef<{ readonly x: number; readonly y: number; readonly tx: number; readonly ty: number } | undefined>()
-  // The operator's own zoom outlives pane changes; without a gesture the
-  // whole-image posture re-seats whenever the measured pane corrects itself.
-  const userZoomed = useRef(false)
 
-  const fitScale = useMemo(() => {
-    if (natural === undefined || pane === undefined) return 1
-    return Math.min(pane.width / natural.width, pane.height / natural.height, 1)
-  }, [natural, pane])
-  // The effective display scale never falls below the fit.
-  const scale = Math.max(zoom.scale, fitScale)
-  const atFit = zoom.scale <= fitScale && zoom.tx === 0 && zoom.ty === 0
-
-  /** Refresh the fitted pane from the frame's current visible box. */
-  const measurePane = useCallback((): void => {
-    const element = frame.current
-    if (element === null) return
-    const next = visiblePaneOf(element)
-    setPane(current =>
-      current !== undefined && current.width === next.width && current.height === next.height
-        ? current
-        : next)
-  }, [])
-
-  // Live pane geometry: the observer tracks the frame, and the settle probes
-  // (animation frame, late timer, window resize) re-measure because a
-  // restored tab can mount before its container finishes laying out.
-  useEffect(() => {
-    const element = frame.current
-    if (element === null) return
-    const observer = new ResizeObserver(() => { measurePane() })
-    observer.observe(element)
-    measurePane()
-    const settleFrame = requestAnimationFrame(() => { measurePane() })
-    const settleTimer = window.setTimeout(() => { measurePane() }, 300)
-    window.addEventListener('resize', measurePane)
-    return () => {
-      cancelAnimationFrame(settleFrame)
-      window.clearTimeout(settleTimer)
-      window.removeEventListener('resize', measurePane)
-      observer.disconnect()
-    }
-  }, [measurePane])
-
-  const reset = useCallback((): void => {
-    userZoomed.current = false
-    setZoom({ scale: fitScale, tx: 0, ty: 0 })
-  }, [fitScale])
-
-  // A new image, or a corrected pane while the operator has not zoomed,
-  // re-seats the whole-image posture quietly.
-  useEffect(() => {
-    if (natural !== undefined && !userZoomed.current) reset()
-  }, [natural?.width, natural?.height, pane, reset])
+  const atFit = zoom.k <= 1 && zoom.tx === 0 && zoom.ty === 0
 
   /**
-   * Zoom by a multiplicative factor while holding the pane-space anchor
-   * fixed, then clamp the translation so the fitted edges never strand
-   * blank space when the image overflows the pane.
+   * Whether the displayed image extends past the viewport on either axis —
+   * the pan affordance covers a width-floored tall image at rest (its height
+   * overflows the pane by design) just as it covers an explicit zoom.
+   */
+  const overflowsPane = useCallback((box?: DOMRect): boolean => {
+    const viewport = frame.current
+    const img = image.current
+    if (viewport === null || img === null) return false
+    const rect = box ?? img.getBoundingClientRect()
+    return rect.width > viewport.clientWidth + 1 || rect.height > viewport.clientHeight + 1
+  }, [])
+
+  /** Report the displayed box's natural-pixel scale and pan affordance. */
+  const refreshMetrics = useCallback((): void => {
+    const img = image.current
+    if (img === null) return
+    const box = img.getBoundingClientRect()
+    if (box.width > 0 && img.naturalWidth > 0) setPercent(Math.round((box.width / img.naturalWidth) * 100))
+    setPannable(overflowsPane(box))
+  }, [overflowsPane])
+
+  // The resize observer never drives the resting posture (CSS owns it); it
+  // refreshes the badge and re-clamps a zoom's translation to the new pane.
+  useEffect(() => {
+    const element = frame.current
+    if (element === null) return
+    const observer = new ResizeObserver(() => {
+      refreshMetrics()
+      setZoom((current) => {
+        if (current.k <= 1) return current
+        const img = image.current
+        const paneShape = element.clientWidth > 0 ? element : undefined
+        if (img === null || paneShape === undefined) return current
+        const box = img.getBoundingClientRect()
+        return {
+          ...current,
+          tx: clampPan(current.tx, box.width, paneShape.clientWidth),
+          ty: clampPan(current.ty, box.height, paneShape.clientHeight),
+        }
+      })
+    })
+    observer.observe(element)
+    return () => { observer.disconnect() }
+  }, [refreshMetrics])
+
+  // The badge follows the fitted box once it exists and after every zoom.
+  useEffect(() => {
+    refreshMetrics()
+  }, [refreshMetrics, zoom.k, ready])
+
+  const reset = useCallback((): void => {
+    setZoom({ k: 1, tx: 0, ty: 0 })
+  }, [])
+
+  /**
+   * Zoom by a multiplicative factor over the contain fit while holding the
+   * pane-space anchor fixed, then clamp the translation so the fitted edges
+   * never strand blank space when the image overflows the pane. The browser's
+   * fitted box (displayed rect divided by the current multiplier) is read
+   * live, so no separately measured pane state can disagree with the layout.
    */
   const zoomAt = useCallback((factor: number, anchorX: number, anchorY: number): void => {
-    // The live clamped box wins: a resize the observer has not delivered yet
-    // must not anchor against the pane's previous shape. A degenerate read
-    // (mid-teardown geometry) falls back to the last measured pane.
-    const live = frame.current === null ? undefined : visiblePaneOf(frame.current)
-    const paneShape = live !== undefined && live.width > 1 && live.height > 1 ? live : pane
-    if (paneShape === undefined || natural === undefined) return
-    if (factor > 1 || scale > fitScale) userZoomed.current = true
+    const viewport = frame.current
+    const img = image.current
+    if (viewport === null || img === null || viewport.clientWidth <= 0) return
+    const paneWidth = viewport.clientWidth
+    const paneHeight = viewport.clientHeight
+    const displayed = img.getBoundingClientRect()
     setZoom((current) => {
-      const from = Math.max(current.scale, fitScale)
-      const next = Math.min(Math.max(from * factor, fitScale), ZOOM_MAX)
-      if (next === from) return current
+      const from = Math.max(current.k, 1)
+      const next = Math.min(Math.max(from * factor, 1), ZOOM_MAX)
+      if (next === from || displayed.width <= 0) return current
       // Anchor in pane space, relative to the pane's center; the fitted
-      // image is centered, so the anchor's offset within the image scales
-      // by the same factor.
-      const cx = anchorX - paneShape.width / 2
-      const cy = anchorY - paneShape.height / 2
+      // image is centered, so the anchor's offset scales by the same factor.
+      const cx = anchorX - paneWidth / 2
+      const cy = anchorY - paneHeight / 2
       const tx = cx - (cx - current.tx) * (next / from)
       const ty = cy - (cy - current.ty) * (next / from)
+      const fittedWidth = displayed.width / from
+      const fittedHeight = displayed.height / from
       return {
-        scale: next,
-        tx: clampPan(tx, natural.width * next, paneShape.width),
-        ty: clampPan(ty, natural.height * next, paneShape.height),
+        k: next,
+        tx: clampPan(tx, fittedWidth * next, paneWidth),
+        ty: clampPan(ty, fittedHeight * next, paneHeight),
       }
     })
-  }, [fitScale, natural, pane, scale])
+  }, [])
 
-  // The pinch gesture arrives as Ctrl+wheel in WebKit; ⌘+wheel joins it. The
-  // factor follows the delta's magnitude, clamped per event.
+  /**
+   * Pan by wheel deltas (the natural trackpad scroll) while the image
+   * extends past the viewport, so a width-floored tall screenshot reads like
+   * an ordinary scrollable document at rest.
+   */
+  const panBy = useCallback((dx: number, dy: number): void => {
+    const viewport = frame.current
+    const img = image.current
+    if (viewport === null || img === null) return
+    const box = img.getBoundingClientRect()
+    if (!overflowsPane(box)) return
+    setZoom(current => ({
+      ...current,
+      tx: clampPan(current.tx - dx, box.width, viewport.clientWidth),
+      ty: clampPan(current.ty - dy, box.height, viewport.clientHeight),
+    }))
+  }, [overflowsPane])
+
+  // Ctrl/⌘+wheel (the trackpad pinch) zooms toward the pointer with a factor
+  // that follows the delta's magnitude; a plain wheel scrolls an overflowing
+  // image and leaves a contained one to the shared body.
   const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>): void => {
-    if (!event.ctrlKey && !event.metaKey) return
-    event.preventDefault()
-    const factor = Math.min(
-      Math.max(Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY), GESTURE_FACTOR_MIN),
-      GESTURE_FACTOR_MAX,
-    )
-    const bounds = event.currentTarget.getBoundingClientRect()
-    zoomAt(factor, event.clientX - bounds.left, event.clientY - bounds.top)
-  }, [zoomAt])
+    if (event.ctrlKey || event.metaKey) {
+      event.preventDefault()
+      const factor = Math.min(
+        Math.max(Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY), GESTURE_FACTOR_MIN),
+        GESTURE_FACTOR_MAX,
+      )
+      const bounds = event.currentTarget.getBoundingClientRect()
+      zoomAt(factor, event.clientX - bounds.left, event.clientY - bounds.top)
+      return
+    }
+    if (overflowsPane()) event.preventDefault()
+    panBy(event.deltaX, event.deltaY)
+  }, [overflowsPane, panBy, zoomAt])
 
   const onDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
-    const bounds = event.currentTarget.getBoundingClientRect()
-    if (scale > fitScale + Number.EPSILON) reset()
-    else zoomAt(2, event.clientX - bounds.left, event.clientY - bounds.top)
-  }, [fitScale, reset, scale, zoomAt])
+    if (zoom.k > 1 + Number.EPSILON) reset()
+    else {
+      const bounds = event.currentTarget.getBoundingClientRect()
+      zoomAt(2, event.clientX - bounds.left, event.clientY - bounds.top)
+    }
+  }, [reset, zoom.k, zoomAt])
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
-    if (event.button !== 0 || atFit) return
+    if (event.button !== 0 || !overflowsPane()) return
     // Pointer capture is best-effort: synthetic dispatchers (tests, AT) and
     // inactive pointers reject the request, and the drag works without it.
     try {
@@ -255,31 +294,34 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
     } catch { /* capture refused; the drag continues on shared handlers */ }
     drag.current = { x: event.clientX, y: event.clientY, tx: zoom.tx, ty: zoom.ty }
     setPanning(true)
-  }, [atFit, zoom.tx, zoom.ty])
+  }, [overflowsPane, zoom.tx, zoom.ty])
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
     const held = drag.current
-    if (held === undefined || frame.current === null) return
-    const paneShape = visiblePaneOf(frame.current)
-    if (natural === undefined) return
+    const viewport = frame.current
+    const img = image.current
+    if (held === undefined || viewport === null || img === null) return
+    const paneWidth = viewport.clientWidth
+    const paneHeight = viewport.clientHeight
+    const box = img.getBoundingClientRect()
     setZoom(current => ({
-      scale: Math.max(current.scale, fitScale),
-      tx: clampPan(held.tx + (event.clientX - held.x), natural.width * Math.max(current.scale, fitScale), paneShape.width),
-      ty: clampPan(held.ty + (event.clientY - held.y), natural.height * Math.max(current.scale, fitScale), paneShape.height),
+      ...current,
+      tx: clampPan(held.tx + (event.clientX - held.x), box.width, paneWidth),
+      ty: clampPan(held.ty + (event.clientY - held.y), box.height, paneHeight),
     }))
-  }, [fitScale, natural])
+  }, [])
 
   const onPointerUp = useCallback((): void => {
     drag.current = undefined
     setPanning(false)
   }, [])
 
-  const percent = Math.round(scale * 100)
   return (
     <div
       ref={frame}
       className={css.viewport}
       data-zoom-at-fit={atFit || undefined}
+      data-pannable={pannable || undefined}
       data-panning={panning || undefined}
       onWheel={onWheel}
       onDoubleClick={onDoubleClick}
@@ -289,6 +331,7 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
       onPointerCancel={onPointerUp}
     >
       <img
+        ref={image}
         className={css.image}
         src={url}
         alt={t('preview', { name })}
@@ -296,21 +339,11 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
         draggable={false}
         referrerPolicy="no-referrer"
         hidden={!ready}
-        style={{
-          width: natural === undefined ? undefined : natural.width,
-          height: natural === undefined ? undefined : natural.height,
-          transform: `translate(${zoom.tx}px, ${zoom.ty}px) scale(${scale})`,
-        }}
-        onLoad={(event) => {
-          const target = event.currentTarget
-          if (target.naturalWidth > 0 && target.naturalHeight > 0) {
-            setNatural({ width: target.naturalWidth, height: target.naturalHeight })
-          }
-          onDecoded()
-        }}
+        style={{ transform: `translate(${zoom.tx}px, ${zoom.ty}px) scale(${Math.max(zoom.k, 1)})` }}
+        onLoad={onDecoded}
         onError={onFailed}
       />
-      {ready && (
+      {ready && percent !== undefined && (
         <button type="button" className={css.badge} aria-label={t('zoomReset')} onClick={reset} disabled={atFit}>
           {t('zoomPercent', { percent })}
         </button>
@@ -320,24 +353,10 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
 }
 
 /**
- * The pane the fit divides by: the frame's own box clamped to the visible
- * window region. Restored tabs and mid-settle layouts can leave the frame
- * taller than the window; dividing by that grown box strands the resting
- * posture above the true fit and crops the image. The window is the
- * outermost truth: the visible height is at most the window's bottom edge
- * below the frame's top.
- */
-function visiblePaneOf(element: HTMLElement): { readonly width: number; readonly height: number } {
-  const box = element.getBoundingClientRect()
-  const height = Math.max(Math.min(element.clientHeight, window.innerHeight - Math.max(box.top, 0)), 1)
-  const width = Math.max(Math.min(element.clientWidth, window.innerWidth - Math.max(box.left, 0)), 1)
-  return { width, height }
-}
-
-/**
  * Keep a fitted-axis translation inside the image: free while the scaled
  * image is smaller than the pane (it stays centered anyway), otherwise the
- * edge may reach the pane's edge and no further.
+ * edge may reach the pane's edge and no further. `scaled` is the displayed
+ * (already transformed) axis length.
  */
 function clampPan(translate: number, scaled: number, pane: number): number {
   const slack = pane < scaled ? (scaled - pane) / 2 : 0

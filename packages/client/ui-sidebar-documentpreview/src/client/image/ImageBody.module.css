@@ -34,16 +34,19 @@
   cursor: grabbing;
 }
 
-.viewport:not([data-zoom-at-fit]) {
+.viewport[data-pannable] {
   cursor: grab;
 }
 
 .image {
   display: block;
   flex: none;
-  max-width: none;
-  max-height: none;
-  margin: auto;
+  /* Containment by default (the whole image stays visible); a tall narrow
+     image never reads thinner than half the pane — its height then overflows
+     by design and pans with wheel or drag. */
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 50%;
   user-select: none;
   -webkit-user-drag: none;
   transform-origin: center center;
