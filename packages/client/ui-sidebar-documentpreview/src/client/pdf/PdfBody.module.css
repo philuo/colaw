@@ -28,7 +28,10 @@
 
 .canvas {
   display: block;
-  width: min(var(--pdf-page-width), 100%);
+  /* The pane cap is a quantized CSS variable (set by the resample scheduler),
+     so sidebar drags step the display width coarsely instead of
+     re-compositing every large canvas per frame. */
+  width: min(var(--pdf-page-width), var(--pdf-pane-width, 100%));
   max-width: 100%;
   height: auto;
   margin-inline: auto;

@@ -40,11 +40,9 @@
 
 .image {
   display: block;
-  /* Containment by construction: the aspect is the engine's job, so a pane
-     resize re-contains the image without ever stretching it, and the resting
-     posture (no transform) rasterizes at the laid-out size — sharp. */
-  width: 100%;
-  height: 100%;
+  /* The box comes inline from the quantized pane shape (percentage fallback
+   * pre-measure), so dragging the sidebar never re-samples per frame;
+   * containment and the aspect are object-fit's guarantee inside any box. */
   object-fit: contain;
   user-select: none;
   -webkit-user-drag: none;

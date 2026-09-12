@@ -202,9 +202,14 @@ describe('ImageBody', () => {
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
     expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('20%')
-    // Halving the pane's width re-contains to 200x100 — still 2:1.
+    // Halving the pane's width re-contains to 200x100 — still 2:1. The
+    // scheduler quantizes resamples, so the trailing settle (a short real
+    // wait) lands the new shape.
     setPaneSize(viewport, { width: 200, height: 300 })
-    await act(async () => { resizeProbe?.() })
+    await act(async () => {
+      resizeProbe?.()
+      await new Promise(resolve => setTimeout(resolve, 200))
+    })
     expect(image.style.transform).toBe('')
     expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('10%')
   })
@@ -276,9 +281,13 @@ describe('ImageBody', () => {
     fireEvent.dblClick(viewport, { clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toContain('scale(2')
-    // A pane resize re-clamps but never silently discards the operator's zoom.
+    // A pane resize re-clamps but never silently discards the operator's zoom;
+    // the quantized resample settles after a short real wait.
     setPaneSize(viewport, { width: 700, height: 300 })
-    await act(async () => { resizeProbe?.() })
+    await act(async () => {
+      resizeProbe?.()
+      await new Promise(resolve => setTimeout(resolve, 200))
+    })
     expect(image.style.transform).toContain('scale(2')
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe(null)
   })

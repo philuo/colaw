@@ -4,6 +4,7 @@ import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import { pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
+import { createResampleScheduler } from '../resample.ts'
 import { hostFileOf } from '../rpc.ts'
 import type {} from './locales.ts'
 import css from './ImageBody.module.css'
@@ -179,28 +180,34 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   const pannable = scaled !== undefined && shape !== undefined
     && (scaled.width > shape.pane.width + 1 || scaled.height > shape.pane.height + 1)
 
-  /** Refresh the pane shape the contain math divides by, from the live box. */
-  const measurePane = useCallback((): void => {
+  /** Refresh the pane shape the contain math divides by; false when the
+   * live box is still degenerate, so the resample gate stays open. */
+  const applyShape = useCallback((): boolean => {
     const element = frame.current
-    if (element === null || element.clientWidth <= 0 || element.clientHeight <= 0) return
+    if (element === null || element.clientWidth <= 0 || element.clientHeight <= 0) return false
     setShape((current) => {
       if (current !== undefined
         && current.pane.width === element.clientWidth
         && current.pane.height === element.clientHeight) return current
       return { pane: { width: element.clientWidth, height: element.clientHeight } }
     })
+    return true
   }, [])
 
   // The observer never drives the resting posture (object-fit owns it); it
-  // feeds the contain math a fresh pane and re-clamps an active zoom.
+  // feeds the contain math a fresh pane and re-clamps an active zoom. The
+  // image box follows the shape state, quantized through the resample
+  // scheduler, so dragging the sidebar's divider never re-samples a
+  // megapixel image per frame.
   useEffect(() => {
     const element = frame.current
     if (element === null) return
-    const observer = new ResizeObserver(() => { measurePane() })
+    const scheduler = createResampleScheduler(applyShape)
+    const observer = new ResizeObserver(() => { scheduler.schedule() })
     observer.observe(element)
-    measurePane()
-    return () => { observer.disconnect() }
-  }, [measurePane])
+    scheduler.schedule()
+    return () => { scheduler.dispose(); observer.disconnect() }
+  }, [applyShape])
 
   // A pane change re-clamps the translation so a zoomed image never strands
   // blank space after the sidebar resizes.
@@ -340,9 +347,15 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
         draggable={false}
         referrerPolicy="no-referrer"
         hidden={!ready}
-        // No transform at rest: the browser rasterizes the contained image at
-        // its laid-out size and stays sharp; zoom and pan append one lazily.
-        style={atFit ? undefined : { transform: `translate(${zoom.tx}px, ${zoom.ty}px) scale(${k})` }}
+        // The box is the quantized pane shape (percentage fallback only
+        // before the first measure), so a sidebar drag never re-samples the
+        // image per frame; object-fit still owns the contained, undistorted
+        // posture inside the box. No transform at rest keeps it sharp.
+        style={{
+          width: shape === undefined ? '100%' : shape.pane.width,
+          height: shape === undefined ? '100%' : shape.pane.height,
+          ...(atFit ? {} : { transform: `translate(${zoom.tx}px, ${zoom.ty}px) scale(${k})` }),
+        }}
         onLoad={(event) => {
           const target = event.currentTarget
           if (target.naturalWidth > 0 && target.naturalHeight > 0) {

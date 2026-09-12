@@ -5,6 +5,7 @@ import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
+import { createResampleScheduler } from '../resample.ts'
 import { DEFAULT_PDF_VIEW, type PdfStore } from './store.ts'
 import { renderPdfPage, type PdfDocument } from './document.ts'
 import { openPdf } from './runtime.ts'
@@ -29,6 +30,9 @@ type LoadState =
   | { readonly kind: 'loaded'; readonly data: Uint8Array<ArrayBuffer>; readonly document: PdfDocument }
   | { readonly kind: 'failed'; readonly data: Uint8Array<ArrayBuffer>; readonly error: unknown }
 
+/** Horizontal chrome around a page's canvas: section padding (8×2) + page padding (12×2). */
+const PDF_BODY_CHROME = 40
+
 /**
  * Present a PDF with tab-local viewing preferences and component-owned rendering resources.
  * @param props - complete bytes and framework-owned tab/store/locale seats.
@@ -44,6 +48,22 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
   const pageVisible = useCallback((page: number): void => {
     actions.page(tab.id, page)
   }, [actions, tab.id])
+  const body = useRef<HTMLElement>(null)
+
+  // The pages' display width rides a quantized CSS variable instead of the
+  // pane's live width, so dragging the sidebar's divider never re-composites
+  // large canvases per frame; the trailing settle lands the exact size.
+  useEffect(() => {
+    const section = body.current
+    if (section === null) return
+    const scheduler = createResampleScheduler(() => {
+      section.style.setProperty('--pdf-pane-width', `${Math.max(1, section.clientWidth - PDF_BODY_CHROME)}px`)
+    })
+    const observer = new ResizeObserver(() => { scheduler.schedule() })
+    observer.observe(section)
+    scheduler.schedule()
+    return () => { scheduler.dispose(); observer.disconnect() }
+  }, [])
 
   useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
   useEffect(() => {
@@ -71,7 +91,7 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
       <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>
     </div>
   }
-  return <section className={css.body} data-pdf-preview>
+  return <section ref={body} className={css.body} data-pdf-preview>
     {Array.from({ length: load.document.numPages }, (_, index) => (
       <PdfPage key={index} document={load.document} page={index + 1}
         requested={index === 0 || view.page === index + 1} onVisible={pageVisible} signal={tab.signal} t={t} />
