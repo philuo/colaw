@@ -208,7 +208,9 @@ export function apply(ctx: Context): void {
     // plugin without a DOM.
     if (typeof window === 'undefined') return () => {}
     const onCommand = (event: Event): void => {
-      const command = (event as CustomEvent<{ command?: unknown }>).detail?.command
+      // `detail` is optional in the cast, not in CustomEvent's own type: a
+      // dispatch without a payload must stay a no-op rather than throw here.
+      const command = (event as CustomEvent<{ command?: unknown } | undefined>).detail?.command
       if (command === 'new-session') uiWorkspace.startSession()
       else if (command === 'toggle-sidebar') ctx.layout.toggleSidebar()
     }

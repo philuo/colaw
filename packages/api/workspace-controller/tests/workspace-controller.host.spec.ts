@@ -407,10 +407,11 @@ describe('WorkspaceController trash', () => {
   it('keeps clearing the remaining entries when one deletion fails, and reports the survivor', async () => {
     const { removed, persistence } = recordingPersistence(new Set([SessionId('idle-archived')]))
     const { controller, admitted, idle } = await archivedPair(persistence)
-    await expect(controller.clearTrash()).rejects.toMatchObject({
-      code: 'workspace/trash-conflict',
-      message: expect.stringContaining('idle-archived'),
-    })
+    // Asserted off the settled failure rather than with expect.stringContaining:
+    // the asymmetric matcher types as `any`, which the type-aware lint rejects.
+    const failure: unknown = await controller.clearTrash().catch((error: unknown) => error)
+    expect(failure).toMatchObject({ code: 'workspace/trash-conflict' })
+    expect(String(failure)).toContain('idle-archived')
     expect(removed).toEqual([admitted.id])
     await expect(controller.trashEntries()).resolves.toMatchObject({
       entries: [{ sessionId: idle.id }],

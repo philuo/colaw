@@ -8,9 +8,10 @@ import {
   WorkspaceOrderInvalidError,
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
-import type { SessionPersistence } from '@deepseek-ai/dsh-session-persistence'
 // Type-only: pulls the SpillStore Context merge (ctx.spillStore) into this program.
 import type {} from '@deepseek-ai/dsh-spill'
+// Type-only: pulls the SessionPersistence Context merge (ctx.sessionPersistence).
+import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
 import { trashDigest } from './trash-digest.ts'
 import type {
@@ -177,7 +178,7 @@ export class WorkspaceCommands {
    */
   async trashEntries(): Promise<WorkspaceTrashValue> {
     const registry = this.ctx.workspaceRegistry
-    const persistence = this.ctx.get('sessionPersistence') as SessionPersistence | undefined
+    const persistence = this.ctx.get('sessionPersistence')
     const entries: WorkspaceTrashEntry[] = []
     for (const sessionId of [...registry.archivedSessionIds].reverse()) {
       const archivedAt = registry.archivedEntries[sessionId]
@@ -242,7 +243,7 @@ export class WorkspaceCommands {
     if (!registry.archivedSessionIds.includes(sessionId)) {
       throw new RemoteError('workspace/trash-conflict', `session "${sessionId}" is not archived`, { sessionId })
     }
-    const persistence = this.ctx.get('sessionPersistence') as SessionPersistence | undefined
+    const persistence = this.ctx.get('sessionPersistence')
     if (persistence === undefined) {
       throw new RemoteError('gateway/internal', 'session persistence is unavailable', {})
     }
