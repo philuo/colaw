@@ -11,6 +11,7 @@
 import { BrowserView, BrowserWindow, Tray, Updater } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
+import { runImageOcr } from './image-ocr.ts'
 import {
   applicationIsActive, hideApplication, setAppearance, setApplicationIcon,
   setBundleIcon, systemIsDark, type AppearancePreference,
@@ -36,7 +37,7 @@ const bundleUrl = (): string => {
 }
 import { dshHomePath, migrateLegacyDshHome } from '@deepseek-ai/dsh-home-paths'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, extname, join, resolve } from 'node:path'
+import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import type { Context } from '@deepseek-ai/cordis'
 import Schema from '@deepseek-ai/schemastery'
@@ -80,7 +81,7 @@ const ROOT_CONFIG_FILENAME = 'electrobun.cordis.yml'
 const WINDOW_STATE_FILENAME = 'window-state.json'
 
 /** The installed release identity, read once at boot for the About surface. */
-let installedAbout: { version: string, channel: string, hash: string, baseUrl: string } | undefined
+let installedAbout: { version: string; channel: string; hash: string; baseUrl: string } | undefined
 
 /** Where the window first appears when nothing was remembered. */
 const DEFAULT_WINDOW_FRAME = { x: 100, y: 100, width: 1400, height: 900 } as const
@@ -127,7 +128,7 @@ function writeWindowFrame(path: string, frame: WindowFrame): void {
 }
 
 /** Commands the window's own shell sends back through the host. */
-const desktopCommands = new Map<string, () => void>()
+const desktopCommands = new Map<string, (payload?: { readonly id?: unknown }) => void>()
 
 /** The one capability the host keeps on the dev watcher: stop it at shutdown. */
 interface DevWatcher {
@@ -250,7 +251,7 @@ function stopDevWatcher(): void {
 function runWindowCommand(event: ElectrobunEvent<{ detail: unknown }, unknown>): void {
   const command = event.data.detail as { id?: unknown } | null
   if (typeof command?.id !== 'string') return
-  desktopCommands.get(command.id)?.()
+  desktopCommands.get(command.id)?.(command)
 }
 
 /**
@@ -582,14 +583,15 @@ async function main(): Promise<void> {
       const path = fileURLToPath(new URL(candidate, bundleUrl()))
       if (existsSync(path)) return path
     }
-    return fileURLToPath(new URL(candidates[candidates.length - 1]!, bundleUrl()))
+    const last = candidates[candidates.length - 1]
+    if (last === undefined) throw new Error('no tray icon candidates')
+    return fileURLToPath(new URL(last, bundleUrl()))
   }
   const iconPaths: Record<'light' | 'dark', string> = {
     light: resolveIcon(['../../AppIcon.icns', '../cat5_light.icns']),
     dark: resolveIcon(['../../AppIconDark.icns', '../cat5_dark.icns']),
   }
   let iconInUse: 'light' | 'dark' | undefined
-  let trayIcon: Tray | undefined
   /** Show the icon the current selection asks for; a matching one is a no-op.
    * Both surfaces update: the Dock's runtime tile, and — through the
    * workspace's custom-icon attribute — Finder, Launchpad, and the Dock's
@@ -1137,7 +1139,7 @@ async function main(): Promise<void> {
       }
       wasActive = active
     }
-    const nativeChromeWatch = setInterval(() => {
+    setInterval(() => {
       syncNativeChrome()
       watchAppActivity()
     }, NATIVE_CHROME_POLL_MS)
@@ -1205,6 +1207,32 @@ async function main(): Promise<void> {
     desktopCommands.set('toggle-window-zoom', toggleWindowZoom)
     // The boot-failure page's only action: hand the data directory to Finder.
     desktopCommands.set('open-data-dir', () => openWithSystem(dshHomePath()))
+    // On-image text recognition for the file preview: the shell sends the
+    // image's workspace-relative path plus a requestId; the answer rides a
+    // window event the preview listens for (same channel shape as the About
+    // panel). The renderer never holds absolute paths, so the session's
+    // workspace root resolves the file here.
+    desktopCommands.set('image-ocr', (payload) => {
+      const request = payload as { path?: unknown; sessionId?: unknown; requestId?: unknown } | undefined
+      if (typeof request?.path !== 'string' || typeof request?.requestId !== 'string') return
+      const sessionId = typeof request.sessionId === 'string' ? request.sessionId : ''
+      let root = ''
+      try {
+        const sessions = current?.get('sessions') as { get: (id: string) => { header?: { cwd?: string } } | undefined } | undefined
+        root = sessions?.get(sessionId)?.header?.cwd
+          ?? (current?.get('sandboxPolicy') as { workspaceRoot?: string } | undefined)?.workspaceRoot
+          ?? ''
+      } catch { /* fall through to the raw path */ }
+      const absolute = isAbsolute(request.path) || root === '' ? request.path : join(root, request.path)
+      void runImageOcr(absolute).then((result) => {
+        const view = BrowserView.getById(mainWindow.webviewId)
+        if (view === undefined) return
+        view.executeJavascript(
+          'window.dispatchEvent(new CustomEvent(\'dsh:image-ocr\', '
+          + `{ detail: ${JSON.stringify(JSON.stringify({ requestId: request.requestId, ...result }))} }))`,
+        )
+      })
+    })
 
     // ── Silent updates (Electrobun Updater): check on window visibility
     // transitions when auto-update is on; download (patch-first, full-bundle
@@ -1217,7 +1245,7 @@ async function main(): Promise<void> {
       const view = BrowserView.getById(mainWindow.webviewId)
       if (view === undefined) return
       view.executeJavascript(
-        `window.dispatchEvent(new CustomEvent('dsh:about-update', `
+        'window.dispatchEvent(new CustomEvent(\'dsh:about-update\', '
         + `{ detail: ${JSON.stringify(JSON.stringify(detail))} }))`,
       )
     }
@@ -1225,7 +1253,7 @@ async function main(): Promise<void> {
       'update-available', 'downloading-patch', 'downloading-full-bundle',
       'download-complete', 'no-update', 'error',
     ])
-    Updater.onStatusChange(entry => {
+    Updater.onStatusChange((entry) => {
       if (ABOUT_FORWARDED_STATUSES.has(entry.status)) {
         pushAboutEvent({ kind: 'status', status: entry.status })
       }

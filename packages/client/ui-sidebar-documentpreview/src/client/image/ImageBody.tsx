@@ -44,6 +44,26 @@ const GESTURE_FACTOR_MAX = 2
 /** A gesture stream commits to React state after this idle, so no render
  * ever sits between a pointermove/wheel event and the compositor. */
 const GESTURE_COMMIT_MS = 160
+/** A silent recognition answer is dropped past this window. */
+const OCR_RESPONSE_TIMEOUT_MS = 35_000
+
+/** One recognized text block; normalized [0,1], top-left origin. */
+interface OcrItem {
+  readonly text: string
+  readonly x: number
+  readonly y: number
+  readonly w: number
+  readonly h: number
+}
+
+/**
+ * Recognized text by file path. Recognition is silent and automatic (no user
+ * action, WeChat-style), so re-opening an image must not pay for it twice.
+ */
+const ocrCache = new Map<string, readonly OcrItem[]>()
+/** Cache stays small: a preview session touches a handful of images. */
+const OCR_CACHE_LIMIT = 24
+
 /** The farthest scale, in natural pixels, the viewer allows. */
 const ZOOM_MAX = 8
 /**
@@ -79,7 +99,7 @@ export function imageMediaType(path: string): ImageMediaType | undefined {
  * @param props - document bytes, resource identity, and locale.
  * @returns the fitted, zoomable image surface.
  */
-export function ImageBody({ content, resourceAddress, t }: ImageBodyProps): ReactNode {
+export function ImageBody({ content, resourceAddress, sessionId, t }: ImageBodyProps): ReactNode {
   const path = useMemo(() => hostFileOf(resourceAddress).path, [resourceAddress])
   const mediaType = imageMediaType(path)
   const data = content.kind === 'bytes' ? content.data : undefined
@@ -107,13 +127,15 @@ export function ImageBody({ content, resourceAddress, t }: ImageBodyProps): Reac
   }
   if (source.kind === 'failed') return <p className={css.status} role="alert">{t('failed')}</p>
   const { name } = pathPartsOf(path)
-  return <LoadedImage key={source.url} url={source.url} name={name} t={t} />
+  return <LoadedImage key={source.url} url={source.url} name={name} path={path} sessionId={sessionId} t={t} />
 }
 
 /** SVG stays in the browser's static image mode because its bytes only reach an img Blob URL. */
-function LoadedImage({ url, name, t }: {
+function LoadedImage({ url, name, path, sessionId, t }: {
   readonly url: string
   readonly name: string
+  readonly path: string
+  readonly sessionId: ImageBodyProps['sessionId']
   readonly t: ImageBodyProps['t']
 }): ReactNode {
   const [state, setState] = useState<'loading' | 'ready' | 'failed'>('loading')
@@ -122,7 +144,7 @@ function LoadedImage({ url, name, t }: {
       {state === 'loading' && <LoadingIndicator className={css.status} label={t('loading')} />}
       {state === 'failed' && <p className={css.status} role="alert">{t('failed')}</p>}
       {state !== 'failed' && (
-        <ZoomableImage url={url} name={name} ready={state === 'ready'} onDecoded={() => { setState('ready') }} onFailed={() => { setState('failed') }} t={t} />
+        <ZoomableImage url={url} name={name} path={path} sessionId={sessionId} ready={state === 'ready'} onDecoded={() => { setState('ready') }} onFailed={() => { setState('failed') }} t={t} />
       )}
     </div>
   )
@@ -168,9 +190,11 @@ function containedIn(natural: { width: number; height: number }, pane: { width: 
  * floor k = 1 is exactly the complete view, so zooming out always lands back
  * on the whole image.
  */
-function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
+function ZoomableImage({ url, name, path, sessionId, ready, onDecoded, onFailed, t }: {
   readonly url: string
   readonly name: string
+  readonly path: string
+  readonly sessionId: ImageBodyProps['sessionId']
   readonly ready: boolean
   readonly onDecoded: () => void
   readonly onFailed: () => void
@@ -179,6 +203,7 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   const frame = useRef<HTMLDivElement | null>(null)
   const image = useRef<HTMLImageElement | null>(null)
   const deepCanvas = useRef<HTMLCanvasElement | null>(null)
+  const annotations = useRef<HTMLDivElement | null>(null)
   const [natural, setNatural] = useState<{ readonly width: number; readonly height: number } | undefined>()
   const [zoom, setZoom] = useState<ZoomState>({ k: 1, tx: 0, ty: 0 })
   const [panning, setPanning] = useState(false)
@@ -191,6 +216,15 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   // The deep-zoom draw's latest state and its rAF gate.
   const deepPending = useRef<ZoomState | undefined>(undefined)
   const deepFrame = useRef<number | undefined>(undefined)
+  // Silent on-image text recognition (Apple Vision, host-side): recognized
+  // blocks become an invisible selectable text layer over the image, so the
+  // operator can select and copy image text like any document — no button,
+  // no dialog, no visible chrome.
+  const [ocrItems, setOcrItems] = useState<readonly OcrItem[] | undefined>(undefined)
+  const ocrRequest = useRef<string | undefined>(undefined)
+  const ocrTimer = useRef<number | undefined>(undefined)
+  const sendHost = (globalThis as { __electrobunSendToHost?: (message: unknown) => void }).__electrobunSendToHost
+  const canOcr = typeof sendHost === 'function'
 
   const atFit = zoom.k <= 1 && zoom.tx === 0 && zoom.ty === 0
   const contained = natural === undefined || shape === undefined
@@ -259,16 +293,34 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
   }, [drawDeep])
 
   /**
+   * Write one element's zoom posture: the gesture transform (will-change
+   * riding the in-flight gesture only, re-rasterized sharp at rest) shared
+   * by the <img> and the annotation overlay so boxes track pixels exactly.
+   */
+  const applyTransform = (el: HTMLElement, value: ZoomState, promoting: boolean): void => {
+    if (value.k <= 1 && value.tx === 0 && value.ty === 0) {
+      el.style.removeProperty('will-change')
+      el.style.removeProperty('transform')
+      return
+    }
+    if (promoting) el.style.setProperty('will-change', 'transform')
+    else el.style.removeProperty('will-change')
+    el.style.setProperty('transform', `translate(${value.tx}px, ${value.ty}px) scale(${Math.max(value.k, 1)})`)
+  }
+
+  /**
    * Write the gesture posture straight to the presentation — no React
    * render sits between a pointermove and the compositor. Under the layer
    * budget the <img> transform path runs (GPU texture movement, will-change
    * riding the gesture only, re-rasterized sharp at rest); past it the
    * deep-zoom canvas takes over and the img is stashed (it stays the
-   * decoded draw source).
+   * decoded draw source). The annotation overlay carries the same transform
+   * on either path, so recognized boxes track the pixels.
    */
   const paint = useCallback((value: ZoomState, badgePercent?: number, promoting = false): void => {
     const el = image.current
     if (el === null) return
+    const overlayEl = annotations.current
     if (contained !== undefined && exceedsLayerBudget(value, contained)) {
       const canvas = deepCanvas.current
       if (canvas !== null && canvas.getContext('2d') !== null) {
@@ -276,6 +328,7 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
         el.style.removeProperty('transform')
         el.style.visibility = 'hidden'
         canvas.hidden = false
+        if (overlayEl !== null) applyTransform(overlayEl, value, promoting)
         scheduleDeepDraw(value)
         if (badgePercent !== undefined) {
           const badge = frame.current?.querySelector<HTMLElement>(`.${css.badge}`)
@@ -289,18 +342,8 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
       canvas.hidden = true
       el.style.removeProperty('visibility')
     }
-    if (value.k <= 1 && value.tx === 0 && value.ty === 0) {
-      el.style.removeProperty('will-change')
-      el.style.removeProperty('transform')
-      return
-    }
-    // will-change rides ONLY the in-flight gesture (pure GPU scaling while
-    // the hand moves); once the gesture commits it comes off, so WebKit
-    // re-rasterizes the layer at the settled scale instead of pinning the
-    // pre-zoom raster — a pinned raster is what made zoomed images blurry.
-    if (promoting) el.style.setProperty('will-change', 'transform')
-    else el.style.removeProperty('will-change')
-    el.style.setProperty('transform', `translate(${value.tx}px, ${value.ty}px) scale(${Math.max(value.k, 1)})`)
+    applyTransform(el, value, promoting)
+    if (overlayEl !== null) applyTransform(overlayEl, value, promoting)
     if (badgePercent !== undefined) {
       const badge = frame.current?.querySelector<HTMLElement>(`.${css.badge}`)
       if (badge !== null && badge !== undefined) badge.textContent = `${badgePercent}%`
@@ -315,6 +358,7 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
 
   useEffect(() => () => {
     window.clearTimeout(settle.current)
+    window.clearTimeout(ocrTimer.current)
     if (deepFrame.current !== undefined) cancelAnimationFrame(deepFrame.current)
   }, [])
 
@@ -326,6 +370,65 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
     live.current = undefined
     setZoom(value)
   }, [])
+
+  // The host answers a recognition request with a window event carrying the
+  // request id. Recognition is a background nicety: an error, a stale id, or
+  // a timeout simply leaves the image without a text layer — never any UI.
+  useEffect(() => {
+    if (!canOcr) return
+    const onImageOcr = (e: Event): void => {
+      try {
+        const detail = JSON.parse((e as CustomEvent<string>).detail) as {
+          requestId?: unknown
+          items?: unknown
+          error?: unknown
+        }
+        if (detail.requestId !== ocrRequest.current) return
+        window.clearTimeout(ocrTimer.current)
+        ocrRequest.current = undefined
+        if (typeof detail.error === 'string' || !Array.isArray(detail.items)) return
+        const items: OcrItem[] = []
+        for (const raw of detail.items) {
+          if (raw === null || typeof raw !== 'object') continue
+          const item = raw as Record<string, unknown>
+          if (typeof item.text !== 'string' || item.text.trim() === '') continue
+          const x = Number(item.x), y = Number(item.y), w = Number(item.w), h = Number(item.h)
+          if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(w) || !Number.isFinite(h)) continue
+          items.push({ text: item.text, x, y, w, h })
+        }
+        if (items.length === 0) return
+        if (ocrCache.size >= OCR_CACHE_LIMIT) {
+          const oldest = ocrCache.keys().next()
+          if (oldest.done === false) ocrCache.delete(oldest.value)
+        }
+        ocrCache.set(path, items)
+        setOcrItems(items)
+      } catch { /* not ours */ }
+    }
+    window.addEventListener('dsh:image-ocr', onImageOcr)
+    return () => { window.removeEventListener('dsh:image-ocr', onImageOcr) }
+  }, [canOcr, path])
+
+  // Recognition runs silently the moment the image is decoded: the operator
+  // never asks for it, and a cached path never pays for it twice. Vector and
+  // thumbnail-sized images are skipped — there is no text layer worth having.
+  useEffect(() => {
+    if (!canOcr || !ready || natural === undefined) return
+    if (natural.width < 64 && natural.height < 64) return
+    if (/\.svg$/i.test(path)) return
+    const cached = ocrCache.get(path)
+    if (cached !== undefined) {
+      setOcrItems(cached)
+      return
+    }
+    const requestId = `image-ocr-${Date.now()}-${Math.floor(Math.random() * 1e6)}`
+    ocrRequest.current = requestId
+    window.clearTimeout(ocrTimer.current)
+    ocrTimer.current = window.setTimeout(() => {
+      ocrRequest.current = undefined
+    }, OCR_RESPONSE_TIMEOUT_MS)
+    sendHost?.({ id: 'image-ocr', path, sessionId, requestId })
+  }, [canOcr, ready, natural, path, sessionId, sendHost])
 
   /** Refresh the pane shape the contain math divides by; false when the
    * live box is still degenerate, so the resample gate stays open. */
@@ -535,6 +638,50 @@ function ZoomableImage({ url, name, ready, onDecoded, onFailed, t }: {
           paint/drawDeep) so every zoom level renders at display
           resolution; hidden while the transform path is in force. */}
       <canvas ref={deepCanvas} className={css.deepCanvas} aria-hidden="true" hidden />
+      {ocrItems !== undefined && contained !== undefined && shape !== undefined && (
+        // The overlay rides the img's exact box (contained size, pane
+        // centered) and receives the same gesture transform (see paint), so
+        // recognized boxes track the pixels at every zoom level.
+        // The invisible text layer rides the img's exact box (contained size,
+        // pane centered) and receives the same gesture transform (see paint),
+        // so selection geometry tracks the pixels at every zoom level. Each
+        // line is transparent but selectable: the operator selects and copies
+        // image text like a document, WeChat-style, with no visible chrome.
+        <div
+          ref={annotations}
+          className={css.annotations}
+          data-image-annotations=""
+          // The layer is the image's real text: it stays in the
+          // accessibility tree (unlike the pixels), so assistive tech can
+          // read what the operator can now select and copy.
+          role="presentation"
+          style={{
+            left: (shape.pane.width - contained.width) / 2,
+            top: (shape.pane.height - contained.height) / 2,
+            width: contained.width,
+            height: contained.height,
+          }}
+          // Selection owns the gesture here: a drag that starts on text must
+          // select, not pan (panning stays available everywhere else).
+          onPointerDown={(event) => { event.stopPropagation() }}
+        >
+          {ocrItems.map((item, index) => (
+            <span
+              key={index}
+              className={css.textLayerLine}
+              style={{
+                left: `${item.x * 100}%`,
+                top: `${item.y * 100}%`,
+                width: `${item.w * 100}%`,
+                height: `${item.h * 100}%`,
+                fontSize: Math.max(4, item.h * contained.height),
+              }}
+            >
+              {item.text}
+            </span>
+          ))}
+        </div>
+      )}
       {ready && percent !== undefined && (
         <button type="button" className={css.badge} aria-label={t('zoomReset')} onClick={reset} disabled={atFit}>
           {t('zoomPercent', { percent })}

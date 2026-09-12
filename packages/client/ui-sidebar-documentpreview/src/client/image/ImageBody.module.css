@@ -101,3 +101,31 @@
   line-height: 1.5;
   white-space: normal;
 }
+
+/* Vision text layer: invisible, selectable lines positioned exactly over
+   the recognized pixels. The layer rides the img's shared gesture transform
+   (see paint) so selection geometry tracks zoom and pan. */
+.annotations {
+  position: absolute;
+  z-index: 0;
+  pointer-events: none;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.textLayerLine {
+  position: absolute;
+  display: block;
+  box-sizing: border-box;
+  overflow: hidden;
+  color: transparent;
+  white-space: pre;
+  line-height: 1;
+  cursor: text;
+  pointer-events: auto;
+}
+
+.textLayerLine::selection {
+  background: rgba(52, 199, 89, 0.35);
+  color: transparent;
+}

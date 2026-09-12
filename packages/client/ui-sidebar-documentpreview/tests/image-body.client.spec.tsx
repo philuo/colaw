@@ -374,6 +374,104 @@ describe('ImageBody', () => {
     }
   })
 
+  it('recognizes image text silently and exposes a selectable text layer', async () => {
+    const sent: Array<{ id?: unknown; path?: unknown; requestId?: unknown }> = []
+    vi.stubGlobal('__electrobunSendToHost', (message: { id?: unknown; path?: unknown; requestId?: unknown }) => {
+      sent.push(message)
+    })
+    try {
+      const view = render(<ImageBody {...props('/Users/x/notes.png')} />)
+      const image = await screen.findByRole('img', { hidden: true })
+      const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
+      fireEvent.load(image)
+      await act(async () => { await Promise.resolve() })
+      // Recognition is automatic — decoding the image is the only trigger,
+      // and no affordance (button/dialog) is ever shown for it.
+      expect(sent).toEqual([{ id: 'image-ocr', path: '/Users/x/notes.png', sessionId: 'image', requestId: expect.any(String) }])
+      expect(screen.queryByRole('button', { name: /Recognize|Recognizing|Clear/ })).toBeNull()
+      // The host answers with a window event carrying the request id; the
+      // lines land as transparent, selectable text over the image.
+      const items = [{ text: '标题', x: 0.25, y: 0.1, w: 0.5, h: 0.05 }]
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dsh:image-ocr', {
+          detail: JSON.stringify({ requestId: sent[0]?.requestId, items }),
+        }))
+      })
+      const overlay = view.container.querySelector<HTMLElement>('[data-image-annotations]')!
+      expect(overlay).not.toBeNull()
+      const line = overlay.firstElementChild as HTMLElement
+      expect(line.textContent).toBe('标题')
+      expect(line.style.left).toBe('25%')
+      expect(line.style.top).toBe('10%')
+      expect(line.style.width).toBe('50%')
+      expect(line.className).toContain('textLayerLine')
+      // The layer shares the gesture transform, so selection geometry tracks
+      // the pixels at every zoom level.
+      fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 })
+      await act(async () => { await Promise.resolve() })
+      expect(overlay.style.transform).toBe(image.style.transform)
+      expect(image.style.transform).toContain('scale(2')
+      // A drag that starts on the text layer selects instead of panning.
+      fireEvent.pointerDown(line, { button: 0, pointerId: 1, clientX: 100, clientY: 100 })
+      expect(viewport.getAttribute('data-panning')).toBe(null)
+    } finally {
+      Reflect.deleteProperty(globalThis, '__electrobunSendToHost')
+    }
+  })
+
+  it('serves recognition from the cache, stays silent on errors, and skips plain web', async () => {
+    const sent: Array<{ id?: unknown; path?: unknown; requestId?: unknown }> = []
+    vi.stubGlobal('__electrobunSendToHost', (message: { id?: unknown; path?: unknown; requestId?: unknown }) => {
+      sent.push(message)
+    })
+    try {
+      const first = render(<ImageBody {...props('/Users/x/cached.png')} />)
+      const firstImage = await screen.findByRole('img', { hidden: true })
+      adoptGeometry(first, { width: 400, height: 300 }, { width: 2000, height: 1000 })
+      fireEvent.load(firstImage)
+      await act(async () => { await Promise.resolve() })
+      expect(sent.length).toBe(1)
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dsh:image-ocr', {
+          detail: JSON.stringify({ requestId: sent[0]?.requestId, items: [{ text: '缓存', x: 0, y: 0, w: 0.5, h: 0.1 }] }),
+        }))
+      })
+      first.unmount()
+      // A second open of the same path answers from the cache — no host call.
+      const second = render(<ImageBody {...props('/Users/x/cached.png')} />)
+      const secondImage = await screen.findByRole('img', { hidden: true })
+      adoptGeometry(second, { width: 400, height: 300 }, { width: 2000, height: 1000 })
+      fireEvent.load(secondImage)
+      await act(async () => { await Promise.resolve() })
+      expect(sent.length).toBe(1)
+      expect(second.container.querySelector('[data-image-annotations]')).not.toBeNull()
+      second.unmount()
+      // A recognition error leaves no text layer and no UI at all.
+      const failing = render(<ImageBody {...props('/Users/x/broken.png')} />)
+      const failingImage = await screen.findByRole('img', { hidden: true })
+      adoptGeometry(failing, { width: 400, height: 300 }, { width: 2000, height: 1000 })
+      fireEvent.load(failingImage)
+      await act(async () => { await Promise.resolve() })
+      await act(async () => {
+        window.dispatchEvent(new CustomEvent('dsh:image-ocr', {
+          detail: JSON.stringify({ requestId: sent[1]?.requestId, error: 'recognition failed' }),
+        }))
+      })
+      expect(failing.container.querySelector('[data-image-annotations]')).toBeNull()
+      expect(screen.queryByRole('alert')).toBeNull()
+      failing.unmount()
+    } finally {
+      Reflect.deleteProperty(globalThis, '__electrobunSendToHost')
+    }
+    // Without the host channel (plain web) recognition never runs.
+    const view = render(<ImageBody {...props('/Users/x/web.png')} />)
+    const image = await screen.findByRole('img', { hidden: true })
+    adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
+    fireEvent.load(image)
+    await act(async () => { await Promise.resolve() })
+    expect(view.container.querySelector('[data-image-annotations]')).toBeNull()
+  })
+
   it('revokes replaced bytes and reports image decode and Blob creation failures', async () => {
     const initial = props()
     const view = render(<ImageBody {...initial} />)
