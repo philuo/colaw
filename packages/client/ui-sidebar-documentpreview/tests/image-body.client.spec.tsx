@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Image Blob ownership, media types, CSS-fitted zoom rendering, and failure states. */
+/** Image Blob ownership, media types, contain-fitted zoom rendering, and failure states. */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { act } from 'react'
@@ -69,40 +69,29 @@ function props(path = 'asset.png', data: Uint8Array<ArrayBuffer> = new Uint8Arra
   } as ImageBodyProps
 }
 
-/** The browser's CSS containment, simulated: the viewport keeps pane-sized
- * client boxes and the image reports the box CSS would lay out for it. */
+/** The pane the contain math divides by: concrete client boxes on the
+ * viewport, plus the image's intrinsic size (object-fit paints the same
+ * box the component computes, by aspect math). */
 function adoptGeometry(
   view: ReturnType<typeof render>,
   pane: { width: number; height: number },
-  displayed: { width: number; height: number },
   natural: { width: number; height: number },
 ): HTMLElement {
   const frame = view.container.querySelector('[data-image-preview]')!.parentElement!
   const viewportEl = view.container.querySelector<HTMLElement>('[data-image-preview] > div')!
-  const paneBox = (): DOMRect => ({
-    x: 0, y: 0, top: 0, left: 0, right: pane.width, bottom: pane.height,
-    width: pane.width, height: pane.height, toJSON: () => ({}),
-  })
-  Object.defineProperty(frame, 'clientWidth', { configurable: true, value: pane.width })
-  Object.defineProperty(frame, 'clientHeight', { configurable: true, value: pane.height })
-  Object.defineProperty(viewportEl, 'clientWidth', { configurable: true, value: pane.width })
-  Object.defineProperty(viewportEl, 'clientHeight', { configurable: true, value: pane.height })
-  frame.getBoundingClientRect = paneBox
-  viewportEl.getBoundingClientRect = paneBox
+  setPaneSize(frame, pane)
+  setPaneSize(viewportEl, pane)
   act(() => { resizeProbe?.() })
-  const element = view.container.querySelector<HTMLImageElement>('img')!
-  setDisplayedBox(element, displayed)
+  const element = view.container.querySelector('img')!
   Object.defineProperty(element, 'naturalWidth', { configurable: true, value: natural.width })
   Object.defineProperty(element, 'naturalHeight', { configurable: true, value: natural.height })
   return viewportEl
 }
 
-/** Point the image's displayed box at a new (already transformed) size. */
-function setDisplayedBox(element: HTMLElement, displayed: { width: number; height: number }): void {
-  element.getBoundingClientRect = () => ({
-    x: 0, y: 0, top: 0, left: 0, right: displayed.width, bottom: displayed.height,
-    width: displayed.width, height: displayed.height, toJSON: () => ({}),
-  })
+/** Retarget an element's client box (a pane resize). */
+function setPaneSize(element: HTMLElement, pane: { width: number; height: number }): void {
+  Object.defineProperty(element, 'clientWidth', { configurable: true, value: pane.width })
+  Object.defineProperty(element, 'clientHeight', { configurable: true, value: pane.height })
 }
 
 describe('ImageBody', () => {
@@ -137,126 +126,128 @@ describe('ImageBody', () => {
     expect(screen.queryByRole('status')).toBeNull()
   })
 
-  it('rests on the CSS containment: whole image, zero translation, badge disabled', async () => {
+  it('rests contained and sharp: no transform, whole image, badge disabled', async () => {
     const view = render(<ImageBody {...props()} />)
     const image = await screen.findByRole('img', { hidden: true })
     // 2000x1000 contained in a 400x300 pane displays 400x200 = 20% natural.
-    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 200 }, { width: 2000, height: 1000 })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('translate(0px, 0px)')
-    expect(image.style.transform).toContain('scale(1)')
+    // No transform at rest: the browser rasterizes at the laid-out size.
+    expect(image.style.transform).toBe('')
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe('true')
+    expect(viewport.getAttribute('data-pannable')).toBe(null)
     expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('20%')
   })
 
   it('zooms toward the pointer on Ctrl+wheel and reports the natural-pixel scale', async () => {
     const view = render(<ImageBody {...props()} />)
     const image = await screen.findByRole('img', { hidden: true })
-    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 200 }, { width: 2000, height: 1000 })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    // A notch of -100px scales by exp(100 * 0.003) ≈ 1.3499 over the fit.
+    // A notch of -100px scales by exp(100 * 0.004) ≈ 1.4918 over the fit.
     fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 100, clientY: 75 })
-    setDisplayedBox(image, { width: 400 * 1.3499, height: 200 * 1.3499 })
-    // The wheel's act flush ran effects against the pre-zoom box, exactly as
-    // the browser would on the frame before the transform lands; replay the
-    // observer probe against the transformed box to refresh the badge.
-    await act(async () => { resizeProbe?.(); await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1.3498')
-    // cx = 100 - 200 = -100; tx = -100 - (-100 * 1.3499) ≈ 34.98. The
-    // 200-tall fitted height stays under the 300-tall pane, so ty clamps to 0.
-    expect(image.style.transform).toContain('translate(34.98')
+    await act(async () => { await Promise.resolve() })
+    expect(image.style.transform).toContain('scale(1.4918')
+    // cx = 100 - 200 = -100; tx = -100 - (-100 * 1.4918) ≈ 49.18. The
+    // 200-tall contained height stays under the 300-tall pane, so ty = 0.
+    expect(image.style.transform).toContain('translate(49.18')
     expect(image.style.transform).toContain(', 0px)')
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe(null)
-    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('27%')
-    // A plain wheel over a contained image is not a zoom.
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('30%')
+    // A plain wheel over a contained image is not a zoom or a pan.
     fireEvent.wheel(viewport, { deltaY: -100, clientX: 100, clientY: 75 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1.3498')
+    expect(image.style.transform).toContain('scale(1.4918')
   })
 
   it('scales with the gesture magnitude and bounds one event\'s factor', async () => {
     const view = render(<ImageBody {...props()} />)
     const image = await screen.findByRole('img', { hidden: true })
-    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 200 }, { width: 2000, height: 1000 })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    // A trackpad pinch emits rapid small deltas: -5px is a 1.0151 nudge.
+    // A trackpad pinch emits rapid small deltas: -5px is a 1.0202 nudge.
     fireEvent.wheel(viewport, { deltaY: -5, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1.0151')
+    expect(image.style.transform).toContain('scale(1.0202')
     // One malformed huge delta is clamped to a single ×2 step.
     fireEvent.wheel(viewport, { deltaY: -100000, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toContain('scale(2')
   })
 
-  it('scrolls a width-floored tall image with a plain wheel and clamps at the edges', async () => {
+  it('keeps a tall image fully contained at rest — no stretch, no pan needed', async () => {
     const view = render(<ImageBody {...props()} />)
     const image = await screen.findByRole('img', { hidden: true })
-    // 400x2000 in a 400x300 pane: containment would display 60x300, but the
-    // 50% width floor holds 200x1000 — taller than the pane, so it pans.
-    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 200, height: 1000 }, { width: 400, height: 2000 })
+    // 400x2000 contains to 60x300 in a 400x300 pane: complete and
+    // proportion-exact; the aspect never bends to the pane's shape.
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 2000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    expect(viewport.getAttribute('data-pannable')).toBe('true')
-    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('50%')
+    expect(image.style.transform).toBe('')
+    expect(viewport.getAttribute('data-pannable')).toBe(null)
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('15%')
+    // A plain wheel cannot disturb the contained posture.
     fireEvent.wheel(viewport, { deltaY: 120, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('translate(0px, -120px)')
-    // The vertical slack is (1000 - 300) / 2 = 350 per direction.
-    fireEvent.wheel(viewport, { deltaY: 100000, clientX: 200, clientY: 150 })
+    expect(image.style.transform).toBe('')
+  })
+
+  it('re-contains proportionally when the pane resizes', async () => {
+    const view = render(<ImageBody {...props()} />)
+    const image = await screen.findByRole('img', { hidden: true })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
+    fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('translate(0px, -350px)')
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('20%')
+    // Halving the pane's width re-contains to 200x100 — still 2:1.
+    setPaneSize(viewport, { width: 200, height: 300 })
+    await act(async () => { resizeProbe?.() })
+    expect(image.style.transform).toBe('')
+    expect(screen.getByRole('button', { name: 'Reset zoom' }).textContent).toBe('10%')
   })
 
   it('clamps zoom at the fit floor and resets through the badge and double-click', async () => {
     const view = render(<ImageBody {...props()} />)
     const image = await screen.findByRole('img', { hidden: true })
-    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 200 }, { width: 2000, height: 1000 })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    // Zooming out below the contain fit stays at the whole-image posture.
+    // Zooming out below the containment stays at the whole-image posture.
     fireEvent.wheel(viewport, { deltaY: 100, ctrlKey: true, clientX: 200, clientY: 150 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1)')
-    // Zoom in, then the badge returns to the fitted posture.
+    expect(image.style.transform).toBe('')
+    // Zoom in, then the badge returns to the contained posture.
     fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 })
-    setDisplayedBox(image, { width: 400 * 1.3499, height: 200 * 1.3499 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).not.toContain('scale(1)')
+    expect(image.style.transform).not.toBe('')
     fireEvent.click(screen.getByRole('button', { name: 'Reset zoom' }))
-    setDisplayedBox(image, { width: 400, height: 200 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1)')
-    expect(image.style.transform).toContain('translate(0px, 0px)')
+    expect(image.style.transform).toBe('')
     // A double-click toggles into a close-up at the point, and back out.
     fireEvent.dblClick(viewport, { clientX: 120, clientY: 90 })
-    setDisplayedBox(image, { width: 800, height: 400 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toContain('scale(2')
     fireEvent.dblClick(viewport, { clientX: 120, clientY: 90 })
-    setDisplayedBox(image, { width: 400, height: 200 })
     await act(async () => { await Promise.resolve() })
-    expect(image.style.transform).toContain('scale(1)')
-    expect(image.style.transform).toContain('translate(0px, 0px)')
+    expect(image.style.transform).toBe('')
   })
 
   it('pans by drag while zoomed in and clamps at the scaled edges', async () => {
     const view = render(<ImageBody {...props()} />)
     const image = await screen.findByRole('img', { hidden: true })
-    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 200 }, { width: 2000, height: 1000 })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
-    // Zoom to the ×8 ceiling; after every step the displayed box grows with k.
-    for (let notch = 0; notch < 8; notch += 1) {
+    // Zoom to the ×8 ceiling; anchored at the pane's center, so tx stays 0.
+    for (let notch = 0; notch < 6; notch += 1) {
       fireEvent.wheel(viewport, { deltaY: -100, ctrlKey: true, clientX: 200, clientY: 150 })
-      const k = Math.min(1.3499 ** (notch + 1), 8)
-      setDisplayedBox(image, { width: 400 * k, height: 200 * k })
       await act(async () => { await Promise.resolve() })
     }
     expect(image.style.transform).toContain('scale(8')
+    expect(viewport.getAttribute('data-pannable')).toBe('true')
     const grab = (dx: number, dy: number): void => {
       fireEvent.pointerDown(viewport, { button: 0, pointerId: 1, clientX: 200, clientY: 150 })
       fireEvent.pointerMove(viewport, { pointerId: 1, clientX: 200 + dx, clientY: 150 + dy })
@@ -276,20 +267,17 @@ describe('ImageBody', () => {
     expect(Number(translation[2])).toBeLessThanOrEqual(650)
   })
 
-  it('keeps an explicit zoom across pane changes while CSS owns the rest', async () => {
+  it('keeps an explicit zoom across pane changes while containment owns the rest', async () => {
     const view = render(<ImageBody {...props()} />)
     const image = await screen.findByRole('img', { hidden: true })
-    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 400, height: 200 }, { width: 2000, height: 1000 })
+    const viewport = adoptGeometry(view, { width: 400, height: 300 }, { width: 2000, height: 1000 })
     fireEvent.load(image)
     await act(async () => { await Promise.resolve() })
     fireEvent.dblClick(viewport, { clientX: 200, clientY: 150 })
-    setDisplayedBox(image, { width: 800, height: 400 })
     await act(async () => { await Promise.resolve() })
     expect(image.style.transform).toContain('scale(2')
     // A pane resize re-clamps but never silently discards the operator's zoom.
-    Object.defineProperty(viewport, 'clientWidth', { configurable: true, value: 700 })
-    Object.defineProperty(viewport, 'clientHeight', { configurable: true, value: 300 })
-    setDisplayedBox(image, { width: 800, height: 400 })
+    setPaneSize(viewport, { width: 700, height: 300 })
     await act(async () => { resizeProbe?.() })
     expect(image.style.transform).toContain('scale(2')
     expect(viewport.getAttribute('data-zoom-at-fit')).toBe(null)
