@@ -329,6 +329,34 @@ function warmDesktopFolderConsent(): void {
   }
 }
 
+/**
+ * Drop retained update tars that no longer serve the installed identity or a
+ * prepared update; called once at boot after the apply attempt settles.
+ */
+function pruneStaleUpdateTars(): void {
+  try {
+    const installed = installedAbout
+    if (installed === undefined || installed.baseUrl === '') return
+    const channelRoot = join(homedir(), 'Library', 'Application Support', installed.identifier, installed.channel)
+    const extraction = join(channelRoot, 'self-extraction')
+    let preparedTar: string | undefined
+    try {
+      const prepared = JSON.parse(
+        readFileSync(join(extraction, '.electrobun-prepared-update.json'), 'utf8'),
+      ) as { retained_tar_path?: unknown }
+      if (typeof prepared.retained_tar_path === 'string') preparedTar = prepared.retained_tar_path
+    } catch { /* no prepared update outstanding */ }
+    for (const entry of readdirSync(extraction)) {
+      const match = /^([a-z0-9]{1,13})\.tar$/.exec(entry)
+      if (match === null) continue
+      const path = join(extraction, entry)
+      if (match[1] === installed.hash || path === preparedTar) continue
+      rmSync(path, { force: true })
+      console.log(`[updater] pruned stale payload ${entry}`)
+    }
+  } catch { /* pruning is best-effort housekeeping */ }
+}
+
 function openWithSystem(target: string): void {
   const opened = spawn('/usr/bin/open', [target], { stdio: 'ignore' })
   opened.on('error', (error) => {
@@ -1214,37 +1242,6 @@ async function main(): Promise<void> {
       } catch {
         return false
       }
-    }
-    // Old payloads must not accumulate: every successful update retains one
-    // {hash}.tar and the helper leaves prior ones behind. Keep exactly the
-    // current identity's tar plus whatever a prepared (not yet applied)
-    // update references; drop the rest.
-    const pruneStaleUpdateTars = (): void => {
-      try {
-        const installed = installedAbout
-        if (installed === undefined || installed.baseUrl === '') return
-        // The updater's per-channel root on macOS: ~/Library/Application
-        // Support/<identifier>/<channel> (the devkit's resolveInstalledChannelRoot).
-        const channelRoot = join(homedir(), 'Library', 'Application Support', installed.identifier, installed.channel)
-        const extraction = join(channelRoot, 'self-extraction')
-        let preparedTar: string | undefined
-        try {
-          // The prepared record lives inside the extraction folder, beside
-          // the tars it names (the devkit's preparedUpdatePathFor).
-          const prepared = JSON.parse(
-            readFileSync(join(extraction, '.electrobun-prepared-update.json'), 'utf8'),
-          ) as { retained_tar_path?: unknown }
-          if (typeof prepared.retained_tar_path === 'string') preparedTar = prepared.retained_tar_path
-        } catch { /* no prepared update outstanding */ }
-        for (const entry of readdirSync(extraction)) {
-          const match = /^([a-z0-9]{1,13})\.tar$/.exec(entry)
-          if (match === null) continue
-          const path = join(extraction, entry)
-          if (match[1] === installed.hash || path === preparedTar) continue
-          rmSync(path, { force: true })
-          console.log(`[updater] pruned stale payload ${entry}`)
-        }
-      } catch { /* pruning is best-effort housekeeping */ }
     }
     desktopCommands.set('restart-to-update', () => {
       // The About panel's "restart now" affordance: applyUpdate restarts into
