@@ -64,6 +64,13 @@
   transition: box-shadow var(--ds-transition-duration) var(--ds-ease-in-out);
   position: relative;
   text-decoration: none;
+  /* Inline-flow discipline: the anchor shrink-wraps into the available line
+     space as one unit, so a wrap never strands the leading category glyph at
+     a line end — the glyph rides the first line's baseline and further lines
+     start at the anchor's own left edge. */
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
   /* Transparent hit-area padding; literal zero-alpha only (no painted color). */
   border-left: 3px solid rgb(255 255 255 / 0);
   border-right: 3px solid rgb(255 255 255 / 0);
@@ -95,6 +102,13 @@
   height: 1.1em;
   vertical-align: -0.25em;
   margin-right: 5px;
+}
+
+/* In the anchor's flex layout vertical-align is inert: baseline alignment
+   seats the glyph by its own bottom edge, which reads like the old inline
+   seat without the negative offset. */
+.markdown a .linkIcon {
+  vertical-align: baseline;
 }
 
 .markdown :where(ul, ol) {
@@ -311,6 +325,11 @@
   color: var(--dsw-alias-link);
   text-decoration: none;
   cursor: pointer;
+  /* Same inline-flow discipline as the sheet's anchors: the glyph never
+     strands at a line end apart from its path. */
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
 }
 
 .fileMention:hover,
