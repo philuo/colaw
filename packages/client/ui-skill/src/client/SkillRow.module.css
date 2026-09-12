@@ -52,6 +52,16 @@
 
 .chevron {
   color: var(--dsw-alias-label-secondary);
+  /* One chevron serves every disclosure state. Collapsed it points right
+     (nothing is expanded yet) and opening rotates it down, matching
+     DisclosureRow's disclosure grammar. It is an overlay inside the 16px
+     leading box so the state icon can crossfade into it on hover. */
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transform: rotate(-90deg);
+  transition: opacity 100ms ease, transform 150ms ease;
 }
 
 .iconIdle {
@@ -60,20 +70,21 @@
   transition: opacity 100ms ease;
 }
 
-.chevronHover {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  opacity: 0;
-  transition: opacity 100ms ease;
-}
-
 .row:hover .iconIdle {
   opacity: 0;
 }
 
-.row:hover .chevronHover {
+.row:hover .chevron {
   opacity: 1;
+}
+
+.row[data-open] .iconIdle {
+  opacity: 0;
+}
+
+.row[data-open] .chevron {
+  opacity: 1;
+  transform: rotate(0deg);
 }
 
 .title {
@@ -206,7 +217,7 @@
   }
 
   .iconIdle,
-  .chevronHover,
+  .chevron,
   .inspectButton {
     transition: none;
   }

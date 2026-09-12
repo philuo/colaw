@@ -81,15 +81,15 @@ function leadingFor(state: SkillRowState): ReactNode {
   }
 }
 
-/** Leading disclosure slot: state icon at rest, chevron on hover or while open. */
-function disclosureLeading(state: SkillRowState, open: boolean, expandable: boolean): ReactNode {
-  if (open) return <IconChevronDownOutline14 className={css.chevron} />
-  const icon = leadingFor(state)
-  if (!expandable) return icon
+/** Leading disclosure slot: one chevron in one DOM slot — right while
+ * collapsed, rotating down as the row opens (DisclosureRow's grammar); the
+ * state icon crossfades out on hover and while open. */
+function disclosureLeading(state: SkillRowState, expandable: boolean): ReactNode {
+  if (!expandable) return leadingFor(state)
   return (
     <>
-      <span className={css.iconIdle}>{icon}</span>
-      <IconChevronDownOutline14 className={`${css.chevron} ${css.chevronHover}`} />
+      <span className={css.iconIdle}>{leadingFor(state)}</span>
+      <IconChevronDownOutline14 className={css.chevron} />
     </>
   )
 }
@@ -131,11 +131,12 @@ export function SkillRow({ block, inspect, t }: SkillRowProps) {
     onClick: toggleExpand,
     onKeyDown: toggleFromKeyboard,
   } : {}
-  const leading = disclosureLeading(model.state, open, expandable)
+  const leading = disclosureLeading(model.state, expandable)
   return (
     <div className={css.card} data-tool="skill" data-state={model.state}>
       <div
         className={css.row}
+        data-open={open || undefined}
         data-expandable={expandable || undefined}
         {...disclosureProps}
       >

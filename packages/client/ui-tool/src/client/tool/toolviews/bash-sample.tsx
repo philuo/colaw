@@ -76,16 +76,16 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
     event.preventDefault()
     toggleExpand()
   }
-  const leading = open
-    ? <IconChevronDownOutline14 className={css.chevron} />
-    : expandable
-      ? (
-        <>
-          <span className={css.iconIdle}>{leadingFor(state)}</span>
-          <IconChevronDownOutline14 className={clsx(css.chevron, css.chevronHover)} />
-        </>
-      )
-      : leadingFor(state)
+  // One chevron for every state, in one DOM slot: collapsed it points right
+  // (nothing is expanded yet) and opening rotates it down — the same disclosure
+  // grammar as DisclosureRow, so every flow row reads identically.
+  const chevron = <IconChevronDownOutline14 className={css.chevron} />
+  const leading = (
+    <>
+      <span className={css.iconIdle}>{leadingFor(state)}</span>
+      {expandable ? chevron : null}
+    </>
+  )
   return (
     <div className={css.card}>
       <div
@@ -93,6 +93,7 @@ export function BashRow({ toolName, block, sessionId, useSessions, inspect, t }:
         data-sample="bash"
         data-variant="bash"
         data-state={state}
+        data-open={open || undefined}
         data-expandable={expandable || undefined}
         role={expandable ? 'button' : undefined}
         tabIndex={expandable ? 0 : undefined}
