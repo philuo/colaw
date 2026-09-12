@@ -1,0 +1,110 @@
+# Colaw release build (macOS arm64) from the deepseek-harness tree.
+#
+# This replaces the shell-repo's Hutch/Vite release flow: the product is the
+# pnpm workspace under this repository, packaged by scripts/pack-stable-app.ts
+# (closure bundler + Electrobun shell + bytecode host) and scripts/build-dmg.ts
+# (drag-to-Applications installer image). Windows has no build in this tree, so
+# this workflow is macOS-only by design.
+#
+# Triggers:
+# - push to colaw-release: build, publish workflow artifacts (no release).
+# - push tag v*: build and attach Colaw.dmg + Colaw.app zip to a GitHub
+#   release (created if absent; same-tag assets are clobbered so the stable
+#   `releases/latest/download/...` URLs keep serving fresh content).
+# - workflow_dispatch: optional `tag` input publishes like a tag push;
+#   optional `update-base-url` bakes the Electrobun update-server root into
+#   the app's version.json (empty leaves update checks disabled).
+#
+# Runtime rule of this fork: Bun runs everything (bun/bunx); pnpm appears only
+# as the workspace installer, activated through corepack per packageManager.
+
+name: colaw-release
+
+on:
+  push:
+    branches: [colaw-release]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. v0.1.5). Empty builds artifacts only."
+        required: false
+        default: ""
+      update-base-url:
+        description: "Electrobun update-server base URL baked into the app (optional)."
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  macos-arm64:
+    runs-on: macos-14 # GitHub-hosted Apple Silicon
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Activate pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.7.0 --activate
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Project the Electrobun devkit (.hutch is not committed)
+        working-directory: apps/electrobun-host
+        run: bun ./node_modules/electrobun/bin/electrobun.cjs prepare
+
+      - name: Pack the stable app
+        env:
+          COLAW_UPDATE_BASE_URL: ${{ github.event.inputs.update-base-url || '' }}
+        run: bun scripts/pack-stable-app.ts
+
+      - name: Build the installer image
+        run: bun scripts/build-dmg.ts
+
+      - name: Zip the app bundle (permissions-preserving)
+        working-directory: apps/electrobun-host/build/stable-macos-arm64
+        run: ditto -c -k --keepParent Colaw.app Colaw-macos-arm64.app.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: colaw-macos-arm64
+          path: |
+            apps/electrobun-host/build/stable-macos-arm64/Colaw.dmg
+            apps/electrobun-host/build/stable-macos-arm64/Colaw-macos-arm64.app.zip
+          if-no-files-found: error
+
+  publish:
+    needs: macos-arm64
+    if: >-
+      ${{
+        startsWith(github.ref, 'refs/tags/v')
+        || (github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '')
+      }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve tag
+        id: tag
+        run: echo "name=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist/
+
+      - name: Publish (create or overwrite same-tag assets)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ steps.tag.outputs.name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --generate-notes
+          gh release upload "$TAG" --clobber dist/*/*
