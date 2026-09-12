@@ -78,6 +78,23 @@ interface BootstrapGroup {
 const sameIds = (left: readonly WorkspaceId[], right: readonly WorkspaceId[]): boolean =>
   left.length === right.length && left.every((id, index) => id === right[index])
 
+/**
+ * Drop one session's archive-time slot. Built as a copy without the key rather
+ * than `delete record[sessionId]`: a computed `delete` is both slower under V8
+ * and banned by the lint gate, and the durable state is replaced wholesale
+ * anyway.
+ * @param archivedAt - the archive-time record to read.
+ * @param sessionId - the session whose slot leaves.
+ * @returns a new record without that slot.
+ */
+function withoutArchivedAt(
+  archivedAt: Readonly<Record<SessionId, number>>,
+  sessionId: SessionId,
+): Record<SessionId, number> {
+  const { [sessionId]: _dropped, ...rest } = archivedAt
+  return rest
+}
+
 const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
   right.createdAt - left.createdAt || String(left.id).localeCompare(String(right.id))
 
@@ -279,12 +296,10 @@ export class WorkspaceRegistry extends Service {
     return this.enqueueOperation(async () => {
       const state = this.requireState()
       if (!state.archivedSessionIds.includes(sessionId)) return
-      const archivedAt = { ...state.archivedAt }
-      delete archivedAt[sessionId]
       await this.setState({
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
-        archivedAt,
+        archivedAt: withoutArchivedAt(state.archivedAt, sessionId),
       })
     })
   }
@@ -301,12 +316,10 @@ export class WorkspaceRegistry extends Service {
   purgeSession(sessionId: SessionId): Promise<void> {
     return this.enqueueOperation(async () => {
       const state = this.requireState()
-      const archivedAt = { ...state.archivedAt }
-      delete archivedAt[sessionId]
       await this.setState({
         ...state,
         archivedSessionIds: state.archivedSessionIds.filter(id => id !== sessionId),
-        archivedAt,
+        archivedAt: withoutArchivedAt(state.archivedAt, sessionId),
       })
       for (const entity of this.entities.values()) {
         if (entity.sessionIds.includes(sessionId)) await entity.detachSession(sessionId)
@@ -424,7 +437,7 @@ export class WorkspaceRegistry extends Service {
       initialized: true,
       workspaceIds: state.workspaceIds.filter(workspaceId => workspaceId !== id),
       archivedSessionIds: state.archivedSessionIds,
-        archivedAt: state.archivedAt,
+      archivedAt: state.archivedAt,
     }
     await this.setState({
       ...nextState,
@@ -482,7 +495,7 @@ export class WorkspaceRegistry extends Service {
       initialized: state.initialized,
       workspaceIds: state.workspaceIds,
       archivedSessionIds: state.archivedSessionIds,
-        archivedAt: state.archivedAt,
+      archivedAt: state.archivedAt,
     })
   }
 

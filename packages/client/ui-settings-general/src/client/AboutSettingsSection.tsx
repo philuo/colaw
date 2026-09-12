@@ -125,7 +125,7 @@ export function AboutSettingsSection({ t, about }: AboutSettingsSectionProps) {
         <input
           type="checkbox"
           checked={checked}
-          onChange={e => {
+          onChange={(e) => {
             setChecked(e.target.checked)
             void about.set('autoUpdate', e.target.checked)
           }}

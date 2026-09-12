@@ -56,7 +56,7 @@ describe('json backend specifics', () => {
     const root = await freshRoot()
     await writeFile(join(root, 'shape.json'), 'not json at all', 'utf8')
     const warned: string[] = []
-    const backend = new JsonStorageBackend(root, message => { warned.push(message) })
+    const backend = new JsonStorageBackend(root, (message) => { warned.push(message) })
     const unit = await backend.kv.open(descriptor)
     expect((await unit.loadAll()).tables).toEqual({ t: {} })
     const backups = (await readdir(root)).filter(name => name.startsWith('shape.json.corrupt-'))

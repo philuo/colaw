@@ -25,10 +25,12 @@ export interface McpError {
   error: { code: number; message: string }
 }
 
-/** One content block of a tool answer. AnySearch answers with text only. */
+/** One content block of a tool answer. AnySearch answers with text, but the
+ * wire is a third-party MCP surface: `type` stays open so a reader selects the
+ * text block instead of trusting the first one to be text. */
 export interface McpContentBlock {
-  type: 'text'
-  text: string
+  type: string
+  text?: string
 }
 
 /** JSON-RPC success envelope for `tools/call`. */

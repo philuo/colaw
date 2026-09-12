@@ -50,7 +50,10 @@ const notes = notesFile !== undefined && existsSync(notesFile)
   : undefined
 
 const identity = JSON.parse(readFileSync(join(app, 'Contents/Resources/version.json'), 'utf8')) as {
-  identifier: string, channel: string, version: string, hash: string
+  identifier: string
+  channel: string
+  version: string
+  hash: string
 }
 const prefix = `${identity.channel}-macos-arm64`
 
@@ -89,7 +92,7 @@ const manifestPath = join(outDir, `${prefix}-update.json`)
 // be megabytes where a source-level change is kilobytes (measured: 63KB for a
 // one-byte source delta vs 7.3MB when diffing the zst layer).
 if (existsSync(manifestPath)) {
-  const previous = JSON.parse(readFileSync(manifestPath, 'utf8')) as { hash: string, artifact: { file: string } }
+  const previous = JSON.parse(readFileSync(manifestPath, 'utf8')) as { hash: string; artifact: { file: string } }
   if (previous.hash !== identity.hash) {
     const previousTarZst = join(outDir, previous.artifact.file)
     if (existsSync(previousTarZst)) {
@@ -100,13 +103,13 @@ if (existsSync(manifestPath)) {
         'import bsdiff4, tarfile, io, json, os, sys',
         `old = open(${JSON.stringify(join(outDir, '.prev.tar'))}, 'rb').read()`,
         `new = open(${JSON.stringify(join(outDir, '.next.tar'))}, 'rb').read()`,
-        `patch = bsdiff4.diff(old, new)`,
-        `assert bsdiff4.patch(old, patch) == new, 'round-trip mismatch'`,
+        'patch = bsdiff4.diff(old, new)',
+        'assert bsdiff4.patch(old, patch) == new, \'round-trip mismatch\'',
         `open(${JSON.stringify(patchPath)}, 'wb').write(patch)`,
         // The tar's embedded version.json must name the manifest's hash, or
         // the updater will reject the patched archive after applying it.
         `tf = tarfile.open(${JSON.stringify(join(outDir, '.next.tar'))})`,
-        `vj = json.load(tf.extractfile('Colaw.app/Contents/Resources/version.json'))`,
+        'vj = json.load(tf.extractfile(\'Colaw.app/Contents/Resources/version.json\'))',
         `assert vj['hash'] == ${JSON.stringify(identity.hash)}, 'tar version.json hash mismatch: ' + vj['hash']`,
         `print('patch bytes:', len(patch), 'full zst bytes:', os.path.getsize(${JSON.stringify(tarPath)}))`,
       ].join('\n')

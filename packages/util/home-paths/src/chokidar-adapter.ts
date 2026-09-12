@@ -176,7 +176,7 @@ class FsWatcher implements Watcher {
         this.emit('error', error)
       })
     } catch (error) {
-      this.emit('error', error as Error)
+      this.emit('error', error)
     }
   }
 
@@ -241,7 +241,7 @@ class FsWatcher implements Watcher {
       this.symlinkWatchers.push(targetWatcher)
     } catch (error) {
       this.followedLinks.delete(linkPath)
-      this.emit('error', error as Error)
+      this.emit('error', error)
     }
   }
 
@@ -372,6 +372,9 @@ class FsWatcher implements Watcher {
       stats = await stat(filePath)
     } catch {
       // File no longer exists -> unlink.
+      // The re-check is real, not dead: `close()` flips `closed` from another
+      // call while this stat is in flight, which the analyzer cannot see.
+      // oxlint-disable-next-line typescript/no-unnecessary-condition
       if (this.closed) return
       this.knownPaths.delete(filePath)
       this.emit('all', 'unlink', filePath)
@@ -380,6 +383,7 @@ class FsWatcher implements Watcher {
     }
 
     // Re-check after the await: close() may have run during stat.
+    // oxlint-disable-next-line typescript/no-unnecessary-condition
     if (this.closed) return
 
     if (stats.isDirectory()) {
@@ -461,7 +465,10 @@ class FsWatcher implements Watcher {
     this.listeners.get(event)?.delete(listener)
   }
 
-  async close(): Promise<void> {
+  // The Watcher contract promises a Promise face even though every teardown
+  // step here is synchronous, so this is a resolved promise rather than an
+  // `async` body that would have nothing to await.
+  close(): Promise<void> {
     this.closed = true
     for (const timer of this.debounceTimers.values()) {
       clearTimeout(timer)
@@ -476,6 +483,7 @@ class FsWatcher implements Watcher {
       this.watcher.close()
       this.watcher = undefined
     }
+    return Promise.resolve()
   }
 }
 

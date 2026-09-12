@@ -51,7 +51,11 @@ describe('AnySearchProvider', () => {
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe('https://api.anysearch.com/mcp')
     expect((init.headers as Record<string, string>).authorization).toBe('Bearer as_key')
-    expect(JSON.parse(String(init.body))).toMatchObject({
+    // The provider always sends a JSON string body: `String(body)` on the
+    // BodyInit union would stringify anything else as "[object Object]".
+    const body = init.body
+    if (typeof body !== 'string') throw new TypeError(`expected a string request body, got ${typeof body}`)
+    expect(JSON.parse(body)).toMatchObject({
       jsonrpc: '2.0', method: 'tools/call',
       params: { name: 'search', arguments: { query: 'OpenAI latest news', max_results: 2 } },
     })

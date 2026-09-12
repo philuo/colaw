@@ -128,7 +128,8 @@ export function spawn(
 
   return {
     get pid() {
-      return proc.pid ?? -1
+      // Bun types `pid` as always set once the subprocess exists.
+      return proc.pid
     },
     get process() {
       return file
@@ -145,7 +146,7 @@ export function spawn(
       if (exited && exitEvent !== null) {
         // Already exited, call immediately
         const capturedEvent = exitEvent
-        queueMicrotask(() => cb(capturedEvent))
+        queueMicrotask(() => { cb(capturedEvent) })
       } else {
         exitCallbacks.add(cb)
       }

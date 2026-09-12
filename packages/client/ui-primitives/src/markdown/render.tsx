@@ -594,7 +594,11 @@ function anchorWrapsOnlyImages(children: Md.PhrasingContent[]): boolean {
   return children.length > 0 && children.every(child => child.type === 'image' || child.type === 'imageReference')
 }
 
-/** Anchor over an already-authored href: routed by destination policy — web links open the browser, file links the default application, dead destinations render as text. */
+/**
+ * Anchor over an already-authored href: routed by destination policy — web
+ * links open the browser, file links the default application, dead
+ * destinations render as text.
+ */
 function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = true): ReactNode {
   const destination = classifyDestination(href)
   if (destination.kind === 'dead') return <Fragment key={key}>{children}</Fragment>
@@ -606,10 +610,10 @@ function renderSafeLink(href: string, children: ReactNode[], key: Key, glyph = t
   if (destination.kind === 'web') {
     const onClick = desktop
       ? (event: MouseEvent) => {
-          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
-          event.preventDefault()
-          openExternal(destination.href)
-        }
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+        event.preventDefault()
+        openExternal(destination.href)
+      }
       : undefined
     return (
       <a

@@ -40,7 +40,7 @@ function textOf(content: unknown): string | undefined {
  * @returns the last stored title and the leading user/assistant message
  * texts as markdown, each within the stated bounds.
  */
-export function trashDigest(events: readonly SessionEvent[]): { title?: string, digest?: string } {
+export function trashDigest(events: readonly SessionEvent[]): { title?: string; digest?: string } {
   let title: string | undefined
   const messages: string[] = []
   for (const event of events) {

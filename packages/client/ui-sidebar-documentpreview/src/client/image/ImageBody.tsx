@@ -427,7 +427,10 @@ function ZoomableImage({ url, name, path, sessionId, ready, onDecoded, onFailed,
     ocrTimer.current = window.setTimeout(() => {
       ocrRequest.current = undefined
     }, OCR_RESPONSE_TIMEOUT_MS)
-    sendHost?.({ id: 'image-ocr', path, sessionId, requestId })
+    // The bridge is re-checked here (not just via `canOcr`) because this runs
+    // later than the render that captured it.
+    if (typeof sendHost !== 'function') return
+    sendHost({ id: 'image-ocr', path, sessionId, requestId })
   }, [canOcr, ready, natural, path, sessionId, sendHost])
 
   /** Refresh the pane shape the contain math divides by; false when the

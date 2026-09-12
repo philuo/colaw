@@ -110,7 +110,7 @@ function validateDescriptor(descriptor: KvUnitDescriptor): void {
  * @param config - Validated configuration.
  */
 export function apply(ctx: Context, config: Config) {
-  const backend = new JsonStorageBackend(config.root, message => ctx.logger.warn(message))
+  const backend = new JsonStorageBackend(config.root, (message) => { ctx.logger.warn(message) })
   ctx.effect(() => {
     const unregister = ctx.storage.backend.register('json', backend)
     return async () => {

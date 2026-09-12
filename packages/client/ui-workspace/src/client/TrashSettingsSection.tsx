@@ -102,7 +102,7 @@ export function TrashSettingsSection({ t, trash }: TrashSettingsSectionProps) {
   useEffect(() => {
     setBusy(true)
     reload()
-      .then(next => {
+      .then((next) => {
         setEntries(next)
         setSelected(current => current !== undefined && next.some(entry => entry.sessionId === current)
           ? current
@@ -126,7 +126,7 @@ export function TrashSettingsSection({ t, trash }: TrashSettingsSectionProps) {
     setError(undefined)
     action()
       .then(() => reload())
-      .then(next => {
+      .then((next) => {
         setEntries(next)
         setSelected(current => current !== undefined && next.some(entry => entry.sessionId === current)
           ? current

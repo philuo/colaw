@@ -220,7 +220,7 @@ describe('plugin activation', () => {
 })
 
 describe('tab swallow', () => {
-  function booted(): { entry: AppWebEntry, target: HTMLElement } {
+  function booted(): { entry: AppWebEntry; target: HTMLElement } {
     const container = document.createElement('div')
     document.body.append(container)
     return { entry: new AppWebEntry(container), target: container }

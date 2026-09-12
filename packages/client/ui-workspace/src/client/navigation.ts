@@ -164,7 +164,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
         beforeOpen?.(sessionId)
         if (isCurrent()) this.openSession(sessionId)
       },
-      (reason) => {
+      (reason: unknown) => {
         console.warn('workspace-free session failed:', reason)
         this.sessions.clear()
         this.ctx.layout.selectPanel(null)

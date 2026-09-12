@@ -185,15 +185,21 @@ export class AnySearchProvider implements WebSearchProvider {
 function abortable<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (signal === undefined) return promise
   return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => reject(new DOMException('The operation was aborted.', 'AbortError'))
+    const onAbort = (): void => { reject(new DOMException('The operation was aborted.', 'AbortError')) }
     if (signal.aborted) {
       onAbort()
       return
     }
     signal.addEventListener('abort', onAbort, { once: true })
     promise.then(
-      value => { signal.removeEventListener('abort', onAbort); resolve(value) },
-      error => { signal.removeEventListener('abort', onAbort); reject(error) },
+      (value) => { signal.removeEventListener('abort', onAbort); resolve(value) },
+      // `error` is a rejection reason, not necessarily an Error: normalize it so
+      // the promise never rejects with a raw value, and keep an Error's own
+      // identity (an AbortError's DOMException must survive for `isAbortError`).
+      (error: unknown) => {
+        signal.removeEventListener('abort', onAbort)
+        reject(error instanceof Error ? error : new Error(String(error)))
+      },
     )
   })
 }

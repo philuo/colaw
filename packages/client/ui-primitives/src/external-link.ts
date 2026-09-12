@@ -30,5 +30,8 @@ export function openPathExternal(path: string): void {
 
 /** Copy one URL — the right-click affordance every link surface shares. */
 export function copyExternal(url: string): void {
-  void navigator.clipboard?.writeText(url)
+  // lib.dom types `clipboard` as always present, but a non-secure context
+  // leaves it undefined at runtime — hence the optional chain, with the type
+  // widened to match reality rather than dropped.
+  void (navigator as { clipboard?: Clipboard }).clipboard?.writeText(url)
 }

@@ -387,7 +387,9 @@ describe('ImageBody', () => {
       await act(async () => { await Promise.resolve() })
       // Recognition is automatic — decoding the image is the only trigger,
       // and no affordance (button/dialog) is ever shown for it.
-      expect(sent).toEqual([{ id: 'image-ocr', path: '/Users/x/notes.png', sessionId: 'image', requestId: expect.any(String) }])
+      expect(sent).toHaveLength(1)
+      expect(sent[0]).toMatchObject({ id: 'image-ocr', path: '/Users/x/notes.png', sessionId: 'image' })
+      expect(typeof sent[0]?.requestId).toBe('string')
       expect(screen.queryByRole('button', { name: /Recognize|Recognizing|Clear/ })).toBeNull()
       // The host answers with a window event carrying the request id; the
       // lines land as transparent, selectable text over the image.

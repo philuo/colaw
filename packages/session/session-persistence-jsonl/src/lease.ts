@@ -41,13 +41,28 @@ type BunFfiFlockFn = { flock: (fd: number, operation: number) => number }
 /** Platform errno accessor over Bun.FFI: darwin `__error`, glibc `__errno_location`. */
 type BunFfiErrnoFn = () => number
 
+/**
+ * The `bun:ffi` surface this module drives, typed structurally: the repo's host
+ * program carries no Bun type package, so `require('bun:ffi')` would otherwise
+ * be an `any` and every FFI call behind it unchecked.
+ */
+interface BunFfiModule {
+  // Property-style signatures, not methods: these are destructured off the
+  // module object, so they carry no receiver to bind.
+  readonly dlopen: (
+    path: string,
+    symbols: Record<string, { readonly args: readonly string[]; readonly returns: string }>,
+  ) => { readonly symbols: Record<string, unknown> }
+  readonly read: { readonly u32: (pointer: number) => number }
+}
+
 let bunFfiFloc: BunFfiFlockFn | null = null
 let bunFfiErrno: BunFfiErrnoFn | null = null
 
 function getBunFfiFloc(): BunFfiFlockFn {
   if (bunFfiFloc) return bunFfiFloc
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { dlopen, read } = require('bun:ffi')
+  const { dlopen, read } = require('bun:ffi') as BunFfiModule
   const libcPath = process.platform === 'darwin'
     ? '/usr/lib/libSystem.B.dylib'
     : 'libc.so.6'
@@ -113,7 +128,10 @@ function flockAsync(fd: number): Promise<void> {
         tryLockExclusive(fd).then(resolve, reject)
       }
     } catch (error) {
-      reject(error)
+      // Preserve an Error's identity (it may carry the errno `code` callers map
+      // to contention); normalize anything else, since promise rejections must
+      // not smuggle raw values.
+      reject(error instanceof Error ? error : new Error(String(error)))
     }
   })
 }

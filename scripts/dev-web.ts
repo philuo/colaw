@@ -183,8 +183,10 @@ function stopStages(): void {
  * @param cwd - working directory for the stage; defaults to the repo root.
  */
 function spawnStage(stage: string, cmd: readonly string[], cwd: string = repoRoot): void {
+  const command = cmd[0]
+  if (command === undefined) throw new Error(`spawnStage(${stage}): empty argv`)
   // Detached: the stage leads its own process group (see stopStages).
-  const child = execa(cmd[0]!, [...cmd.slice(1)], {
+  const child = execa(command, [...cmd.slice(1)], {
     cwd,
     stdio: 'inherit',
     reject: false,

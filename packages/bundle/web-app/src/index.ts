@@ -161,7 +161,7 @@ function resolveDistIndex(): string {
 function spawnBrowserLauncher(url: string): ChildProcess {
   const opener = PLATFORM_BROWSER_OPENER[process.platform]
   if (opener === undefined) {
-    throw new Error(`web-app: no native browser opener registered for platform ${String(process.platform)}`)
+    throw new Error(`web-app: no native browser opener registered for platform ${process.platform}`)
   }
   return spawn(opener.command, [...opener.prefixArgs, url], {
     env: scrubbedParentEnv(),

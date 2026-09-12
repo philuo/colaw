@@ -10,6 +10,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-web'
 import { AnySearchProvider, ANYSEARCH_DEFAULT_ENDPOINT } from './provider.ts'
@@ -52,7 +53,7 @@ export const Config: z<Config> = z.object({
 
 /** Register the AnySearch search provider with `ctx.web`. */
 export function apply(ctx: Context, config: Config): void {
-  const ref = config.apiKeyEnv ?? DEFAULT_API_KEY_REF
+  const ref = credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_REF)
   ctx.web.registerSearchProvider(new AnySearchProvider({
     endpoint: config.endpoint ?? ANYSEARCH_DEFAULT_ENDPOINT,
     ...config.apiKey !== undefined ? { apiKey: config.apiKey } : {},
@@ -67,7 +68,7 @@ export function apply(ctx: Context, config: Config): void {
   }))
 
   // Publish the section so the settings card has a scope to stage against.
-  ctx.inject(['settings'], settingsCtx => {
+  ctx.inject(['settings'], (settingsCtx) => {
     settingsCtx.settings.register(NS, Config)
   })
 }

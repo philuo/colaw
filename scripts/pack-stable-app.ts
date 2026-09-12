@@ -1054,7 +1054,9 @@ function emitCommonJSPackage(pkg: string, pkgDir: string, outDir: string, manife
  * `@deepseek-ai/*` stays external: the plugin tree shares those module
  * instances (cordis above all), and a host-bundled second copy would break
  * that sharing. */
-async function emitHostBundle(closure: Closure): Promise<void> {
+// Synchronous throughout: every step here shells out through `run`
+// (spawnSync), so the promise face the call site awaits is trivial.
+function emitHostBundle(closure: Closure): void {
   const externals = externalsFor(closure, '@deepseek-ai/dsh-electrobun-host')
     .filter(spec => packageRootName(spec) !== 'electrobun')
   const outDir = join(appResourcesApp, 'bun')
@@ -1351,7 +1353,7 @@ async function main(): Promise<void> {
     dependencies: installDependencies,
   }, undefined, 2)}\n`)
 
-  await emitHostBundle(closure)
+  emitHostBundle(closure)
   auditApp(closure)
   reportSize()
   stageStableApp()

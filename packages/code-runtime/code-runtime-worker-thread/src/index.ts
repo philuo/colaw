@@ -86,8 +86,14 @@ const stripTypeScriptTypes: (code: string) => string =
     ? (nodeModule as unknown as { stripTypeScriptTypes: (code: string) => string }).stripTypeScriptTypes.bind(nodeModule)
     : (code: string): string => {
       // Bun fallback: use Bun.Transpiler to strip TypeScript types
-      const bunGlobal = globalThis as unknown as { Bun?: { Transpiler: new (options: { loader: string }) => { transformSync: (code: string) => string } } }
-      const transpiler = new bunGlobal.Bun!.Transpiler({ loader: 'ts' })
+      const bunGlobal = globalThis as unknown as {
+        Bun?: { Transpiler: new (options: { loader: string }) => { transformSync: (code: string) => string } }
+      }
+      const Bun = bunGlobal.Bun
+      if (Bun === undefined) {
+        throw new Error('code-runtime-worker-thread: the strip-TypeScript fallback requires the Bun global')
+      }
+      const transpiler = new Bun.Transpiler({ loader: 'ts' })
       return transpiler.transformSync(code)
     }
 

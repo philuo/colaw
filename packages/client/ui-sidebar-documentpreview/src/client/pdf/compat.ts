@@ -58,6 +58,10 @@ export function installPdfCompat(): void {
           const result = attempt(...args)
           return Promise.resolve(result)
         } catch (error) {
+          // Polyfill fidelity: `Promise.try` forwards the thrown value as the
+          // rejection reason verbatim, so wrapping it in an Error here would
+          // invent a shape the spec does not have.
+          // oxlint-disable-next-line typescript/prefer-promise-reject-errors
           return Promise.reject(error)
         }
       },

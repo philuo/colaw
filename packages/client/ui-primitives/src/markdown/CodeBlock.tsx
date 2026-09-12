@@ -11,6 +11,19 @@ import type { HighlightSpan, StreamingHighlightFrame } from './highlight.ts'
 import { useViewportHighlighting } from './useViewportHighlighting.ts'
 import css from './CodeBlock.module.css'
 
+/**
+ * The extension-link anchor a block event landed on, or undefined. The event
+ * target is whatever node the click landed on — a Text node has no `closest` —
+ * so both the target and the method are guarded at runtime rather than trusted
+ * from a cast.
+ * @param target - the event's raw target.
+ * @returns the extension-link anchor, when the click landed inside one.
+ */
+function closestExtLink(target: EventTarget | null): HTMLAnchorElement | undefined {
+  const node = target as { closest?: (selector: string) => HTMLAnchorElement | null } | null
+  return node?.closest?.('a[data-ext-link]') ?? undefined
+}
+
 export interface CodeBlockProps {
   /** The source text, rendered verbatim (trailing newline trimmed for display). */
   code: string
@@ -181,17 +194,17 @@ export function CodeBlock({ code, lang, streaming, className, contentRef, lineNu
   // a block: highlighted HTML got real anchors, plain text got React ones) —
   // one delegated listener on the block root covers both shapes.
   const onBlockClick = useCallback((event: ReactMouseEvent<HTMLElement>): void => {
-    const anchor = (event.target as HTMLElement | null)?.closest?.('a[data-ext-link]')
-    if (anchor === null || anchor === undefined) return
+    const anchor = closestExtLink(event.target)
+    if (anchor === undefined) return
     event.preventDefault()
-    openExternal((anchor as HTMLAnchorElement).href)
+    openExternal(anchor.href)
   }, [])
 
   const onBlockContextMenu = useCallback((event: ReactMouseEvent<HTMLElement>): void => {
-    const anchor = (event.target as HTMLElement | null)?.closest?.('a[data-ext-link]')
-    if (anchor === null || anchor === undefined) return
+    const anchor = closestExtLink(event.target)
+    if (anchor === undefined) return
     event.preventDefault()
-    copyExternal((anchor as HTMLAnchorElement).href)
+    copyExternal(anchor.href)
   }, [])
 
   const onCopy = useCallback(() => {
