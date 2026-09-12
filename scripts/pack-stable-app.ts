@@ -1069,11 +1069,16 @@ async function emitHostBundle(closure: Closure): Promise<void> {
 }
 
 function ensureBuilds(): void {
-  if (!isDirectory(join(repoRoot, 'apps', 'web', 'dist'))) {
-    console.error('pack-stable-app: apps/web/dist is missing — run `pnpm run build` first')
-    process.exit(1)
+  // No dist guard: on a clean checkout (CI) the vite build at the end of this
+  // sequence creates apps/web/dist itself; --skip-build still requires a
+  // previous full pass to have left the artifacts behind.
+  if (skipBuild) {
+    if (!isDirectory(join(repoRoot, 'apps', 'web', 'dist'))) {
+      console.error('pack-stable-app: --skip-build needs a previous full build (apps/web/dist is missing)')
+      process.exit(1)
+    }
+    return
   }
-  if (skipBuild) return
   // The repo tracks only the two .icns files; the devkit's mac build wants an
   // .iconset, so derive it from the dark icns (the bundle icon) on every full
   // build. With --skip-build the previous derivation under build/ is reused.
