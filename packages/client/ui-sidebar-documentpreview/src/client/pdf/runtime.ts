@@ -1,4 +1,7 @@
 /** One real module Worker and PDF.js loading task per mounted binary document. */
+// Installs the WKWebView shims PDF.js 6 needs BEFORE the PDF.js module
+// executes — import order is the guarantee, so this precedes pdfjs itself.
+import { WORKER_COMPAT_SOURCE } from './compat.ts'
 import { getDocument, PDFWorker } from 'pdfjs-dist'
 import { createPdfBinaryDataFactory, workerSource } from './assets.ts'
 import type { PdfSession } from './document.ts'
@@ -70,6 +73,11 @@ export function openPdf(data: Uint8Array<ArrayBuffer>, signal: AbortSignal, repo
     const BinaryDataFactory = createPdfBinaryDataFactory()
     const bytes = data.slice()
     url = URL.createObjectURL(new Blob([
+      // The worker realm needs the same WKWebView shims the main thread
+      // installs; its globals are its own, so the shims ride the worker
+      // source itself (see ./compat.ts for the mirrored surface).
+      WORKER_COMPAT_SOURCE,
+      '\n',
       workerSource,
       `\nself.postMessage({type:${JSON.stringify(WORKER_READY)}});\n`,
     ], { type: 'text/javascript' }))
