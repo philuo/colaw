@@ -1,6 +1,7 @@
 /* The pane-bounded surface: the body fills the document cell and hosts the
-   format's viewer (a canvas for Word/PowerPoint, the viewer's own grid plus
-   sheet tab bar for Excel) above the status overlays. */
+   format's viewer (a continuous page scroll for Word/PowerPoint, the viewer's
+   own grid plus sheet tab bar for Excel) above the status overlays. */
+
 .body {
   position: relative;
   display: flex;
@@ -14,21 +15,19 @@
   white-space: normal;
 }
 
-/* The viewer's mount. The viewer drives the canvas's layout size (fit-width,
-   zoom); the surface only centers it and keeps overflow reachable. */
+/* The viewer's mount. The viewer drives everything inside (page layout, zoom,
+   refit-on-resize); the surface only gives it a definite height. */
 .surface {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  align-items: stretch;
-  justify-content: center;
-  overflow: auto;
+  overflow: hidden;
 }
 
-.canvas {
-  display: block;
-  max-width: 100%;
+.surface > * {
+  min-width: 0;
+  min-height: 0;
 }
 
 .status {
@@ -44,22 +43,4 @@
   font-size: 13px;
   line-height: 1.5;
   white-space: normal;
-}
-
-.navigationBar {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 8px;
-  align-items: center;
-  justify-content: center;
-  padding: 6px 0 0;
-}
-
-.pageIndicator {
-  min-width: 64px;
-  color: var(--dsw-alias-label-secondary);
-  font-family: var(--dsw-mono-font, ui-monospace, monospace);
-  font-size: 12px;
-  line-height: 18px;
-  text-align: center;
 }

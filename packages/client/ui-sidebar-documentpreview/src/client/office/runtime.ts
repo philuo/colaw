@@ -1,100 +1,110 @@
 /**
  * The Office viewer seam: the only module that touches `@silurus/ooxml`, the
- * same boundary the PDF renderer draws around pdfjs. The library ships its own
- * worker fallback (a data-URL worker when no module URL is available), so the
- * one thing it cannot self-supply — the parser WebAssembly — arrives through
- * the inlined `wasmUrl` blob from {@link ./assets.ts}.
+ * same boundary the PDF renderer draws around pdfjs. Word and PowerPoint use
+ * the library's scroll viewers — continuous multi-page surfaces with a text
+ * selection layer, live hyperlinks, and width refit — and Excel uses its
+ * grid viewer with the sheet tab bar. The one thing the library cannot
+ * self-supply, the parser WebAssembly, arrives through the inlined `wasmUrl`
+ * blob from {@link ./assets.ts}.
  */
-import { DocxViewer, type DocxViewerOptions } from '@silurus/ooxml/docx'
-import { PptxViewer, type PptxViewerOptions } from '@silurus/ooxml/pptx'
+import { openExternal } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DocxScrollViewer, type DocxScrollViewerOptions } from '@silurus/ooxml/docx'
+import { PptxScrollViewer, type PptxScrollViewerOptions } from '@silurus/ooxml/pptx'
 import { XlsxViewer, XlsxWorkbook, type XlsxViewerOptions } from '@silurus/ooxml/xlsx'
 import { ooxmlWasmUrl, type OoxmlFormat } from './assets.ts'
 
 export type { OoxmlFormat }
-export { DocxViewer, PptxViewer, XlsxViewer, XlsxWorkbook }
+export { DocxScrollViewer, PptxScrollViewer, XlsxViewer, XlsxWorkbook }
 
-/** Progress and failure callbacks the body shares across formats. */
+/** Scale bounds shared by the viewer options and the body's wheel gesture. */
+export const OFFICE_ZOOM_MIN = 0.25
+export const OFFICE_ZOOM_MAX = 8
+
+/** Failure callbacks the body shares across formats. */
 export interface OfficeHooks {
-  /**
-   * Page/slide position, reported by the viewer as it lays out and navigates.
-   * @param index - zero-based position.
-   * @param total - known positions so far; a progressive layout may grow it.
-   */
-  readonly onProgress: (index: number, total: number) => void
   /** An asynchronous viewer failure after its load promise settled. */
   readonly onError: (error: Error) => void
 }
 
 /**
- * A loaded, interactive viewer. `navigate` is present for the paged formats
- * (Word, PowerPoint); the spreadsheet viewer owns its own sheet tabs instead.
+ * A loaded, interactive viewer. `zoom` drives the body's pinch gesture (the
+ * library's own wheel zoom is a discrete 1.1x step, deliberately replaced by
+ * the image preview's continuous curve); `scrollHost` is the scrollable
+ * element the cursor-anchor math needs, present for the paged formats only.
  */
 export interface OfficeHandle {
   readonly dispose: () => void
-  readonly navigate?: {
-    readonly previous: () => void
-    readonly next: () => void
+  readonly zoom: {
+    readonly getScale: () => number
+    readonly setScale: (scale: number) => void
+  }
+  readonly scrollHost?: HTMLElement | undefined
+}
+
+/** Route one hyperlink activation through the app's single external seam. */
+function onHyperlinkClick(target: { kind: string; url?: string }): void {
+  if (target.kind === 'external' && typeof target.url === 'string') openExternal(target.url)
+}
+
+/** The viewer's scrollable element: the wrapper's first child inside the container. */
+function scrollHostOf(container: HTMLElement): HTMLElement | undefined {
+  const host = container.firstElementChild?.firstElementChild
+  return host instanceof HTMLElement ? host : undefined
+}
+
+/** The viewer options every format shares: parser payload, selection, links, zoom bounds. */
+function sharedOptions<Wasm>(wasm: Wasm, hooks: OfficeHooks) {
+  return {
+    wasmUrl: wasm,
+    enableTextSelection: true,
+    enableHyperlinks: true,
+    onHyperlinkClick,
+    // The library's wheel zoom is replaced by the body's continuous gesture;
+    // its zoomIn/zoomOut and the setScale clamp still honor these bounds.
+    zoomMin: OFFICE_ZOOM_MIN,
+    zoomMax: OFFICE_ZOOM_MAX,
+    onError: hooks.onError,
   }
 }
 
 /**
- * Parse one Word document and present its pages in the canvas.
- * @param canvas - the canvas the viewer renders the current page into.
+ * Parse one Word document and present its pages as a continuous scroll with
+ * selectable text and live hyperlinks, fitted to the container width.
+ * @param container - the element the viewer mounts its scroll surface into.
  * @param data - the complete `.docx` bytes (copied; the parser takes ownership).
- * @param hooks - progress and failure callbacks.
+ * @param hooks - failure callbacks.
  * @returns the viewer handle.
  */
-export async function openDocx(canvas: HTMLCanvasElement, data: ArrayBuffer, hooks: OfficeHooks): Promise<OfficeHandle> {
-  const options: DocxViewerOptions = {
-    wasmUrl: ooxmlWasmUrl('docx'),
-    onPageChange: (index, total) => { hooks.onProgress(index, total) },
-    onError: hooks.onError,
-  }
-  const viewer = new DocxViewer(canvas, options)
+export async function openDocx(container: HTMLElement, data: ArrayBuffer, hooks: OfficeHooks): Promise<OfficeHandle> {
+  const viewer = new DocxScrollViewer(container, sharedOptions(ooxmlWasmUrl('docx'), hooks) as DocxScrollViewerOptions)
   try {
     await viewer.load(data)
-    await viewer.fitWidth()
+    viewer.fitWidth()
   } catch (error) {
     viewer.destroy()
     throw error
   }
-  return {
-    dispose: () => { viewer.destroy() },
-    navigate: {
-      previous: () => { void viewer.prevPage() },
-      next: () => { void viewer.nextPage() },
-    },
-  }
+  return { dispose: () => { viewer.destroy() }, zoom: viewer, scrollHost: scrollHostOf(container) }
 }
 
 /**
- * Parse one slide deck and present its slides in the canvas.
- * @param canvas - the canvas the viewer renders the current slide into.
+ * Parse one slide deck and present its slides as a continuous scroll with
+ * selectable text and live hyperlinks, fitted to the container width.
+ * @param container - the element the viewer mounts its scroll surface into.
  * @param data - the complete `.pptx` bytes (copied; the parser takes ownership).
- * @param hooks - progress and failure callbacks.
+ * @param hooks - failure callbacks.
  * @returns the viewer handle.
  */
-export async function openPptx(canvas: HTMLCanvasElement, data: ArrayBuffer, hooks: OfficeHooks): Promise<OfficeHandle> {
-  const options: PptxViewerOptions = {
-    wasmUrl: ooxmlWasmUrl('pptx'),
-    onSlideChange: (index, total) => { hooks.onProgress(index, total) },
-    onError: hooks.onError,
-  }
-  const viewer = new PptxViewer(canvas, options)
+export async function openPptx(container: HTMLElement, data: ArrayBuffer, hooks: OfficeHooks): Promise<OfficeHandle> {
+  const viewer = new PptxScrollViewer(container, sharedOptions(ooxmlWasmUrl('pptx'), hooks) as PptxScrollViewerOptions)
   try {
     await viewer.load(data)
-    await viewer.fitWidth()
+    viewer.fitWidth()
   } catch (error) {
     viewer.destroy()
     throw error
   }
-  return {
-    dispose: () => { viewer.destroy() },
-    navigate: {
-      previous: () => { void viewer.prevSlide() },
-      next: () => { void viewer.nextSlide() },
-    },
-  }
+  return { dispose: () => { viewer.destroy() }, zoom: viewer, scrollHost: scrollHostOf(container) }
 }
 
 /**
@@ -106,7 +116,10 @@ export async function openPptx(canvas: HTMLCanvasElement, data: ArrayBuffer, hoo
  * @returns the handle releasing the viewer and the borrowed workbook.
  */
 export async function openXlsx(container: HTMLElement, data: ArrayBuffer, hooks: OfficeHooks): Promise<OfficeHandle> {
-  const options: XlsxViewerOptions = { wasmUrl: ooxmlWasmUrl('xlsx'), onError: hooks.onError }
+  const options: XlsxViewerOptions = {
+    wasmUrl: ooxmlWasmUrl('xlsx'),
+    onError: hooks.onError,
+  }
   const workbook = await XlsxWorkbook.load(data, options)
   let viewer: Omit<XlsxViewer, 'load'>
   try {
@@ -120,5 +133,6 @@ export async function openXlsx(container: HTMLElement, data: ArrayBuffer, hooks:
       viewer.destroy()
       workbook.destroy()
     },
+    zoom: viewer,
   }
 }

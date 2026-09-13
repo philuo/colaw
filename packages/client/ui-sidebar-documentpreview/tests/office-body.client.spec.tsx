@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-/** Office body lifecycle: format dispatch, progress chrome, failure retry, and dispose-on-replacement. */
+/** Office body lifecycle: format dispatch, scroll viewer mount, pinch zoom, failure retry, dispose-on-replacement. */
 import { useMemo } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -12,10 +12,12 @@ const engine = vi.hoisted(() => ({
   pptx: vi.fn<typeof openPptx>(),
   xlsx: vi.fn<typeof openXlsx>(),
 }))
-vi.mock('../src/client/office/runtime.ts', () => ({
+vi.mock('../src/client/office/runtime.ts', async importOriginal => ({
+  ...(await importOriginal<object>()),
   openDocx: engine.docx, openPptx: engine.pptx, openXlsx: engine.xlsx,
 }))
 import { OfficeBody, type OfficeFormatBodyProps } from '../src/client/office/OfficeBody.tsx'
+import { OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN } from '../src/client/office/runtime.ts'
 import { en } from '../src/client/office/locales.ts'
 
 /** One scripted loader session, shared by every format's mocked opener. */
@@ -23,7 +25,6 @@ interface Loader {
   readonly deferred: ReturnType<typeof Promise.withResolvers<OfficeHandle>>
   readonly dispose: ReturnType<typeof vi.fn>
   readonly hooks: {
-    readonly onProgress: (index: number, total: number) => void
     readonly onError: (error: Error) => void
   }
 }
@@ -36,6 +37,36 @@ function recordLoad(hooks: Loader['hooks']): Promise<OfficeHandle> {
   loads.push({ deferred, dispose, hooks })
   return deferred.promise
 }
+
+/** A zoom seam double with its own scale, so gesture math is observable. */
+function zoomDouble(scale = 1): {
+  zoom: OfficeHandle['zoom']
+  setScale: ReturnType<typeof vi.fn>
+  getScale: ReturnType<typeof vi.fn>
+} {
+  let current = scale
+  const setScale = vi.fn((next: number) => { current = next })
+  const getScale = vi.fn(() => current)
+  return { zoom: { getScale, setScale }, setScale, getScale }
+}
+
+/** The scroll-host double the paged handles carry: observable scroll writes. */
+function scrollHostDouble(): HTMLElement & { scrollTop: number; scrollLeft: number } {
+  return {
+    scrollTop: 200,
+    scrollLeft: 100,
+    getBoundingClientRect: () => ({ top: 0, left: 0 } as DOMRect),
+  } as unknown as HTMLElement & { scrollTop: number; scrollLeft: number }
+}
+
+const handleOf = (options: {
+  zoom?: ReturnType<typeof zoomDouble>
+  scrollHost?: HTMLElement
+} = {}): OfficeHandle => ({
+  dispose: vi.fn(),
+  zoom: options.zoom?.zoom ?? zoomDouble().zoom,
+  ...(options.scrollHost === undefined ? {} : { scrollHost: options.scrollHost }),
+})
 
 beforeEach(() => {
   loads.length = 0
@@ -75,8 +106,6 @@ function harness() {
   return { controller, tabId, View }
 }
 
-const handleOf = (navigate?: OfficeHandle['navigate']): OfficeHandle => ({ dispose: vi.fn(), ...navigate === undefined ? {} : { navigate } })
-
 describe('Office body', () => {
   it('reports non-byte contents without parsing', () => {
     const h = harness()
@@ -92,44 +121,72 @@ describe('Office body', () => {
     expect(engine.docx).not.toHaveBeenCalled()
   })
 
-  it('mounts a canvas for Word, reports progress, and pages through the handle', async () => {
+  it('mounts the scroll viewer into the surface and renders no pagination chrome', async () => {
     const h = harness()
     const view = render(<h.View format="docx" />)
     expect(screen.getByRole('status').textContent).toBe(en.loading)
-    expect(view.container.querySelector('canvas')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: en.nextPage })).toBeNull()
-    const handle = handleOf({
-      previous: vi.fn(),
-      next: vi.fn(),
-    })
-    await act(async () => {
-      loads[0]!.hooks.onProgress(0, 3)
-      loads[0]!.deferred.resolve(handle)
-    })
-    await act(async () => {})
-    expect(screen.queryByRole('status')).toBeNull()
-    expect(screen.getByText(en.pageOf.replace('{index}', '1').replace('{total}', '3'))).toBeTruthy()
-    // At the first page the back button is spent; the forward button drives the viewer.
-    expect(screen.getByRole('button', { name: en.previousPage }).hasAttribute('disabled')).toBe(true)
-    fireEvent.click(screen.getByRole('button', { name: en.nextPage }))
-    expect(handle.navigate!.next).toHaveBeenCalledOnce()
-    expect(view.container.querySelector('[data-office-preview="docx"]')).toBeTruthy()
-  })
-
-  it('mounts no canvas for Excel and never renders the page chrome', async () => {
-    const h = harness()
-    const view = render(<h.View format="xlsx" />)
+    const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
+    // The container handed to the viewer is the surface div itself.
+    expect(engine.docx.mock.calls[0]?.[0]).toBe(surface)
     await act(async () => { loads[0]!.deferred.resolve(handleOf()) })
     await act(async () => {})
-    expect(view.container.querySelector('canvas')).toBeNull()
+    expect(screen.queryByRole('status')).toBeNull()
+    // Continuous scroll, PDF-style: no page/slide buttons or indicator remain.
+    expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Previous slide' })).toBeNull()
+  })
+
+  it('zooms on the pinch gesture with the image-preview curve and a cursor anchor', async () => {
+    const h = harness()
+    const view = render(<h.View format="docx" />)
+    const zoom = zoomDouble(1)
+    const host = scrollHostDouble()
+    await act(async () => { loads[0]!.deferred.resolve(handleOf({ zoom, scrollHost: host })) })
+    await act(async () => {})
+
+    // One pinch notch: exp(12*0.007) ≈ 1.088 — smooth, not the library's 1.1 jump.
+    const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
+    fireEvent(surface, new WheelEvent('wheel', { ctrlKey: true, deltaY: -12, clientX: 60, clientY: 40, cancelable: true }))
+    const expected = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, Math.exp(12 * 0.007)))
+    expect(zoom.setScale).toHaveBeenCalledWith(expected)
+    // Cursor-anchored scroll correction: content point scales around the anchor.
+    expect(host.scrollTop).toBeCloseTo((200 + 40) * expected - 40, 5)
+    expect(host.scrollLeft).toBeCloseTo((100 + 60) * expected - 60, 5)
+
+    // Plain wheel is untouched: no zoom, native scrolling.
+    zoom.setScale.mockClear()
+    fireEvent(surface, new WheelEvent('wheel', { deltaY: -50, cancelable: true }))
+    expect(zoom.setScale).not.toHaveBeenCalled()
+  })
+
+  it('clamps the zoom bounds on both ends', async () => {
+    const h = harness()
+    render(<h.View format="docx" />)
+    const zoom = zoomDouble(7.9)
+    await act(async () => { loads[0]!.deferred.resolve(handleOf({ zoom })) })
+    await act(async () => {})
+    const surface = document.querySelector('[class*="surface"]') as HTMLElement
+    fireEvent(surface, new WheelEvent('wheel', { ctrlKey: true, deltaY: -40, cancelable: true }))
+    expect(zoom.setScale).toHaveBeenLastCalledWith(OFFICE_ZOOM_MAX)
+  })
+
+  it('renders no pagination chrome for Excel either, and zooms its grid viewer', async () => {
+    const h = harness()
+    const view = render(<h.View format="xlsx" />)
+    const zoom = zoomDouble(1)
+    await act(async () => { loads[0]!.deferred.resolve(handleOf({ zoom })) })
+    await act(async () => {})
     expect(view.container.querySelector('[data-office-preview="xlsx"]')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: en.nextPage })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
+    const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
+    fireEvent(surface, new WheelEvent('wheel', { metaKey: true, deltaY: -20, clientX: 10, clientY: 10, cancelable: true }))
+    expect(zoom.setScale).toHaveBeenCalledOnce()
   })
 
   it('replaces the session and disposes the previous viewer when the data changes', async () => {
     const h = harness()
     const mounted = render(<h.View format="pptx" data="old" />)
-    const first = handleOf({ previous: vi.fn(), next: vi.fn() })
+    const first = handleOf()
     await act(async () => { loads[0]!.deferred.resolve(first) })
     await act(async () => {})
     mounted.rerender(<h.View format="pptx" data="new" />)
@@ -138,7 +195,7 @@ describe('Office body', () => {
     expect(first.dispose).toHaveBeenCalledOnce()
     expect(engine.pptx).toHaveBeenCalledTimes(2)
     expect(loads[1]!.dispose).not.toHaveBeenCalled()
-    const second = handleOf({ previous: vi.fn(), next: vi.fn() })
+    const second = handleOf()
     await act(async () => { loads[1]!.deferred.resolve(second) })
     await act(async () => {})
     mounted.unmount()
@@ -160,7 +217,7 @@ describe('Office body', () => {
   it('routes a post-load viewer failure to the same failure line', async () => {
     const h = harness()
     render(<h.View format="docx" />)
-    await act(async () => { loads[0]!.deferred.resolve(handleOf({ previous: vi.fn(), next: vi.fn() })) })
+    await act(async () => { loads[0]!.deferred.resolve(handleOf()) })
     await act(async () => {})
     expect(screen.queryByRole('alert')).toBeNull()
     await act(async () => { loads[0]!.hooks.onError(new Error('render blew up')) })
