@@ -216,6 +216,9 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:^
         version: link:../../packages/mcp/mcp-client
+      '@deepseek-ai/dsh-mcp-keyring':
+        specifier: workspace:*
+        version: link:../../packages/mcp/mcp-keyring
       '@deepseek-ai/dsh-persona':
         specifier: workspace:^
         version: link:../../packages/preset/persona
@@ -517,6 +520,9 @@ importers:
       '@deepseek-ai/dsh-mcp-client':
         specifier: workspace:*
         version: link:../../packages/mcp/mcp-client
+      '@deepseek-ai/dsh-mcp-keyring':
+        specifier: workspace:*
+        version: link:../../packages/mcp/mcp-keyring
       '@deepseek-ai/dsh-skill-baidu-netdisk':
         specifier: workspace:*
         version: link:../../packages/skill/skill-baidu-netdisk
@@ -7373,6 +7379,22 @@ importers:
       '@modelcontextprotocol/server-filesystem':
         specifier: ^2026.7.4
         version: 2026.7.10(zod@4.4.3)
+
+  packages/mcp/mcp-keyring:
+    dependencies:
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-credentials':
+        specifier: workspace:^
+        version: link:../../credentials/credentials
+      '@deepseek-ai/dsh-mcp-client':
+        specifier: workspace:^
+        version: link:../mcp-client
 
   packages/plan/plan-mode:
     dependencies:

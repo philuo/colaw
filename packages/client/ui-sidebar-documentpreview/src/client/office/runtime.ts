@@ -56,6 +56,13 @@ function scrollHostOf(container: HTMLElement): HTMLElement | undefined {
 function sharedOptions<Wasm>(wasm: Wasm, hooks: OfficeHooks) {
   return {
     wasmUrl: wasm,
+    // CJK font fallback: documents naming fonts the host lacks (常见于中文
+    // 排版问题) fall back per the auto-detected region instead of rendering
+    // tofu or mis-measured runs.
+    cjkFallback: 'auto',
+    // Render at the display's pixel density so glyph metrics and hit tests
+    // match what the screen shows.
+    dpr: Math.min(window.devicePixelRatio || 1, 2),
     enableTextSelection: true,
     enableHyperlinks: true,
     onHyperlinkClick,

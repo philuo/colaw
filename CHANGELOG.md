@@ -13,6 +13,11 @@
   案例关键词/法条检索/法律识别/案号识别/引注校验）、企查查 9 个（工商信息/
   经营风险/知识产权/企业经营/历史信息/股东高管/司法法规/司法案件/招投标）、
   Firecrawl 1 个（网页抓取与结构化提取）。全部经 Streamable HTTP 接入，工具以 `mcp__<server>__<tool>` 形式对模型可见。
+- **MinerU 文档解析工具（`mineru_parse_document`）**：把工作区里的 PDF（含扫描件）、
+  图片或 Office 文档经 MinerU 云服务解析为 Markdown——上传（预签名 URL）→ 轮询 →
+  结果包内提取 `full.md`，写回源文件旁 `<name>.mineru.md`，模型即可用文件工具读取；
+  支持 OCR 开关与语言提示。密钥经「内置服务密钥」配置（MINERU_API_KEY），**每次
+  调用实时解析，填入即生效**。
 - **百度网盘技能（baidu-drive）**：内置百度网盘 Agent Skill（上游
   baidu-netdisk/bdpan-storage，Apache-2.0，含参考文档与 bdpan CLI 安装/登录
   脚本），支持上传、下载、转存、分享、搜索、整理网盘文件，首次使用自动引导

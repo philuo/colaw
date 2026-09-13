@@ -24,13 +24,20 @@ export const name = 'tool-mineru'
 /** Service required to publish the tool. */
 export const inject = ['tools']
 
-/** Plugin configuration: the MinerU API token (创建于 mineru.net API 管理页). */
+/**
+ * Credential reference the token resolves from when the composition names no
+ * static token — the AnySearch pattern: the key lives in the managed store,
+ * entered in Settings, never in a composition file.
+ */
+export const MINERU_CREDENTIAL_REF = 'MINERU_API_KEY'
+
+/** Plugin configuration: an optional static MinerU API token. */
 export interface Config {
-  token: string
+  token?: string
 }
 
 export const Config: z<Config> = z.object({
-  token: z.string().required(),
+  token: z.string(),
 })
 
 const MINERU_BASE = 'https://mineru.net'
@@ -102,10 +109,21 @@ function extractMarkdown(zip: Uint8Array): string {
 
 /**
  * Register the MinerU parsing tool.
- * @param ctx - plugin context carrying the tool registry.
- * @param config - the product-issued MinerU API token.
+ * @param ctx - plugin context carrying the tool registry and the credentials store.
+ * @param config - an optional static token; absence falls back to the
+ *   {@link MINERU_CREDENTIAL_REF} credential, re-resolved per call so a key
+ *   entered in Settings applies without a restart.
  */
 export function apply(ctx: Context, config: Config): void {
+  const resolveToken = async (): Promise<string> => {
+    if (config.token !== undefined && config.token.length > 0) return config.token
+    const credentials = (ctx as { credentials?: { resolve(ref: string): Promise<{ value: string } | undefined> } }).credentials
+    const resolved = await credentials?.resolve(MINERU_CREDENTIAL_REF).catch(() => undefined)
+    if (resolved === undefined) {
+      throw new Error('MinerU API key is not configured — set it under Settings → General → 内置服务密钥 (MINERU_API_KEY).')
+    }
+    return resolved.value
+  }
   ctx.effect(() => ctx.tools.register(defineTool({
     name: 'mineru_parse_document',
     description: 'Parse a document file (PDF including scans, images, or Office documents) into Markdown with the MinerU cloud service. '
@@ -142,7 +160,7 @@ export function apply(ctx: Context, config: Config): void {
       // 1. Reserve presigned upload URLs (one file → one URL).
       const reserve = await mineruJson<MineruBatchResponse>(
         `${MINERU_BASE}${BATCH_UPLOAD_ENDPOINT}`,
-        config.token,
+        await resolveToken(),
         {
           method: 'POST',
           body: JSON.stringify({
@@ -180,7 +198,7 @@ export function apply(ctx: Context, config: Config): void {
         if (exec.signal.aborted) throw new Error('MinerU parse aborted')
         const result = await mineruJson<MineruBatchResult>(
           `${MINERU_BASE}${BATCH_RESULT_ENDPOINT}/${encodeURIComponent(batchId)}`,
-          config.token,
+          await resolveToken(),
           { method: 'GET' },
         )
         const entry = result.data?.extract_result?.[0]
