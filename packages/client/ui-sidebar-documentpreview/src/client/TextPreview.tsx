@@ -22,6 +22,7 @@ import { failureLine } from './failure-line.ts'
 import { IconNowrapFill16, IconWrapFill16 } from './icons.tsx'
 import { LoadingIndicator } from './LoadingIndicator.tsx'
 import { hostFileOf } from './rpc.ts'
+import { bindSelectionScope } from './selection-scope.ts'
 import type { TextStore } from './store.ts'
 import type { DocumentContent } from './document/contract.ts'
 import { matchingDocumentPreviews } from './document/registry.ts'
@@ -174,6 +175,15 @@ export function TextPreview({
       if (hasContent) scheduleRelease(actions, tab.id)
     }
   }, [actions, tab.id, signal, current])
+
+  // Selection stays inside the tab in use: the body is a selection scope, so
+  // a drag or ⌘A covers this tab's preview only — never the app chrome, the
+  // chat, or the other pane's preview in split view.
+  useEffect(() => {
+    const body = bodyRef.current
+    if (body === null) return
+    return bindSelectionScope(body)
+  }, [])
 
   // Come back where the reader was once there is content to scroll: on a remount,
   // after a reload rebuilt the content, or after the selected renderer changed.

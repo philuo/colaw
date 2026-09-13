@@ -312,3 +312,9 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+/* The selection-scope body takes focus on pointerdown (so ⌘A resolves to the
+   pane in use); a scroll container never paints a focus ring for that. */
+.body:focus {
+  outline: none;
+}
