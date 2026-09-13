@@ -17,6 +17,12 @@ export type PluginsSettingsLocaleKey =
   | 'subagentModelSelectionPartial' | 'subagentModelSelectionUnavailable'
   | 'subagentModelSelectionUnavailableGroup' | 'subagentModelSelectionEmpty'
   | 'subagentModelSelectionRequired' | 'subagentModelSelectionConflict' | 'subagentModelSelectionOff'
+  | 'builtinTab'
+  | 'builtinApiKey' | 'builtinApiKeySet' | 'builtinApiKeyUnset' | 'builtinApiKeyPlaceholder'
+  | 'builtin.pkulaw' | 'builtin.pkulawDescription' | 'builtin.pkulawHint'
+  | 'builtin.qcc' | 'builtin.qccDescription' | 'builtin.qccHint'
+  | 'builtin.firecrawl' | 'builtin.firecrawlDescription' | 'builtin.firecrawlHint'
+  | 'builtin.mineru' | 'builtin.mineruDescription' | 'builtin.mineruHint'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -55,6 +61,23 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchApiKeyUnset: 'No key is configured; search is unavailable until one is.',
   webSearchApiKeyStored: 'Configured — enter a new value to replace',
   webSearchApiKeyPlaceholder: 'Enter the API key',
+  builtinTab: 'Built-in plugins',
+  builtinApiKey: 'API key',
+  builtinApiKeySet: 'A key is configured.',
+  builtinApiKeyUnset: 'No key is configured; this service is unavailable until one is.',
+  builtinApiKeyPlaceholder: 'Enter the API key',
+  'builtin.pkulaw': 'PKULaw',
+  'builtin.pkulawDescription': 'Statute and case search MCP tools (8). The key applies on the next app start.',
+  'builtin.pkulawHint': 'Stored in the local credential vault, never in settings files. Leave blank to keep the current key.',
+  'builtin.qcc': 'QCC',
+  'builtin.qccDescription': 'Company credit and risk MCP tools (9). The key applies on the next app start.',
+  'builtin.qccHint': 'Stored in the local credential vault, never in settings files. Leave blank to keep the current key.',
+  'builtin.firecrawl': 'Firecrawl',
+  'builtin.firecrawlDescription': 'Web scraping and extraction MCP tools. The key applies on the next app start.',
+  'builtin.firecrawlHint': 'Stored in the local credential vault, never in settings files. Leave blank to keep the current key.',
+  'builtin.mineru': 'MinerU',
+  'builtin.mineruDescription': 'Document-to-Markdown parsing (mineru_parse_document). The key applies immediately.',
+  'builtin.mineruHint': 'Stored in the local credential vault, never in settings files. Leave blank to keep the current key.',
   subagentModelSelectionTitle: 'Subagent',
   subagentModelSelectionDescription: 'Control which models agents may choose for subagents.',
   subagentModelSelectionToggle: 'Allow agents to choose models for subagents',
@@ -109,6 +132,23 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchApiKeyUnset: '未配置密钥；配置之前搜索不可用。',
   webSearchApiKeyStored: '已配置——输入新值可替换',
   webSearchApiKeyPlaceholder: '输入 API Key',
+  builtinTab: '内置插件',
+  builtinApiKey: 'API 密钥',
+  builtinApiKeySet: '已配置密钥',
+  builtinApiKeyUnset: '未配置密钥；配置前该服务不可用',
+  builtinApiKeyPlaceholder: '输入 API 密钥',
+  'builtin.pkulaw': '北大法宝',
+  'builtin.pkulawDescription': '法规与案例检索 MCP 工具（8 个）；密钥保存后重启应用生效。',
+  'builtin.pkulawHint': '保存在本机凭证库，不写入配置文件。留空保持现有密钥。',
+  'builtin.qcc': '企查查',
+  'builtin.qccDescription': '企业信息与风险查询 MCP 工具（9 个）；密钥保存后重启应用生效。',
+  'builtin.qccHint': '保存在本机凭证库，不写入配置文件。留空保持现有密钥。',
+  'builtin.firecrawl': 'Firecrawl',
+  'builtin.firecrawlDescription': '网页抓取与结构化提取 MCP 工具；密钥保存后重启应用生效。',
+  'builtin.firecrawlHint': '保存在本机凭证库，不写入配置文件。留空保持现有密钥。',
+  'builtin.mineru': 'MinerU',
+  'builtin.mineruDescription': '文档解析为 Markdown（mineru_parse_document）；密钥保存后即时生效。',
+  'builtin.mineruHint': '保存在本机凭证库，不写入配置文件。留空保持现有密钥。',
   subagentModelSelectionTitle: 'Subagent',
   subagentModelSelectionDescription: '控制 Agent 为 Subagent 选择模型的权限。',
   subagentModelSelectionToggle: '允许 Agent 为 Subagent 选择模型',

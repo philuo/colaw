@@ -112,7 +112,7 @@ describe('ui-settings-general apply', () => {
     // The one shell-owned General item is the 身份预设 row: product identity,
     // intentionally owned by the shell rather than a feature plugin.
     const identityItems = c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS)
-    expect(identityItems.map(row => row.options?.id)).toEqual(['identity', 'builtin-keys'])
+    expect(identityItems.map(row => row.options?.id)).toEqual(['identity'])
     const { controller, hooks } = actionInjectedOf(c)
     expect(controller.store.getSnapshot().status).toBe('idle')
     expect(hooks.snapshot).toBe(controller.store)
@@ -215,10 +215,9 @@ describe('ui-settings-general apply', () => {
       expect(ownEntries(c, name)[0]).not.toBe(before[index])
     })
     expect(c.ctx.slots.spec('settings.general.item')).toEqual({ kind: 'list', scope: 'root' })
-    // The 身份预设 and 内置服务密钥 rows re-register with the rebuilt chain;
-    // still shell-owned, still exactly the two.
+    // The 身份预设 row re-registers with the rebuilt chain; still shell-owned, still one.
     expect(c.ctx.slots.entries('settings.general.item').filter(row => row.locale === NS).map(row => row.options?.id))
-      .toEqual(['identity', 'builtin-keys'])
+      .toEqual(['identity'])
     // The recovered registrations still ride the locale path.
     const english = localeView('en', 1)
     const chinese = localeView('zh', 2)

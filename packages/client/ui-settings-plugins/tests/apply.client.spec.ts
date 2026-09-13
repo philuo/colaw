@@ -103,6 +103,7 @@ describe('ui-settings-plugins apply', () => {
     const initialTabs = sectionFace.hooks.tabs.getSnapshot()
     expect(initialTabs).toEqual([
       { id: 'configurable', order: 0, label: '插件配置' },
+      { id: 'builtin', order: 1, label: '内置插件' },
     ])
     expect(sectionFace.hooks.tabs.getSnapshot()).toBe(initialTabs)
 
@@ -112,6 +113,7 @@ describe('ui-settings-plugins apply', () => {
     expect(sectionFace.hooks.tabs.getSnapshot()).toEqual([
       { id: 'configurable', order: 0, label: '插件配置' },
       { id: 'plain', order: 0, label: '' },
+      { id: 'builtin', order: 1, label: '内置插件' },
     ])
     unsubscribe()
 

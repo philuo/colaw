@@ -28,8 +28,6 @@ import { CloseLabel, HeaderContent, TriggerContent } from './chrome.tsx'
 import { GeneralSection } from './GeneralSection.tsx'
 import { AboutSettingsSection } from './AboutSettingsSection.tsx'
 import { IdentityRow } from './IdentityRow.tsx'
-import { BuiltInKeysRow } from './BuiltInKeysRow.tsx'
-import type { BuiltInKeysRowInjected } from './BuiltInKeysRow.tsx'
 import { SettingsDocumentAction } from './SettingsDocumentAction.tsx'
 import type { SettingsDocumentActionInjected } from './SettingsDocumentAction.tsx'
 import { SettingsDocumentStore } from './settings-document-store.ts'
@@ -209,23 +207,4 @@ export function apply(ctx: ClientContext): void {
     inject: () => ({ identity: identityScope }),
   }, IdentityRow))
 
-  // 内置服务密钥 (built-in service keys): four credential writes through the
-  // same domain the Models page uses — values never touch settings.yaml.
-  const keyOps: BuiltInKeysRowInjected = {
-    describe: async (ref) => {
-      const response = await ctx.remote.credentials.describe([ref])
-      return response.ok ? response.value[ref] : undefined
-    },
-    store: async (ref, value) => {
-      const response = await ctx.remote.credentials.set(ref, value)
-      return response.ok ? undefined : response.error.message
-    },
-  }
-  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
-    name: 'settings.general.item',
-    id: 'builtin-keys',
-    order: 91,
-    locale: NS,
-    inject: () => keyOps,
-  }, BuiltInKeysRow))
 }

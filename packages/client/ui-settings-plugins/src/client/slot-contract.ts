@@ -17,6 +17,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface SlotMap {
     /** One plugin's card inside the plugin configuration section (see module JSDoc). */
     'settings.plugin.item': { kind: 'keyed'; scope: 'root'; owner: SettingsPluginItemOwnerProps }
+    /**
+     * One built-in service's credential card inside the 内置插件 tab, keyed by
+     * the service (`pkulaw` / `qcc` / `firecrawl` / `mineru`). The keys live
+     * only in the credentials domain, so unlike `settings.plugin.item` the key
+     * names a service, not a settings namespace.
+     */
+    'settings.plugins.builtin': { kind: 'keyed'; scope: 'root'; owner: SettingsPluginItemOwnerProps }
   }
 }
 

@@ -9,6 +9,7 @@
  * settings scope, which keeps them unaware of one another and of other tabs.
  */
 
+import { createElement } from 'react'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 // Type-only: the settings shell's SlotMap merge (the 'settings.section' entry)
@@ -22,6 +23,8 @@ import { resolveSlotLabel } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { AgentLoopCard } from './AgentLoopCard.tsx'
 import { BashCard } from './BashCard.tsx'
+import { BuiltInCard } from './BuiltInCard.tsx'
+import { BuiltInServicesTab } from './BuiltInServicesTab.tsx'
 import { ConfigurablePluginsTab } from './ConfigurablePluginsTab.tsx'
 import { PluginsSettingsSection } from './PluginsSettingsSection.tsx'
 import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './PluginsSettingsSection.tsx'
@@ -34,6 +37,7 @@ import {
   SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
 } from './subagent-model-selection-card-controller.ts'
 import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
+import { BUILT_IN_SERVICES, BuiltInServicesController } from './built-in-card-controller.ts'
 import { en, zh } from './locales.ts'
 
 export type { PluginsSettingsSectionInjected, PluginsSettingsSectionProps } from './PluginsSettingsSection.tsx'
@@ -69,6 +73,7 @@ export function apply(ctx: ClientContext): void {
   const agentLoop = new AgentLoopCardController(ctx.settingsScope.bind({ namespace: AGENT_LOOP_NS }))
   const webSearch = new WebSearchCardController(
     ctx.settingsScope.bind({ namespace: WEB_SEARCH_NS }), ctx)
+  const builtInServices = new BuiltInServicesController(ctx)
   const subagentModelSelection = new SubagentModelSelectionCardController(
     ctx.settingsScope.bind({ namespace: SUBAGENT_MODEL_SELECTION_NS }),
     ctx,
@@ -78,7 +83,7 @@ export function apply(ctx: ClientContext): void {
   // scope publishes nothing when one is written. This is the only signal that
   // a key written on another surface reached the Host.
   ctx.effect(
-    () => ctx.remote.$on('credentials/reference-updated', (ref) => { webSearch.refreshCredential(ref) }),
+    () => ctx.remote.$on('credentials/reference-updated', (ref) => { webSearch.refreshCredential(ref); builtInServices.refreshCredential(ref) }),
     'ui-settings-plugins: credential invalidations',
   )
   ctx.effect(
@@ -164,6 +169,17 @@ export function apply(ctx: ClientContext): void {
     children: { 'settings.plugin.item': { kind: 'keyed', scope: 'root' } },
   }, ConfigurablePluginsTab))
 
+  // The 内置插件 tab: one credential card per product-shipped cloud service,
+  // keyed by the service — the keys live only in the credentials domain.
+  ctx.slots.inject('settings.plugins.tab', () => ctx.slots.register({
+    name: 'settings.plugins.tab',
+    id: 'builtin',
+    order: 1,
+    label: () => t('builtinTab'),
+    locale: NS,
+    children: { 'settings.plugins.builtin': { kind: 'keyed', scope: 'root' } },
+  }, BuiltInServicesTab))
+
   ctx.slots.inject('settings.plugin.item', function* () {
     yield ctx.slots.register({
       name: 'settings.plugin.item',
@@ -190,4 +206,16 @@ export function apply(ctx: ClientContext): void {
       inject: () => webSearch.inject(),
     }, WebSearchCard)
   })
+
+  // One BuiltInCard per service: the face is per-service; the component is shared.
+  for (const service of BUILT_IN_SERVICES) {
+    ctx.slots.inject('settings.plugins.builtin', () => ctx.slots.register({
+      name: 'settings.plugins.builtin',
+      key: service.key,
+      locale: NS,
+      inject: () => builtInServices.inject(service.key),
+    }, function BuiltInCardBound(builtInProps) {
+      return createElement(BuiltInCard, { ...builtInProps, service })
+    }))
+  }
 }

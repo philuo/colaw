@@ -43,11 +43,15 @@
   gap: 8px;
 }
 
+/* Labels never wrap: a fixed auto width keeps 「用户人设」 on one line, and
+   the input takes the rest of the row. */
 .fieldLabel {
-  flex: 0 0 44px;
+  flex: 0 0 auto;
+  min-width: 56px;
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;
   line-height: 18px;
+  white-space: nowrap;
 }
 
 .input {
