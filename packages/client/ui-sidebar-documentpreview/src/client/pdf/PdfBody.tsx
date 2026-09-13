@@ -230,16 +230,24 @@ function PdfPage({ document, page, requested: initiallyRequested, onVisible, sig
     )
     return () => { lifetime.abort() }
   }, [document, page, requested, signal, attempt, settledZoom])
-  // The text layer rides the canvas render: selection must exist whenever the
-  // page is visible, at any zoom (the layer scales with the page box).
+  // The text layer rides the page, not the canvas renders: pdfjs lays it out
+  // at the base scale and the CSS zoom scales it with the page box, so the
+  // crisp bitmap re-render at a settled zoom must never rebuild it — that
+  // would flicker the layer and wipe the reader's selection on every zoom.
+  const textLayerRendered = useRef(false)
   useEffect(() => {
-    if (!requested || state !== 'ready') return
+    if (!requested) return
     const node = textLayer.current as HTMLDivElement
+    if (textLayerRendered.current) return
     const lifetime = new AbortController()
     const layerSignal = AbortSignal.any([lifetime.signal, signal])
+    textLayerRendered.current = true
     void renderPdfTextLayer(document, page, node, layerSignal).catch(() => { /* a page without extractable text */ })
-    return () => { lifetime.abort() }
-  }, [document, page, requested, signal, state])
+    return () => {
+      lifetime.abort()
+      textLayerRendered.current = false
+    }
+  }, [document, page, requested, signal])
   return <div ref={host} className={css.page} data-pdf-page={page}>
     {failure === undefined && state !== 'ready' && <div className={css.placeholder}>
       {requested && <LoadingIndicator className={css.status} label={t('rendering')} />}

@@ -17,7 +17,7 @@ vi.mock('../src/client/office/runtime.ts', async importOriginal => ({
   openDocx: engine.docx, openPptx: engine.pptx, openXlsx: engine.xlsx,
 }))
 import { OfficeBody, type OfficeFormatBodyProps } from '../src/client/office/OfficeBody.tsx'
-import { OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN } from '../src/client/office/runtime.ts'
+import { OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN, type XlsxInteractions } from '../src/client/office/runtime.ts'
 import { en } from '../src/client/office/locales.ts'
 
 /** One scripted loader session, shared by every format's mocked opener. */
@@ -63,10 +63,12 @@ function scrollHostDouble(): HTMLElement & { scrollTop: number; scrollLeft: numb
 const handleOf = (options: {
   zoom?: ReturnType<typeof zoomDouble>
   scrollHost?: HTMLElement
+  xlsxExtra?: XlsxInteractions
 } = {}): OfficeHandle => ({
   dispose: vi.fn(),
   zoom: options.zoom?.zoom ?? zoomDouble().zoom,
   ...(options.scrollHost === undefined ? {} : { scrollHost: options.scrollHost }),
+  ...(options.xlsxExtra === undefined ? {} : { xlsx: options.xlsxExtra }),
 })
 
 beforeEach(() => {
@@ -175,7 +177,7 @@ describe('Office body', () => {
     expect(zoom.setScale).toHaveBeenLastCalledWith(OFFICE_ZOOM_MAX)
   })
 
-  it('renders no pagination chrome for Excel either, and zooms its grid viewer', async () => {
+  it('renders no pagination chrome for Excel, and leaves the wheel to its own viewer', async () => {
     const h = harness()
     const view = render(<h.View format="xlsx" />)
     const zoom = zoomDouble(1)
@@ -183,10 +185,15 @@ describe('Office body', () => {
     await act(async () => {})
     expect(view.container.querySelector('[data-office-preview="xlsx"]')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
+    // The grid keeps the library's built-in ⌘/Ctrl+wheel zoom (anchored to the
+    // grid), so the body's capture gesture must not intercept: the wheel is
+    // neither prevented nor forwarded to the body's zoom seam.
     const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
-    fireEvent(surface, new WheelEvent('wheel', { metaKey: true, deltaY: -20, clientX: 10, clientY: 10, cancelable: true }))
+    const wheel = new WheelEvent('wheel', { metaKey: true, deltaY: -20, clientX: 10, clientY: 10, cancelable: true })
+    fireEvent(surface, wheel)
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
-    expect(zoom.setScale).toHaveBeenCalledOnce()
+    expect(wheel.defaultPrevented).toBe(false)
+    expect(zoom.setScale).not.toHaveBeenCalled()
   })
 
   it('replaces the session and disposes the previous viewer when the data changes', async () => {
@@ -218,6 +225,43 @@ describe('Office body', () => {
     fireEvent.click(screen.getByRole('button', { name: en.retry }))
     await act(async () => {})
     expect(engine.docx).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads one merged cell as one on click, keyboard, and copy (Excel)', async () => {
+    const h = harness()
+    const view = render(<h.View format="xlsx" />)
+    const expand = vi.fn(async () => true)
+    const copy = vi.fn(async () => 'copied' as const)
+    let selectionListener: (() => void) | undefined
+    const xlsx: XlsxInteractions = {
+      expandMergedSelection: expand,
+      copySelection: copy,
+      onSelectionChange: (listener) => { selectionListener = listener },
+    }
+    await act(async () => { loads[0]!.deferred.resolve(handleOf({ xlsxExtra: xlsx })) })
+    await act(async () => {})
+    const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
+
+    // Hover draws nothing of its own: the viewer renders no hover highlight,
+    // and the pane must not overlay one either.
+    fireEvent.pointerMove(surface, { clientX: 40, clientY: 30 })
+    expect(surface.querySelector('[class*="mergeHover"]')).toBeNull()
+
+    // Mid-press the viewer is dragging its own selection: no rewrite.
+    fireEvent.pointerDown(surface, { clientX: 40, clientY: 30 })
+    selectionListener?.()
+    expect(expand).not.toHaveBeenCalled()
+
+    // After release, a committed lone-cell selection widens to the merge.
+    fireEvent.pointerUp(surface)
+    selectionListener?.()
+    expect(expand).toHaveBeenCalledOnce()
+
+    // ⌘C copies through the viewer's clipboard path.
+    const keyEvent = new KeyboardEvent('keydown', { key: 'c', metaKey: true, bubbles: true, cancelable: true })
+    surface.dispatchEvent(keyEvent)
+    expect(keyEvent.defaultPrevented).toBe(true)
+    expect(copy).toHaveBeenCalledOnce()
   })
 
   it('routes a post-load viewer failure to the same failure line', async () => {

@@ -7,7 +7,7 @@
      the sides narrow with the shared width axis); the bottom gradient mask
      is owned by the chat scroller. No top pad: the composer stack's gap owns
      the space above; the status strip still carries its own margin. */
-  padding: 0 var(--dsh-composer-side-clearance) 16px;
+  padding: 0 var(--dsh-composer-side-clearance) 24px;
 }
 
 .hero {

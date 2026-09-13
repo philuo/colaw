@@ -10,6 +10,7 @@
 
 import { BrowserView, BrowserWindow, Tray, Updater } from 'electrobun/bun'
 import { electrobunEventEmitter, type ElectrobunEvent } from 'electrobun/bun/events'
+import { clipboardWriteText } from 'electrobun/bun/utils'
 import { installApplicationMenu, onApplicationMenuClicked, type MenuLocale } from './menu.ts'
 import { runImageOcr } from './image-ocr.ts'
 import {
@@ -301,6 +302,11 @@ const OPENABLE_DOCUMENT_EXTENSIONS = new Set([
   '.numbers', '.pages', '.pdf', '.png', '.ppt', '.pptx', '.rtf', '.svg', '.tar',
   '.tif', '.tiff', '.tsv', '.txt', '.webp', '.xls', '.xlsx', '.zip',
 ])
+
+/** Ceiling for a `clipboard-write` bridge message: the page already bounds
+ * what it sends by the viewer's own copy limits, and this stops a runaway
+ * page from parking gigabytes on the pasteboard. */
+const CLIPBOARD_WRITE_MAX = 8 * 1024 * 1024
 
 /**
  * Hand one URL or local path to LaunchServices via `/usr/bin/open`: the
@@ -1084,6 +1090,14 @@ async function main(): Promise<void> {
     console.log(`[electrobun-host] Window frame: ${JSON.stringify(mainWindow.getFrame())}`)
     console.log(`[electrobun-host] Window state file: ${windowStatePath}`)
 
+    // First-frame repair: the window orders front on the empty placeholder,
+    // and WKWebView's first content commit does not always hand the window
+    // server a display pass afterwards — the app boots, paints, and sits
+    // white until the first user event arrives. One orderFront after the
+    // DOM is ready (per navigation, idempotent) supplies that pass.
+    const mainView = BrowserView.getById(mainWindow.webviewId)
+    mainView?.on('dom-ready', () => { mainWindow.show() })
+
     // A menu command reaches the shell as a window event: the key equivalent is
     // answered by the native menu, so the panel itself never sees the keydown.
     const dispatchCommand = (command: string): void => {
@@ -1368,6 +1382,33 @@ async function main(): Promise<void> {
       if (!path.startsWith('/') || path.includes('\0')) return
       if (!OPENABLE_DOCUMENT_EXTENSIONS.has(extname(path).toLowerCase())) return
       openWithSystem(path)
+    })
+    // Clipboard writes the webview cannot always make itself: WKWebView gates
+    // the async Clipboard API behind a user-activation token its key events
+    // do not always carry, and a denied write leaves a copy silently empty.
+    // The native pasteboard write has no such gate. The page bounds what it
+    // sends (the viewer's own copy limits); the host re-checks the ceiling.
+    electrobunEventEmitter.on('host-message', (event: ElectrobunEvent<{ detail: unknown }, unknown>) => {
+      const message = bridgeMessage<{ kind: 'clipboard-write' } & Record<string, unknown>>(event, 'clipboard-write')
+      if (message === undefined) return
+      const text = message.text
+      const nonce = message.nonce
+      if (typeof text !== 'string' || text.length > CLIPBOARD_WRITE_MAX) return
+      if (typeof nonce !== 'string' || nonce === '') return
+      let ok = true
+      try {
+        clipboardWriteText(text)
+      } catch (error) {
+        ok = false
+        console.error(`[electrobun-host] clipboard-write failed: ${String(error)}`)
+      }
+      const view = BrowserView.getById(mainWindow.webviewId)
+      if (view !== undefined) {
+        view.executeJavascript(
+          'window.dispatchEvent(new CustomEvent(\'dsh:clipboard-written\', '
+          + `{ detail: ${JSON.stringify(JSON.stringify({ nonce, ok }))} }))`,
+        )
+      }
     })
     // Zero-invasive boot evidence: the page reports its own timeline (resource
     // totals, DOM milestones, whether the shell or the boot page owns the mount

@@ -90,7 +90,7 @@ describe('selection scope', () => {
     dispose()
   })
 
-  it('a drag that began inside a pane is clamped back to the pane', () => {
+  it('a drag that began inside a pane is clamped back to the pane on release', () => {
     const { scope, text, chatBefore } = pane('a')
     const a = { scope, text }
     const dispose = bindSelectionScope(scope)
@@ -98,7 +98,8 @@ describe('selection scope', () => {
     fireEvent.pointerDown(scope)
 
     // A selection reaching from the chat text into the pane's text — the
-    // escape a drag across the boundary produces.
+    // escape a drag across the boundary produces. Mid-drag it is left alone:
+    // rewriting the live selection would destroy the engine's drag anchor.
     const selection = document.getSelection()
     const range = document.createRange()
     range.setStart(chat.firstChild as Text, 0)
@@ -106,6 +107,10 @@ describe('selection scope', () => {
     selection?.removeAllRanges()
     selection?.addRange(range)
     document.dispatchEvent(new Event('selectionchange'))
+    expect(document.getSelection()!.getRangeAt(0).startContainer).toBe(chat.firstChild)
+
+    // The pointer comes up: the finished selection is clamped once.
+    fireEvent.pointerUp(document.body)
 
     // jsdom stringifies only whole-container ranges, so the clamp is asserted
     // structurally: both boundary points land inside the pane's scope, which
@@ -116,6 +121,34 @@ describe('selection scope', () => {
     expect(a.scope.contains(settled.startContainer)).toBe(true)
     expect(a.scope.contains(settled.endContainer)).toBe(true)
     expect(a.scope.contains(settled.commonAncestorContainer)).toBe(true)
+    dispose()
+  })
+
+  it('a native whole-page select-all is reined back into the pane in use', () => {
+    const a = pane('a')
+    const dispose = bindSelectionScope(a.scope)
+    const chat = a.chatBefore
+    const trailing = document.createElement('p')
+    trailing.append(document.createTextNode('after-pane-text'))
+    document.body.append(trailing)
+
+    // The native select-all signature: the selection spans the page — both
+    // boundary nodes outside the pane — while intersecting it.
+    const selection = document.getSelection()
+    const pageWide = document.createRange()
+    pageWide.setStart(chat.firstChild as Text, 0)
+    pageWide.setEnd(trailing.firstChild as Text, 0)
+    selection?.removeAllRanges()
+    selection?.addRange(pageWide)
+    // The pane is the one in use (pointer over it).
+    fireEvent.pointerOver(a.scope)
+    document.dispatchEvent(new Event('selectionchange'))
+
+    const reined = document.getSelection()
+    expect(reined?.rangeCount).toBe(1)
+    const range = reined!.getRangeAt(0)
+    expect(a.scope.contains(range.startContainer)).toBe(true)
+    expect(a.scope.contains(range.endContainer)).toBe(true)
     dispose()
   })
 

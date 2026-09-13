@@ -100,9 +100,6 @@
           - serverName: qcc-operation
             url: https://agent.qcc.com/mcp/operation/stream
             credentialRef: QCC_API_KEY
-          - serverName: qcc-history
-            url: https://agent.qcc.com/mcp/history/stream
-            credentialRef: QCC_API_KEY
           - serverName: qcc-executive
             url: https://agent.qcc.com/mcp/executive/stream
             credentialRef: QCC_API_KEY

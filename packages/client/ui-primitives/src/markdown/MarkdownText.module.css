@@ -109,6 +109,8 @@
    seat without the negative offset. */
 .markdown a .linkIcon {
   vertical-align: baseline;
+  position: relative;
+  top: 2.5px;
 }
 
 .markdown :where(ul, ol) {

@@ -14,8 +14,9 @@
  *   pointerdown), else the scope under the pointer; editables keep their own
  *   select-all.
  * - A drag that began inside a scope is clamped to the intersection of the
- *   live selection with that scope's container, so it cannot grow past the
- *   tab's bounds. A drag that began elsewhere is left alone.
+ *   finished selection with that scope's container once the pointer comes
+ *   up — never mid-drag, where rewriting the live selection destroys the
+ *   engine's drag anchor and the selection fights the reader.
  */
 
 /** The registered scope bodies, in mount order. */
@@ -36,18 +37,25 @@ function isEditable(element: Element | null): boolean {
     && (element.isContentEditable || element.tagName === 'INPUT' || element.tagName === 'TEXTAREA')
 }
 
-function onKeyDown(event: KeyboardEvent): void {
-  if (event.key !== 'a' || !(event.metaKey || event.ctrlKey) || event.altKey) return
-  const active = document.activeElement
-  if (isEditable(active)) return // an editor's own select-all wins
-  // The pane in use: where the focus is, else where the pointer is.
-  const target = scopeOf(active) ?? hoveredScope
-  if (target === undefined) return
-  event.preventDefault()
+/** Scope one ⌘A to the pane in use: everything inside it, nothing outside. */
+function selectAllWithin(target: HTMLElement): void {
   const selection = document.getSelection()
   selection?.removeAllRanges()
   selection?.selectAllChildren(target)
 }
+
+function selectAllEvent(event: KeyboardEvent): boolean {
+  if (event.key !== 'a' || !(event.metaKey || event.ctrlKey) || event.altKey) return false
+  if (isEditable(document.activeElement)) return false // an editor's own select-all wins
+  // The pane in use: where the focus is, else where the pointer is.
+  const target = scopeOf(document.activeElement) ?? hoveredScope
+  if (target === undefined) return false
+  event.preventDefault()
+  selectAllWithin(target)
+  return true
+}
+
+function onKeyDown(event: KeyboardEvent): void { selectAllEvent(event) }
 
 function onPointerOver(event: PointerEvent): void {
   hoveredScope = scopeOf(event.target instanceof Node ? event.target : null)
@@ -64,15 +72,16 @@ function onPointerDown(event: PointerEvent): void {
 }
 
 function onPointerUp(): void {
+  const dragged = [...activeDrags]
   activeDrags.clear()
+  clampSelectionTo(dragged)
 }
 
-/** Clamp one live selection to the drag's origin scope, if it escaped it. */
-function onSelectionChange(): void {
-  if (activeDrags.size === 0) return
+/** Clamp one finished selection to the drag's origin scope, if it escaped it. */
+function clampSelectionTo(scopes: readonly HTMLElement[]): void {
   const selection = document.getSelection()
   if (selection === null || selection.rangeCount === 0 || selection.isCollapsed) return
-  for (const scope of activeDrags) {
+  for (const scope of scopes) {
     const range = selection.getRangeAt(0)
     if (scope.contains(range.commonAncestorContainer)) continue // entirely inside already
     if (!range.intersectsNode(scope)) continue
@@ -92,7 +101,26 @@ function onSelectionChange(): void {
     }
     selection.removeAllRanges()
     selection.addRange(clamped)
-    return // one clamp re-enters selectionchange; the next pass re-checks
+    return
+  }
+}
+
+function onSelectionChange(): void {
+  // Native select-all fallback: if the engine ran its own ⌘A (a prevented
+  // keydown does not always stop it in every WKWebView build), the selection
+  // spans the whole page — both boundary nodes outside the pane in use while
+  // intersecting it. That signature is reined back into the pane alone.
+  // Selections from a drag are left alone here: they are clamped once on
+  // pointerup, after the engine's drag has finished.
+  const selection = document.getSelection()
+  if (selection === null || selection.isCollapsed || selection.rangeCount === 0) return
+  const target = scopeOf(document.activeElement) ?? hoveredScope
+  if (target === undefined) return
+  const range = selection.getRangeAt(0)
+  const anchorInside = target.contains(selection.anchorNode)
+  const focusInside = target.contains(selection.focusNode)
+  if (!anchorInside && !focusInside && range.intersectsNode(target)) {
+    selectAllWithin(target)
   }
 }
 
@@ -128,7 +156,14 @@ export function bindSelectionScope(element: HTMLElement): () => void {
   element.tabIndex = -1
   scopes.add(element)
   retainDocumentListeners()
+  // A second interception layer at the element itself: with the focus placed
+  // by pointerdown, the keydown targets this element, so its own listener
+  // answers even if a document-level listener was consumed or detached by
+  // another surface.
+  const onElementKeyDown = (event: KeyboardEvent): void => { selectAllEvent(event) }
+  element.addEventListener('keydown', onElementKeyDown)
   return () => {
+    element.removeEventListener('keydown', onElementKeyDown)
     scopes.delete(element)
     activeDrags.delete(element)
     if (hoveredScope === element) hoveredScope = undefined

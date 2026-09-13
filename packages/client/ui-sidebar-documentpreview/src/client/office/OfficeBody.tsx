@@ -85,13 +85,16 @@ export function OfficeBody(props: OfficeFormatBodyProps): ReactNode {
     }
   }, [data, format, tab.signal, attempt, props.t, props.scrollportRef])
 
-  // The zoom gesture rides the loaded viewer: capture-phase wheel lands before
-  // anything the viewer bound; during the gesture a transform preview scales
-  // the painted surface with zero layout work, and the settle commits one real
-  // scale with the cursor anchor restored.
+  // The zoom gesture rides the loaded PAGED viewer: capture-phase wheel lands
+  // before anything the viewer bound; during the gesture a transform preview
+  // scales the painted surface with zero layout work, and the settle commits
+  // one real scale with the cursor anchor restored. The xlsx grid is exempt —
+  // its viewer's built-in ⌘/Ctrl+wheel zoom scales the grid itself (anchored,
+  // re-laid-out), and hijacking the wheel here would scale the whole surface
+  // (tab bar included) instead.
   useEffect(() => {
     const surface = surfaceRef.current
-    if (surface === null || handle === undefined) return
+    if (surface === null || handle === undefined || format === 'xlsx') return
     const host = handle.scrollHost
     const binding = createWheelZoom(surface, {
       min: OFFICE_ZOOM_MIN,
@@ -123,19 +126,50 @@ export function OfficeBody(props: OfficeFormatBodyProps): ReactNode {
       },
     })
     return () => { binding.dispose() }
-  }, [handle])
+  }, [handle, format])
 
-  // Excel reads one merged cell as one: a click that lands inside a merge
-  // range expands the viewer's single-cell selection to the whole range. The
-  // viewer's own pointer handling runs first; this only widens what it chose.
+  // Excel reads one merged cell as one, on click and keyboard navigation.
+  //
+  // The viewer's hit-testing is grid-cell granular, so a committed lone-cell
+  // selection inside a merge is widened to the whole merge — but never
+  // mid-press: while a pointer is down the viewer is dragging its own
+  // selection, and rewriting it would fight the drag. A tap commits its
+  // selection after release, so the button-aware check catches it (and
+  // keyboard navigation, where no button is involved). Hover deliberately
+  // stays untouched: the viewer draws no hover highlight, and an overlay of
+  // our own misaligns as soon as the grid pans or zooms.
+  //
+  // Copy: ⌘C/Ctrl+C forwards to the viewer's clipboard path. Its own handler
+  // lives on an internal surface that only fires when that surface holds
+  // focus, which a canvas never earns; this binding works from the pane.
   useEffect(() => {
-    if (format !== 'xlsx' || handle === undefined) return
+    if (format !== 'xlsx' || handle?.xlsx === undefined) return
     const surface = surfaceRef.current
+    const xlsx = handle.xlsx
     if (surface === null) return
-    const listener = (): void => { void handle.expandMergedSelection?.() }
-    surface.addEventListener('pointerup', listener, { capture: true })
-    return () => { surface.removeEventListener('pointerup', listener, { capture: true }) }
-  }, [format, handle])
+    let pressed = false
+    const onPointerDown = (): void => { pressed = true }
+    const onPointerUp = (): void => { pressed = false }
+    const onKey = (event: KeyboardEvent): void => {
+      if (event.key !== 'c' || !(event.metaKey || event.ctrlKey) || event.altKey || event.shiftKey) return
+      // The viewer's internal copy handler (when its surface holds focus)
+      // yields to prevented events, so this pane-level binding is the one
+      // path regardless of focus.
+      event.preventDefault()
+      void xlsx.copySelection()
+    }
+    xlsx.onSelectionChange(() => { if (!pressed) void xlsx.expandMergedSelection() })
+    surface.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true })
+    surface.addEventListener('pointerup', onPointerUp, { capture: true, passive: true })
+    surface.addEventListener('pointercancel', onPointerUp, { capture: true, passive: true })
+    surface.addEventListener('keydown', onKey, { capture: true })
+    return () => {
+      surface.removeEventListener('pointerdown', onPointerDown, { capture: true })
+      surface.removeEventListener('pointerup', onPointerUp, { capture: true })
+      surface.removeEventListener('pointercancel', onPointerUp, { capture: true })
+      surface.removeEventListener('keydown', onKey, { capture: true })
+    }
+  }, [format, handle, props.t])
 
   if (data === undefined) return <p className={css.status} role="alert">{props.t('unsupported')}</p>
   return (

@@ -183,8 +183,10 @@ describe('CodeBlock', () => {
     })
     render(<CodeBlock code="plain body" />)
     fireEvent.click(screen.getByRole('button', { name: '复制' }))
-    expect(exec).toHaveBeenCalledWith('copy')
+    // The copy first awaits the (absent) desktop bridge, so the command path
+    // lands a microtask after the click rather than during it.
     expect(await screen.findByRole('button', { name: '复制成功' })).toBeTruthy()
+    expect(exec).toHaveBeenCalledWith('copy')
   })
 
   it('does not claim success when execCommand throws or is absent', async () => {
