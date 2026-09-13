@@ -6,12 +6,16 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { PdfDocument } from '../src/client/pdf/document.ts'
-import type { renderPdfPage } from '../src/client/pdf/document.ts'
+import type { renderPdfPage, renderPdfTextLayer } from '../src/client/pdf/document.ts'
 import type { openPdf } from '../src/client/pdf/runtime.ts'
 
-const engine = vi.hoisted(() => ({ open: vi.fn<typeof openPdf>(), render: vi.fn<typeof renderPdfPage>() }))
+const engine = vi.hoisted(() => ({
+  open: vi.fn<typeof openPdf>(),
+  render: vi.fn<typeof renderPdfPage>(),
+  textLayer: vi.fn<typeof renderPdfTextLayer>(),
+}))
 vi.mock('../src/client/pdf/runtime.ts', () => ({ openPdf: engine.open }))
-vi.mock('../src/client/pdf/document.ts', () => ({ renderPdfPage: engine.render }))
+vi.mock('../src/client/pdf/document.ts', () => ({ renderPdfPage: engine.render, renderPdfTextLayer: engine.textLayer }))
 import { PdfBody, type PdfBodyProps } from '../src/client/pdf/PdfBody.tsx'
 import { createPdfStore, type PdfState } from '../src/client/pdf/store.ts'
 import { en } from '../src/client/pdf/locales.ts'
@@ -31,6 +35,7 @@ beforeEach(() => {
     return { document: deferred.promise, dispose }
   })
   engine.render.mockReset().mockResolvedValue({ width: 100, height: 100 })
+  engine.textLayer.mockReset().mockResolvedValue(undefined)
 })
 
 afterEach(() => {

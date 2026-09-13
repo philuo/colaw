@@ -31,6 +31,8 @@ export interface OfficeHooks {
  * library's own wheel zoom is a discrete 1.1x step, deliberately replaced by
  * the image preview's continuous curve); `scrollHost` is the scrollable
  * element the cursor-anchor math needs, present for the paged formats only.
+ * The xlsx handle carries `expandMergedSelection`, which widens a single-cell
+ * selection to its merge range so a merged cell reads — and clicks — as one.
  */
 export interface OfficeHandle {
   readonly dispose: () => void
@@ -39,6 +41,7 @@ export interface OfficeHandle {
     readonly setScale: (scale: number) => void
   }
   readonly scrollHost?: HTMLElement | undefined
+  readonly expandMergedSelection?: () => Promise<void>
 }
 
 /** Route one hyperlink activation through the app's single external seam. */
@@ -141,5 +144,24 @@ export async function openXlsx(container: HTMLElement, data: ArrayBuffer, hooks:
       workbook.destroy()
     },
     zoom: viewer,
+    expandMergedSelection: async () => {
+      const selection = viewer.selectionState
+      const area = selection?.areas[selection.activeAreaIndex]
+      // Only a lone cell widens: a dragged multi-cell range is the reader's
+      // own choice and must not be rewritten.
+      if (area === undefined || area.kind !== 'cells') return
+      if (area.top !== area.bottom || area.left !== area.right) return
+      const worksheet = await workbook.getWorksheet(viewer.sheetIndex).catch(() => undefined)
+      const merge = worksheet?.mergeCells.find(range =>
+        area.top >= range.top && area.top <= range.bottom
+        && area.left >= range.left && area.left <= range.right)
+      if (merge === undefined) return
+      viewer.setSelection({
+        areas: [{ kind: 'cells', top: merge.top, left: merge.left, bottom: merge.bottom, right: merge.right }],
+        activeAreaIndex: 0,
+        activeCell: { row: merge.top, col: merge.left },
+        extensionAnchor: { row: merge.top, col: merge.left },
+      })
+    },
   }
 }

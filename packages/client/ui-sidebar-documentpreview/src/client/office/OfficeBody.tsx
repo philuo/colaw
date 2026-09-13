@@ -3,10 +3,17 @@
  * information come from the document owner, and the format's viewer owns its
  * whole surface inside the container — a continuous multi-page scroll with
  * text selection and hyperlinks for Word/PowerPoint, the grid plus sheet tab
- * bar for Excel. Reading is scrolling, PDF-style; the body contributes the
- * lifecycle (load, failure, dispose) and the zoom gesture: ⌘/Ctrl+wheel runs
- * the image preview's continuous exponential curve with a cursor anchor,
- * replacing the library's discrete 1.1x step.
+ * bar for Excel. Reading is scrolling, PDF-style.
+ *
+ * The zoom gesture (⌘/Ctrl+wheel) runs the image preview's continuous
+ * exponential curve. The viewer's own per-event relayout is too costly to run
+ * at trackpad event rate, so the gesture previews on a GPU transform — origin
+ * at the cursor, zero layout work — and commits one real `setScale` 160ms
+ * after the last event, restoring the cursor anchor. Word/PowerPoint also
+ * register their scroll host as the pane's scrollport, so the reader's
+ * position survives body unmounts (tab switches, sidebar hides) and is
+ * restored when the content returns. Excel's merged cells read as one: a
+ * single-cell selection inside a merge range expands to the whole range.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
@@ -16,6 +23,7 @@ import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import {
   OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN, openDocx, openPptx, openXlsx, type OfficeHandle,
 } from './runtime.ts'
+import { createWheelZoom } from './zoom.ts'
 import type {} from './locales.ts'
 import css from './OfficeBody.module.css'
 
@@ -27,12 +35,6 @@ export type OfficeFormatBodyProps = OfficeBodyProps & {
   /** Which Office surface this keyed registration presents. */
   readonly format: 'docx' | 'pptx' | 'xlsx'
 }
-
-/** Wheel zoom grows with the gesture's pixel magnitude, identical to the image preview. */
-const WHEEL_ZOOM_SENSITIVITY = 0.007
-/** Per-event factor bounds, so one malformed delta cannot leap the view. */
-const GESTURE_FACTOR_MIN = 0.5
-const GESTURE_FACTOR_MAX = 2
 
 type Failure = { readonly data: Uint8Array<ArrayBuffer>; readonly error: unknown }
 
@@ -66,50 +68,78 @@ export function OfficeBody(props: OfficeFormatBodyProps): ReactNode {
         ? openPptx(surface, buffer, { onError })
         : openXlsx(surface, buffer, { onError })
     void loading.then(
-      (loaded) => { if (!signal.aborted) setHandle(loaded) },
+      (loaded) => {
+        if (signal.aborted) return
+        setHandle(loaded)
+        // The viewer's own scroll surface becomes the pane's scrollport: the
+        // owner's scroll tracking and position restore then cover the reader
+        // exactly where it was.
+        const host = loaded.scrollHost
+        if (host !== undefined) props.scrollportRef?.(host)
+      },
       (error: unknown) => { if (!signal.aborted) setFailure({ data, error }) },
     )
     return () => {
       surface.replaceChildren()
       void loading.then((loaded) => { loaded.dispose() }, () => { /* never resolved */ })
     }
-  }, [data, format, tab.signal, attempt, props.t])
+  }, [data, format, tab.signal, attempt, props.t, props.scrollportRef])
 
-  // The zoom gesture rides the loaded viewer: capture-phase wheel so it lands
-  // before anything the viewer bound, imperative scale and scroll writes so no
-  // render sits between the gesture and the compositor.
+  // The zoom gesture rides the loaded viewer: capture-phase wheel lands before
+  // anything the viewer bound; during the gesture a transform preview scales
+  // the painted surface with zero layout work, and the settle commits one real
+  // scale with the cursor anchor restored.
   useEffect(() => {
     const surface = surfaceRef.current
     if (surface === null || handle === undefined) return
-    const listener = (event: WheelEvent): void => {
-      if (!event.ctrlKey && !event.metaKey) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      const before = handle.zoom.getScale()
-      const factor = Math.min(GESTURE_FACTOR_MAX, Math.max(
-        GESTURE_FACTOR_MIN,
-        Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY),
-      ))
-      const after = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, before * factor))
-      if (after === before) return
-      handle.zoom.setScale(after)
-      const host = handle.scrollHost
-      if (host !== undefined) {
-        // Keep the content point under the cursor under the cursor: the
-        // scrollable offsets scale with the content around the anchor.
-        const rect = host.getBoundingClientRect()
-        const ratio = after / before
-        host.scrollTop = (host.scrollTop + (event.clientY - rect.top)) * ratio - (event.clientY - rect.top)
-        host.scrollLeft = (host.scrollLeft + (event.clientX - rect.left)) * ratio - (event.clientX - rect.left)
-      }
-    }
-    surface.addEventListener('wheel', listener, { capture: true, passive: false })
-    return () => { surface.removeEventListener('wheel', listener, { capture: true }) }
+    const host = handle.scrollHost
+    const binding = createWheelZoom(surface, {
+      min: OFFICE_ZOOM_MIN,
+      max: OFFICE_ZOOM_MAX,
+      getScale: () => handle.zoom.getScale(),
+      apply: (scale, origin) => {
+        const before = handle.zoom.getScale()
+        handle.zoom.setScale(scale)
+        const host = handle.scrollHost
+        if (host !== undefined) {
+          // Keep the content point under the cursor under the cursor: the
+          // scrollable offsets scale with the content around the anchor.
+          const rect = host.getBoundingClientRect()
+          const ratio = scale / before
+          const top = origin.y - rect.top
+          const left = origin.x - rect.left
+          host.scrollTop = (host.scrollTop + top) * ratio - top
+          host.scrollLeft = (host.scrollLeft + left) * ratio - left
+        }
+      },
+      preview: (base, target, origin) => {
+        const el = host ?? surface
+        el.style.transformOrigin = `${origin.x}px ${origin.y}px`
+        el.style.transform = `scale(${target / base})`
+      },
+      endPreview: () => {
+        const el = host ?? surface
+        el.style.transform = ''
+      },
+    })
+    return () => { binding.dispose() }
   }, [handle])
+
+  // Excel reads one merged cell as one: a click that lands inside a merge
+  // range expands the viewer's single-cell selection to the whole range. The
+  // viewer's own pointer handling runs first; this only widens what it chose.
+  useEffect(() => {
+    if (format !== 'xlsx' || handle === undefined) return
+    const surface = surfaceRef.current
+    if (surface === null) return
+    const listener = (): void => { void handle.expandMergedSelection?.() }
+    surface.addEventListener('pointerup', listener, { capture: true })
+    return () => { surface.removeEventListener('pointerup', listener, { capture: true }) }
+  }, [format, handle])
 
   if (data === undefined) return <p className={css.status} role="alert">{props.t('unsupported')}</p>
   return (
-    <section className={css.body} data-office-preview={format}>
+    <section className={css.body} data-office-preview={format} data-dsh-selectable="">
       <div ref={surfaceRef} className={css.surface} />
       {handle === undefined && failure === undefined && <LoadingIndicator className={css.status} label={props.t('loading')} />}
       {failure !== undefined && <div className={css.status} role="alert">

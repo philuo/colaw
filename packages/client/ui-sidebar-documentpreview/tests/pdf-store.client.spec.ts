@@ -10,9 +10,9 @@ describe('PDF view store', () => {
     const two = 'two' as TabId
     instance.actions.page(one, 3)
     instance.actions.page(two, 2)
-    expect(instance.getSnapshot().byTab).toEqual({ one: { page: 3 }, two: { page: 2 } })
+    expect(instance.getSnapshot().byTab).toEqual({ one: { page: 3, zoom: 1 }, two: { page: 2, zoom: 1 } })
     instance.actions.forget(one)
-    expect(instance.getSnapshot().byTab).toEqual({ two: { page: 2 } })
+    expect(instance.getSnapshot().byTab).toEqual({ two: { page: 2, zoom: 1 } })
   })
 
   it('creates independent Session store instances', () => {

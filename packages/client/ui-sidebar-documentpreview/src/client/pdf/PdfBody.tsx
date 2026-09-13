@@ -1,4 +1,15 @@
-/** PDF page presentation; binary content and tab information come from the document owner. */
+/**
+ * PDF page presentation; binary content and tab information come from the
+ * document owner.
+ *
+ * Pages render lazily (IntersectionObserver) into canvases sized by the pane,
+ * each carrying a pdfjs text layer so the reader selects real text. Zoom
+ * (⌘/Ctrl+wheel) runs the image preview's continuous curve: the live zoom
+ * scales pages through a CSS variable — layout-only, instant — and the settle
+ * re-renders the requested pages at the zoomed pixel ratio so the detail is
+ * crisp where the reader stopped. The cursor anchor is preserved by scaling
+ * the pane's scroll offset around it.
+ */
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
@@ -6,8 +17,8 @@ import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { createResampleScheduler } from '../resample.ts'
-import { DEFAULT_PDF_VIEW, type PdfStore } from './store.ts'
-import { renderPdfPage, type PdfDocument } from './document.ts'
+import { DEFAULT_PDF_VIEW, PDF_ZOOM_MAX, PDF_ZOOM_MIN, type PdfStore } from './store.ts'
+import { renderPdfPage, renderPdfTextLayer, type PdfDocument } from './document.ts'
 import { openPdf } from './runtime.ts'
 import { PdfWorkerFailure } from './errors.ts'
 import type {} from './locales.ts'
@@ -32,6 +43,13 @@ type LoadState =
 
 /** Horizontal chrome around a page's canvas: section padding (8×2) + page padding (12×2). */
 const PDF_BODY_CHROME = 40
+/** Wheel zoom grows with the gesture's pixel magnitude, identical to the image preview. */
+const WHEEL_ZOOM_SENSITIVITY = 0.007
+/** Per-event factor bounds, so one malformed delta cannot leap the view. */
+const GESTURE_FACTOR_MIN = 0.5
+const GESTURE_FACTOR_MAX = 2
+/** A gesture settles this long after its last event; the crisp re-render follows. */
+const GESTURE_SETTLE_MS = 160
 
 /**
  * Present a PDF with tab-local viewing preferences and component-owned rendering resources.
@@ -49,6 +67,20 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
     actions.page(tab.id, page)
   }, [actions, tab.id])
   const body = useRef<HTMLElement>(null)
+  // The crisp re-render trails the gesture: pages take the live zoom for their
+  // CSS sizing, and this settled value only changes once the wheel stops.
+  const [settledZoom, setSettledZoom] = useState(view.zoom)
+  const settleRef = useRef(0)
+
+  // Every zoom change lands the new value on the section as a CSS variable —
+  // layout-only, instant — and schedules the settle that re-renders crisp.
+  useEffect(() => {
+    const section = body.current
+    if (section === null) return
+    section.style.setProperty('--pdf-zoom', String(view.zoom))
+    clearTimeout(settleRef.current)
+    settleRef.current = setTimeout(() => { setSettledZoom(view.zoom) }, GESTURE_SETTLE_MS)
+  }, [view.zoom])
 
   // The pages' display width rides a quantized CSS variable instead of the
   // pane's live width, so dragging the sidebar's divider never re-composites
@@ -64,6 +96,54 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
     scheduler.schedule()
     return () => { scheduler.dispose(); observer.disconnect() }
   }, [])
+
+  // The pinch gesture: capture-phase wheel (⌘/Ctrl), coalesced to one store
+  // write per animation frame, with the pane's scroll offset scaled around the
+  // cursor so the point under it stays there while the pages grow.
+  useEffect(() => {
+    const section = body.current
+    if (section === null) return
+    // The pane that scrolls the pages is the owner's body element (pages flow
+    // in the shared document scrollport), found by its stable marker.
+    const pane = section.closest<HTMLElement>('[data-textpreview-body]')
+    let frame = 0
+    let target = 0
+    let lastEvent: WheelEvent | undefined
+    const apply = (): void => {
+      frame = 0
+      const at = lastEvent
+      lastEvent = undefined
+      if (at === undefined) return
+      const before = view.zoom
+      const ratio = target / before
+      actions.zoomed(tab.id, target)
+      if (pane !== null && ratio !== 1) {
+        const rect = pane.getBoundingClientRect()
+        const top = at.clientY - rect.top
+        const left = at.clientX - rect.left
+        pane.scrollTop = (pane.scrollTop + top) * ratio - top
+        pane.scrollLeft = (pane.scrollLeft + left) * ratio - left
+      }
+    }
+    const listener = (event: WheelEvent): void => {
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      const factor = Math.min(GESTURE_FACTOR_MAX, Math.max(
+        GESTURE_FACTOR_MIN,
+        Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY),
+      ))
+      const from = target === 0 ? view.zoom : target
+      target = Math.min(PDF_ZOOM_MAX, Math.max(PDF_ZOOM_MIN, from * factor))
+      lastEvent = event
+      if (frame === 0) frame = requestAnimationFrame(apply)
+    }
+    section.addEventListener('wheel', listener, { capture: true, passive: false })
+    return () => {
+      section.removeEventListener('wheel', listener, { capture: true })
+      if (frame !== 0) cancelAnimationFrame(frame)
+    }
+  }, [actions, tab.id, view.zoom])
 
   useEffect(() => { retainTab(tab.id, tab.signal) }, [retainTab, tab.id, tab.signal])
   useEffect(() => {
@@ -91,23 +171,27 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
       <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>
     </div>
   }
-  return <section ref={body} className={css.body} data-pdf-preview>
+  return <section ref={body} className={css.body} data-pdf-preview data-dsh-selectable="">
     {Array.from({ length: load.document.numPages }, (_, index) => (
       <PdfPage key={index} document={load.document} page={index + 1}
-        requested={index === 0 || view.page === index + 1} onVisible={pageVisible} signal={tab.signal} t={t} />
+        requested={index === 0 || view.page === index + 1} onVisible={pageVisible} signal={tab.signal} t={t}
+        settledZoom={settledZoom} />
     ))}
   </section>
 }
 
-function PdfPage({ document, page, requested: initiallyRequested, onVisible, signal, t }: {
+function PdfPage({ document, page, requested: initiallyRequested, onVisible, signal, t, settledZoom }: {
   readonly document: PdfDocument
   readonly page: number
   readonly requested: boolean
   readonly onVisible: (page: number) => void
   readonly signal: AbortSignal
+  /** The settled zoom: pages re-render at this pixel ratio once the wheel stops. */
+  readonly settledZoom: number
 } & PropsLocale<'sidebarPdf'>): ReactNode {
   const host = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
+  const textLayer = useRef<HTMLDivElement>(null)
   const [requested, setRequested] = useState(initiallyRequested)
   const [state, setState] = useState<'loading' | 'ready'>('loading')
   const [failure, setFailure] = useState<{ readonly error: unknown }>()
@@ -139,12 +223,22 @@ function PdfPage({ document, page, requested: initiallyRequested, onVisible, sig
     const renderSignal = AbortSignal.any([lifetime.signal, signal])
     setState('loading')
     setFailure(undefined)
-    void renderPdfPage(document, page, node, renderSignal, window.devicePixelRatio).then(
+    void renderPdfPage(document, page, node, renderSignal, window.devicePixelRatio * settledZoom).then(
       () => { if (!renderSignal.aborted) setState('ready') },
       (error: unknown) => { if (!renderSignal.aborted) setFailure({ error }) },
     )
     return () => { lifetime.abort() }
-  }, [document, page, requested, signal, attempt])
+  }, [document, page, requested, signal, attempt, settledZoom])
+  // The text layer rides the canvas render: selection must exist whenever the
+  // page is visible, at any zoom (the layer scales with the page box).
+  useEffect(() => {
+    if (!requested || state !== 'ready') return
+    const node = textLayer.current as HTMLDivElement
+    const lifetime = new AbortController()
+    const layerSignal = AbortSignal.any([lifetime.signal, signal])
+    void renderPdfTextLayer(document, page, node, layerSignal).catch(() => { /* a page without extractable text */ })
+    return () => { lifetime.abort() }
+  }, [document, page, requested, signal, state])
   return <div ref={host} className={css.page} data-pdf-page={page}>
     {failure === undefined && state !== 'ready' && <div className={css.placeholder}>
       {requested && <LoadingIndicator className={css.status} label={t('rendering')} />}
@@ -153,8 +247,11 @@ function PdfPage({ document, page, requested: initiallyRequested, onVisible, sig
       <span>{failureText(failure.error, t)}</span>
       <Button size="sm" onClick={() => { setAttempt(value => value + 1) }}>{t('retry')}</Button>
     </div>}
-    <canvas ref={canvas} className={css.canvas} role="img" aria-label={t('pageImage', { page })}
-      hidden={state !== 'ready' || failure !== undefined} />
+    <div className={css.pageBox}>
+      <canvas ref={canvas} className={css.canvas} role="img" aria-label={t('pageImage', { page })}
+        hidden={state !== 'ready' || failure !== undefined} />
+      <div ref={textLayer} className={css.textLayer} />
+    </div>
   </div>
 }
 

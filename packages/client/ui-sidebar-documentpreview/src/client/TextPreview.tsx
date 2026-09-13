@@ -33,6 +33,32 @@ import css from './TextPreview.module.css'
 export { linesOf, loadedPages, lastLineLoaded, scrollToLine } from './text/lines.ts'
 export type { LoadedPage } from './text/lines.ts'
 
+/**
+ * The release policy's timer half: a body leaving (tab switch, pane hidden)
+ * schedules its tab's content to drop after a delay — enough to make quick
+ * toggles free — while a closed tab's record aborts at once and releases with
+ * no delay. Timers live at module scope because the body that armed them is
+ * exactly the thing going away; the store survives both.
+ */
+const RELEASE_DELAY_MS = 30_000
+const releaseTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+function scheduleRelease(actions: { released(tabId: string): void }, tabId: string): void {
+  cancelRelease(tabId)
+  releaseTimers.set(tabId, setTimeout(() => {
+    releaseTimers.delete(tabId)
+    actions.released(tabId as never)
+  }, RELEASE_DELAY_MS))
+}
+
+function cancelRelease(tabId: string): void {
+  const timer = releaseTimers.get(tabId)
+  if (timer !== undefined) {
+    clearTimeout(timer)
+    releaseTimers.delete(tabId)
+  }
+}
+
 /** Keep the path fade in sync with whether its full text fits the header row. */
 function usePathClipped(
   box: RefObject<HTMLDivElement | null>,
@@ -121,13 +147,33 @@ export function TextPreview({
   }, [])
 
   // First mount reads the first page; a body coming back to a tab with content
-  // reads nothing, because the store outlives the body.
-  const started = current !== undefined
+  // reads nothing, because the store outlives the body — but a tab whose
+  // content was released (kept view, dropped data, `releasedContent` set)
+  // re-reads, landing where the reader was via the scroll restore below.
+  const started = current !== undefined && current.releasedContent !== true
   useEffect(() => {
     if (started || !canRead || mode === undefined) return
     if (mode === 'text-pages') loadPage(tab.id, file, 1, signal, meta.value?.version)
     else loadAll(tab.id, file, signal, meta.value?.version)
   }, [started, tab.id, file, signal, loadPage, loadAll, canRead, mode, meta.value?.version])
+
+  // The release policy: coming back cancels a pending drop; leaving (tab
+  // switch, pane hide) schedules one; a closed tab's record aborts at once and
+  // its content goes immediately. Loaded content is what costs — an unread or
+  // released tab has nothing to release.
+  useEffect(() => {
+    cancelRelease(tab.id)
+    return () => {
+      const hasContent = current !== undefined && (current.complete !== undefined || loaded.length > 0)
+      // The release rides the module-level timer, never the unmount stack: a
+      // synchronous store write from cleanup re-enters the unmounting component
+      // through its store subscription and the real store spins that loop. A
+      // closed tab needs no release of its own — the face's abort listener
+      // forgets the whole bucket when the record ends — so only a left-but-
+      // alive tab schedules the delayed drop.
+      if (hasContent) scheduleRelease(actions, tab.id)
+    }
+  }, [actions, tab.id, signal, current])
 
   // Come back where the reader was once there is content to scroll: on a remount,
   // after a reload rebuilt the content, or after the selected renderer changed.

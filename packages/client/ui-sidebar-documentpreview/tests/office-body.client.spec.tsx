@@ -55,6 +55,7 @@ function scrollHostDouble(): HTMLElement & { scrollTop: number; scrollLeft: numb
   return {
     scrollTop: 200,
     scrollLeft: 100,
+    style: {} as CSSStyleDeclaration,
     getBoundingClientRect: () => ({ top: 0, left: 0 } as DOMRect),
   } as unknown as HTMLElement & { scrollTop: number; scrollLeft: number }
 }
@@ -148,6 +149,8 @@ describe('Office body', () => {
     const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
     fireEvent(surface, new WheelEvent('wheel', { ctrlKey: true, deltaY: -12, clientX: 60, clientY: 40, cancelable: true }))
     const expected = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, Math.exp(12 * 0.007)))
+    // The gesture previews on a transform and commits the real scale on settle.
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
     expect(zoom.setScale).toHaveBeenCalledWith(expected)
     // Cursor-anchored scroll correction: content point scales around the anchor.
     expect(host.scrollTop).toBeCloseTo((200 + 40) * expected - 40, 5)
@@ -156,6 +159,7 @@ describe('Office body', () => {
     // Plain wheel is untouched: no zoom, native scrolling.
     zoom.setScale.mockClear()
     fireEvent(surface, new WheelEvent('wheel', { deltaY: -50, cancelable: true }))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
     expect(zoom.setScale).not.toHaveBeenCalled()
   })
 
@@ -167,6 +171,7 @@ describe('Office body', () => {
     await act(async () => {})
     const surface = document.querySelector('[class*="surface"]') as HTMLElement
     fireEvent(surface, new WheelEvent('wheel', { ctrlKey: true, deltaY: -40, cancelable: true }))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
     expect(zoom.setScale).toHaveBeenLastCalledWith(OFFICE_ZOOM_MAX)
   })
 
@@ -180,6 +185,7 @@ describe('Office body', () => {
     expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
     const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
     fireEvent(surface, new WheelEvent('wheel', { metaKey: true, deltaY: -20, clientX: 10, clientY: 10, cancelable: true }))
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
     expect(zoom.setScale).toHaveBeenCalledOnce()
   })
 

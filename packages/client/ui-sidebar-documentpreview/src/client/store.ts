@@ -55,6 +55,12 @@ export interface TextTabState {
   wrap: boolean
   /** The `navigation.revision` the body already answered; absent before the first. */
   revision: number | undefined
+  /**
+   * True while this tab's content is dropped but its view survives — the
+   * release policy ran and a returning body should re-read. Set by the
+   * {@link TextActions.released} action, cleared by the next settled read.
+   */
+  releasedContent?: boolean
 }
 
 /** Every tab's state, keyed by tab id. */
@@ -96,6 +102,13 @@ type TextActions = {
   scrolled: (draft: TextState, tabId: TabId, scrollTop: number) => void
   toggledWrap: (draft: TextState, tabId: TabId) => void
   navigated: (draft: TextState, tabId: TabId, revision: number) => void
+  /**
+   * Drop one tab's content (bytes or pages) while keeping its view state, so
+   * a body that remounts re-reads and lands where the reader was. The memory
+   * half of the release policy: a closed tab forgets immediately, a tab left
+   * behind or a hidden pane releases after a delay.
+   */
+  released: (draft: TextState, tabId: TabId) => void
   forget: (draft: TextState, tabId: TabId) => void
 }
 
@@ -132,6 +145,7 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
       /** @param d - draft. @param tabId - owning tab. @param file - complete byte result for this view. */
       complete: (d, tabId: TabId, file: DocumentFileBytes) => {
         const state = bucket(d, tabId)
+        delete state.releasedContent
         state.complete = file
         state.version = file.version
         state.eof = true
@@ -147,6 +161,7 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
        */
       page: (d, tabId: TabId, page: WorkspaceFileText) => {
         const state = bucket(d, tabId)
+        delete state.releasedContent
         if (state.version !== undefined && state.version !== page.version) state.pages = {}
         state.version = page.version
         state.pages[page.offset] = { text: page.text, lines: page.lines }
@@ -172,6 +187,7 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
        */
       reset: (d, tabId: TabId) => {
         const state = bucket(d, tabId)
+        delete state.releasedContent
         state.pages = {}
         delete state.complete
         state.eof = false
@@ -213,6 +229,16 @@ export function createTextStore(): EngineStoreHandle<TextState, TextActions> {
        * @param d - draft state.
        * @param tabId - the tab that went away.
        */
+      released: (d, tabId: TabId) => {
+        const state = bucket(d, tabId)
+        delete state.complete
+        state.pages = {}
+        state.eof = false
+        state.loading = false
+        state.version = undefined
+        state.observedVersion = undefined
+        state.releasedContent = true
+      },
       forget: (d, tabId: TabId) => {
         const byTab: TextState['byTab'] = {}
         // Keys were written from tab ids; reading them back as ids is exact.
