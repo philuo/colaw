@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { describe, expect, it } from 'vitest'
 
@@ -29,28 +29,56 @@ function run(command: string, args: string[], cwd: string, timeout: number): str
   return result.stdout
 }
 
-function runPnpm(args: string[], cwd: string, timeout: number): string {
+/** Whether the current process is itself Bun — the runtime this repo mandates. */
+function runningUnderBun(): boolean {
+  return basename(process.execPath).toLowerCase().startsWith('bun')
+}
+
+/**
+ * Pack the package with the runtime's own packer and return the tarball path.
+ *
+ * Under Bun (the only supported lane here) `bun pm pack` writes the tarball
+ * into the package directory regardless of `--pack-destination`, and prints
+ * its filename as the final stdout line. Non-Bun environments keep the
+ * npm_execpath-based pnpm invocation.
+ */
+function pack(cwd: string, timeout: number): string {
+  if (runningUnderBun()) {
+    run(process.execPath, ['pm', 'pack'], cwd, timeout)
+    // The tarball lands in cwd (destination flag notwithstanding) and stdout
+    // line order varies by TTY — the directory is the source of truth.
+    const newest = readdirSync(cwd)
+      .filter(name => name.endsWith('.tgz'))
+      .map(name => ({ name, mtime: statSync(join(cwd, name)).mtimeMs }))
+      .sort((left, right) => right.mtime - left.mtime)[0]
+    if (newest === undefined) {
+      throw new Error('bun pm pack produced no tarball in the package directory')
+    }
+    return join(cwd, newest.name)
+  }
   const entrypoint = process.env.npm_execpath
+  const pnpmArgs = ['pack', '--json', '--pack-destination', cwd]
   if (entrypoint === undefined || entrypoint === '') {
     if (process.platform === 'win32') throw new Error('npm_execpath is required to run pnpm on Windows')
-    return run('pnpm', args, cwd, timeout)
+    return JSON.parse(run('pnpm', pnpmArgs, cwd, timeout)) as string
   }
-  return /\.[cm]?js$/iu.test(entrypoint)
-    ? run(process.execPath, [entrypoint, ...args], cwd, timeout)
-    : run(entrypoint, args, cwd, timeout)
+  const packed = /\.[cm]?js$/iu.test(entrypoint)
+    ? JSON.parse(run(process.execPath, [entrypoint, ...pnpmArgs], cwd, timeout)) as { filename: string }
+    : JSON.parse(run(entrypoint, pnpmArgs, cwd, timeout)) as { filename: string }
+  return join(cwd, packed.filename)
 }
 
 describe('published PDF.js licenses', () => {
   it.skipIf(!existsSync(bundlePath))('keeps every bundled license in the packed client artifact', ({ task }) => {
     const output = mkdtempSync(join(tmpdir(), 'dsh-document-preview-pack-'))
+    let tarball = ''
     try {
-      const packed = JSON.parse(runPnpm([
-        'pack', '--json', '--pack-destination', output,
-      ], packageRoot, task.timeout)) as { filename: string; files: { path: string }[] }
-      expect(packed.files.map(file => file.path)).toContain('lib/client.js')
-      expect(packed.files.some(file => file.path.endsWith('pdfjs-NOTICES.txt'))).toBe(false)
+      tarball = pack(packageRoot, task.timeout)
+      const names = run('tar', ['-tzf', tarball], packageRoot, task.timeout).split('\n')
+      expect(names.some(name => name === 'package/lib/client.js')).toBe(true)
+      expect(names.some(name => name.endsWith('pdfjs-NOTICES.txt'))).toBe(false)
 
-      const client = run('tar', ['-xOf', resolve(packageRoot, packed.filename), 'package/lib/client.js'], packageRoot, task.timeout)
+      const client = run('tar', ['-xOf', tarball, 'package/lib/client.js'], packageRoot, task.timeout)
       expect(client).toContain('//! Bundled PDF.js license notices')
       const pdfRoot = dirname(require.resolve('pdfjs-dist/package.json'))
       for (const name of licenseNames) {
@@ -59,6 +87,7 @@ describe('published PDF.js licenses', () => {
         expect(client, `${name} must be visible in package/lib/client.js`).toContain(commented)
       }
     } finally {
+      if (tarball !== '') rmSync(tarball, { force: true })
       rmSync(output, { recursive: true, force: true })
     }
   })

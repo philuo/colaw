@@ -104,6 +104,7 @@ function retainDocumentListeners(): void {
   document.addEventListener('pointerover', onPointerOver, { passive: true })
   document.addEventListener('pointerdown', onPointerDown, { capture: true, passive: true })
   document.addEventListener('pointerup', onPointerUp, { passive: true })
+  document.addEventListener('pointercancel', onPointerUp, { passive: true })
   document.addEventListener('selectionchange', onSelectionChange)
 }
 
@@ -113,6 +114,7 @@ function releaseDocumentListeners(): void {
   document.removeEventListener('pointerover', onPointerOver)
   document.removeEventListener('pointerdown', onPointerDown, { capture: true })
   document.removeEventListener('pointerup', onPointerUp)
+  document.removeEventListener('pointercancel', onPointerUp)
   document.removeEventListener('selectionchange', onSelectionChange)
 }
 

@@ -119,6 +119,13 @@
             url: https://mcp.firecrawl.dev/v2/mcp
             credentialRef: FIRECRAWL_API_KEY
 
+# 百度网盘 (Baidu Netdisk) bundled skill: the bdpan storage operations skill
+# ships as packaged assets (upstream baidu-netdisk/bdpan-storage, Apache-2.0).
+- insert:
+    - id: skill-baidu-netdisk
+      name: '@deepseek-ai/dsh-skill-baidu-netdisk'
+      config: {}
+
 # MinerU 文档解析 tool: cloud PDF/Office → Markdown (mineru.net 精准解析 API).
 # The token resolves per call from MINERU_API_KEY (Settings → General),
 # so a newly entered key applies immediately.

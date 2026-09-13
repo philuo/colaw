@@ -80,6 +80,7 @@ export function PdfBody(props: PdfBodyProps): ReactNode {
     section.style.setProperty('--pdf-zoom', String(view.zoom))
     clearTimeout(settleRef.current)
     settleRef.current = setTimeout(() => { setSettledZoom(view.zoom) }, GESTURE_SETTLE_MS)
+    return () => { clearTimeout(settleRef.current) }
   }, [view.zoom])
 
   // The pages' display width rides a quantized CSS variable instead of the

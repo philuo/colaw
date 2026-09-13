@@ -235,7 +235,15 @@ function entryOfManifest(packageDir: string, manifest: Record<string, unknown>, 
   const key = subpath === '' ? '.' : `.${subpath}`
   const exports = manifest.exports
   if (exports !== null && typeof exports === 'object' && !Array.isArray(exports)) {
+    // A bare-conditional exports map (npm's legacy shorthand: the whole map is
+    // `{"import": ..., "require": ...}` keyed by condition, no `.`-rooted
+    // paths) IS the '.' entry. zod-to-json-schema ships exactly that shape;
+    // without this, resolution fails, the specifier lands in `unresolved`,
+    // and the shipped app dies at import (found as the stable-app white screen).
+    const conditionShorthand = key === '.'
+      && Object.keys(exports).every(pattern => !pattern.startsWith('.'))
     const direct = pickRuntimeTarget((exports as Record<string, unknown>)[key])
+      ?? (conditionShorthand ? pickRuntimeTarget(exports as Record<string, unknown>) : undefined)
     if (direct !== undefined) {
       const entry = resolve(packageDir, direct)
       if (isFile(entry)) return { entry, wildcard: false }
@@ -669,6 +677,10 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     const specs: string[] = []
     for (const [key, value] of Object.entries(exports as Record<string, unknown>)) {
       if (key === '.' || key === './package.json' || key.includes('*')) continue
+      // Condition keys of a bare-conditional shorthand map ("types",
+      // "default", ...) name the '.' entry, not a subpath; treating one as a
+      // path mints phantom specifiers (`execa` + "ypes" → `execaypes`).
+      if (!key.startsWith('./')) continue
       const target = pickRuntimeTarget(value)
       if (target === undefined || !target.startsWith('./')) continue
       if (!/\.(?:js|mjs|cjs|ts|mts|cts|tsx)$/u.test(target)) continue

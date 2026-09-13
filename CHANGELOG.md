@@ -45,6 +45,31 @@
   ⌘A 按焦点或指针位置解析到当前作用域后圈定全选（输入框等可编辑元素的
   全选不受影响）；拖选越界时把 Selection 实时裁剪回该 tab 容器与选区的
   交集。
+- **修复 stable 应用白屏打不开（严重）**：07:57 起的 stable 包启动即白屏。
+  根因链：内置 MCP 集成把 `@modelcontextprotocol/sdk` 的依赖
+  `zod-to-json-schema` 拉入运行时，而该包使用 npm 老式「裸条件 exports」
+  （`{"import":…,"require":…}` 整体即 `.` 入口的简写）；打包闭包的
+  `entryOfManifest` 只认 `./` 路径键的 exports，解析失败后按"可选依赖
+  不发货"处理，产物缺包 → mcp-keyring 导入失败 → cordis 组合树挂载
+  失败 → 窗口停在 splash。该缺口自上游第一版即存在（更早版本的打包
+  日志就印有 `unshipped optional imports: … zod-to-json-schema`，与
+  sharp 平台件混在一列从未被注意），此前无运行时引用故无害。修复
+  （additive 12 行）：`entryOfManifest` 识别裸条件简写；同源修复
+  `declaredExportSpecs` 把条件键当子路径拼出幽灵包名（`execaypes`）的
+  问题。**验收方式升级**：打包后必做 /tmp 副本 + 隔离 HOME 启动冒烟
+  （本轮全程执行：修复前 2 项加载失败，修复后 0 项，窗口正常载入）；
+  另查实「从仓库 build 目录直接启动」为不可信环境（同一 app 在仓库
+  内启动复现 mcp-keyring 解析失败、拷出后 0 失败，与 ~/.colaw 状态无
+  关）。顺带补回泄漏清理时误删的百度网盘技能组合行。
+- **预览测试链路修复 + 资源审计收口**：`pdf-license-bundle` 既有失败根因
+  查明——spec 以 `npm_execpath` 推断包管理器，bun 运行时落到 `bun pack`
+  （被当作脚本名）报 `Script not found "pack"`；改为 bun 原生
+  `bun pm pack` + tarball 目录发现（bun 1.4.2 的 `--pack-destination`
+  不生效、stdout 行序随 TTY 变化，故以目录为准），断言改走 tar 列表。
+  预览包 **300/300 全量通过**，"已知环境失败"清单移除该项。资源释放
+  补齐：PDF 缩放落定定时器随组件卸载清理；选区作用域补 pointercancel
+  结束拖选（避免手势中断后拖选状态滞留）；文档监听随最后一个作用域
+  注销整体拆除。
 - **通用设置新增「身份预设」**：两个输入项——AI 人设（默认"严谨、细心、
   程序员冲哥"）与用户人设（默认"山东济南律师（琪琪）"）。写入 `ui-identity`
   设置命名空间并实时发布为系统提示词 `identity:preset` 段（紧随部署 persona
