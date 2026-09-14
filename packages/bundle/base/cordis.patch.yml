@@ -115,6 +115,12 @@
     - id: llm-openai
       name: '@deepseek-ai/dsh-llm-openai'
 
+    # The Anthropic messages route, mounted dormant like llm-openai: zero
+    # models in the picker until an `llm-anthropic:` settings section declares
+    # the endpoint's catalog. Route id deliberately avoids pi-ai's `anthropic`.
+    - id: llm-anthropic
+      name: '@deepseek-ai/dsh-llm-anthropic'
+
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
       config:

@@ -252,6 +252,7 @@
     { "path": "./packages/experimental/code-runtime-python" },
     { "path": "./packages/code-runtime/code-runtime-worker-thread" },
     { "path": "./packages/llm/llm-deepseek" },
+    { "path": "./packages/llm/llm-anthropic" },
     { "path": "./packages/llm/llm-openai" },
     { "path": "./packages/llm/llm-pi-ai" },
     { "path": "./packages/shell/bash-local" },
