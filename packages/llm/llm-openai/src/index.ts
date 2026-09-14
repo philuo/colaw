@@ -67,7 +67,7 @@ const NS = 'llm-openai'
  */
 const DEFAULT_API_KEY_ENV = 'OPENAI_API_KEY'
 /** The single provider route this plugin owns. */
-const PROVIDER = 'openai'
+const PROVIDER = 'openai-compatible'
 
 // Chat completions carries text and (for vision models) image input; the
 // other harness modalities have no wire form on this route.

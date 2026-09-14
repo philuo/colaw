@@ -61,7 +61,7 @@ describe('request shape', () => {
     const adapter = adapterOf({ baseURL: server.url, models: [{ id: 'gpt-4o' }] })
     const chunks = []
     for await (const chunk of adapter.stream({
-      provider: 'openai',
+      provider: 'openai-compatible',
       model: 'gpt-4o',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'plugin', plugin: 'test' } })],
     })) chunks.push(chunk)
@@ -84,7 +84,7 @@ describe('request shape', () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const adapter = adapterOf({ baseURL: server.url })
     for await (const chunk of adapter.stream({
-      provider: 'openai',
+      provider: 'openai-compatible',
       model: 'gpt-4o',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'plugin', plugin: 'test' } })],
     })) void chunk
@@ -96,7 +96,7 @@ describe('request shape', () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const adapter = adapterOf({ baseURL: server.url, maxTokensField: 'max_completion_tokens' })
     for await (const chunk of adapter.stream({
-      provider: 'openai',
+      provider: 'openai-compatible',
       model: 'gpt-4o',
       messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'plugin', plugin: 'test' } })],
       maxTokens: 555,
@@ -119,10 +119,10 @@ describe('request shape', () => {
       ],
     })
     for await (const chunk of adapter.stream({
-      provider: 'openai', model: 'gpt-4o', messages: [createUserMessage({ content: [{ type: 'text', text: 'a' }], source: { kind: 'plugin', plugin: 'test' } })],
+      provider: 'openai-compatible', model: 'gpt-4o', messages: [createUserMessage({ content: [{ type: 'text', text: 'a' }], source: { kind: 'plugin', plugin: 'test' } })],
     })) void chunk
     for await (const chunk of adapter.stream({
-      provider: 'openai', model: 'o4-mini', messages: [createUserMessage({ content: [{ type: 'text', text: 'b' }], source: { kind: 'plugin', plugin: 'test' } })],
+      provider: 'openai-compatible', model: 'o4-mini', messages: [createUserMessage({ content: [{ type: 'text', text: 'b' }], source: { kind: 'plugin', plugin: 'test' } })],
     })) void chunk
     expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
     expect(server.requests[1]).toMatchObject({ reasoning_effort: 'high' })

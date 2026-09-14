@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Use this package to stream models through the `openai` route over the OpenAI chat-completions protocol, including per-model reasoning effort, inline image input for vision models, and an advisory model catalog. The endpoint is configurable, so the same adapter serves the official OpenAI API and any OpenAI-compatible gateway (a custom `baseURL` plus a credential reference). Endpoint, credentials, catalog, and effort policy resolve for each request, so valid user-settings changes apply to the next request without restarting the process.
+Use this package to stream models through the `openai-compatible` route over the OpenAI chat-completions protocol, including per-model reasoning effort, inline image input for vision models, and an advisory model catalog. The endpoint is configurable, so the same adapter serves the official OpenAI API and any OpenAI-compatible gateway (a custom `baseURL` plus a credential reference). Endpoint, credentials, catalog, and effort policy resolve for each request, so valid user-settings changes apply to the next request without restarting the process.
 
 ## Use this package
 

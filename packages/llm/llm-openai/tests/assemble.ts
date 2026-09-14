@@ -10,7 +10,7 @@ export interface AssembledResult {
 
 export async function assemble(ctx: Context, options: Omit<GenerateOptions, 'provider'> & { provider?: string }): Promise<AssembledResult> {
   const assembler = new BlockAssembler()
-  const request = { provider: 'openai', ...options }
+  const request = { provider: 'openai-compatible', ...options }
   for await (const chunk of ctx.llm.stream(request)) assembler.push(chunk)
   return {
     message: assembler.message({
