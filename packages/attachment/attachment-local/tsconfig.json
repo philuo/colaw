@@ -1,6 +1,6 @@
 {
   "extends": "../../../tsconfig.base.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
+  "compilerOptions": { "rootDir": "src", "outDir": "lib/types", "types": ["node", "bun"] },
   "include": ["src"],
   "references": [
     { "path": "../../../vendor/cosmokit" },
