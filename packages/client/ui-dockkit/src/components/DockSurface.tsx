@@ -13,7 +13,7 @@ import type { ReactNode } from 'react'
 import type { DockIntents, DockLabels, TabMenuExtras, TabRenderer } from '../contract/adapter.ts'
 import type { LayoutState, PaneId, SplitId, TabId } from '../contract/types.ts'
 import { clampSizes, FLOAT_DEFAULT_SIZE, MIN_PANE_FRACTION } from '../engine/constraints.ts'
-import { getSplit, topRightPaneId } from '../engine/tree.ts'
+import { firstDockPaneId, getSplit, topRightPaneId } from '../engine/tree.ts'
 import type { DropTarget, HalvesFit } from '../engine/geometry.ts'
 import {
   containsPoint, dividerSizes, floatRectAt, insertionIndex, passedThreshold, zoneInRect,
@@ -285,6 +285,7 @@ export function DockSurface({
     renderTabMenuItems,
     chromePaneId: topRightPaneId(state),
     chrome,
+    leadingPaneId: firstDockPaneId(state),
   }
 
   return (

@@ -245,6 +245,7 @@ export function TabPanel({ state, pane, callbacks }: TabPanelProps): ReactNode {
       className={css.pane}
       data-dockkit-pane={pane.id}
       data-dockkit-pane-active={state.activePaneId === pane.id || undefined}
+      data-dockkit-pane-leading={pane.id === callbacks.leadingPaneId || undefined}
       // A click on the pane's body or strip focuses the pane, unless it is the
       // active one already: that click changes nothing and records nothing. The
       // chips and the strip's controls stop their own clicks: each reports one

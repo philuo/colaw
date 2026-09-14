@@ -195,6 +195,24 @@ describe('DockSurface', () => {
     expect(intents.focusPane).not.toHaveBeenCalled()
   })
 
+  it('marks the leading pane alone, so a second pane\'s strip drops the embedder\'s start pad', () => {
+    // One pane is the whole surface: it keeps the embedder's start reservation.
+    const single = renderSurface(new DockController(), spyIntents())
+    expect(document.querySelector('[data-dockkit-pane]')?.hasAttribute('data-dockkit-pane-leading')).toBe(true)
+    single.unmount()
+
+    // After a split only the first pane still touches the surface's leading
+    // edge; the second begins mid-window, where window chrome cannot sit.
+    const controller = seededController()
+    controller.setExpanded(true)
+    controller.splitPane()
+    renderSurface(controller, spyIntents())
+    const [first, second] = dockPaneIds(controller.getSnapshot().state)
+    if (first === undefined || second === undefined) throw new Error('expected two docked panes')
+    expect(document.querySelector(`[data-dockkit-pane="${first}"]`)?.hasAttribute('data-dockkit-pane-leading')).toBe(true)
+    expect(document.querySelector(`[data-dockkit-pane="${second}"]`)?.hasAttribute('data-dockkit-pane-leading')).toBe(false)
+  })
+
   it('records nothing for a click on the active pane\'s selected chip, but selects that chip in another pane', () => {
     const controller = seededController()
     controller.setExpanded(true)

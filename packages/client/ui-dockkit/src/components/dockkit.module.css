@@ -178,6 +178,15 @@
   touch-action: none;
 }
 
+/* The embedder's start pad reserves room for window chrome (traffic lights,
+   a pinned rail) that only sits over the surface's leading edge. A second pane
+   begins mid-window, so its strip starts at the kit's own inset; without this
+   every pane after a split would carry the leading pane's blank in front of
+   its first chip. */
+.pane:not([data-dockkit-pane-leading]) {
+  --dsh-dockkit-strip-pad-start: 6px;
+}
+
 /* The chips. Shrinks to nothing before any control after it moves; chips keep
    their 80px floor, so what no longer fits scrolls here on the wheel, with no
    scrollbar drawn. `touch-action: none` keeps a touch press-and-move a tab drag

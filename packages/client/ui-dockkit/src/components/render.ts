@@ -45,4 +45,8 @@ export interface PaneCallbacks {
   readonly chromePaneId: PaneId
   /** Those controls; absent means the strip ends at the kit's own split control. */
   readonly chrome: ReactNode
+  /** The pane on the surface's leading (top-left) edge, whose strip keeps the
+   * embedder's start-pad reservation; every other pane's strip starts at the
+   * kit's own inset, since no window chrome sits over it. */
+  readonly leadingPaneId: PaneId
 }
