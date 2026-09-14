@@ -193,45 +193,18 @@ const neverShipped = (spec: string): boolean =>
   || spec.startsWith('web-streams-polyfill')
 
 /**
- * Exports subpaths of an otherwise-shipped package that nothing in this
- * application imports, unseeded so their transitive trees stay out of the
- * artifact. The declared-exports scan seeds every non-wildcard subpath of a
- * shipped package ("any config or SDK import may name the rest"), which for
- * `@earendil-works/pi-ai` meant shipping `./bedrock-provider` — the AWS
- * Bedrock transport dragging the whole @aws-sdk/@smithy/@aws-crypto family
- * (~6 MiB) — and `./compat`, a pi-ai-internal browser bundle re-importing
- * openai, although the application reaches pi-ai only through its root and
- * `./providers/all`. A future import of one resolves-or-fails exactly like
- * any other package: the exemption stops only the speculative seeding.
- */
-const NEVER_SEEDED_EXPORT_SUBPATHS = new Set([
-  '@earendil-works/pi-ai./bedrock-provider',
-  '@earendil-works/pi-ai./compat',
-])
-
-/**
  * Packages replaced at emit time by a generated stub module, so a heavyweight
  * SDK whose only consumer is a provider this product never configures stays
- * out of the artifact while the importing bundle still links.
+ * out of the artifact while the importing bundle still links. The stub
+ * exports exactly the named bindings the importing bundle takes from the
+ * package (its only job is module linking), and every use throws on access.
  *
- * `@google/genai` is statically imported by pi-ai's Google transports
- * (`api/google-shared.js`, `api/google-generative-ai.js`,
- * `api/google-vertex.js`), which the `providers/all` aggregator loads
- * eagerly — so the specifier must RESOLVE even though no Gemini route exists
- * in this product and none may be configured by policy. pi-ai 0.85.1 takes
- * exactly five named bindings (`FinishReason`, `FunctionCallingConfigMode`,
- * `GoogleGenAI`, `ResourceScope`, `ThinkingLevel`) and every use site sits
- * inside a request-path function (verified against the installed dist), so a
- * stub exporting those names links cleanly and any actual Gemini attempt
- * fails loudly at the stub. Dropping the real SDK takes its whole dependency
- * tree with it (protobufjs, google-auth-library/gaxios/gcp-metadata).
+ * Currently no entries: the last consumer, pi-ai's statically-imported
+ * `@google/genai` (five bindings, all request-path-only), left the plane
+ * when pi-ai was unmounted. Reinstate an entry only with binding-level
+ * evidence from the importing package's shipped dist.
  */
-const STUB_PACKAGES: ReadonlyMap<string, readonly string[]> = new Map([
-  [
-    '@google/genai',
-    ['FinishReason', 'FunctionCallingConfigMode', 'GoogleGenAI', 'ResourceScope', 'ThinkingLevel'],
-  ],
-])
+const STUB_PACKAGES: ReadonlyMap<string, readonly string[]> = new Map()
 
 /** The package-name root of a possibly-subpathed bare specifier. */
 function packageRootName(spec: string): string {
@@ -798,9 +771,6 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     const specs: string[] = []
     for (const [key, value] of Object.entries(exports as Record<string, unknown>)) {
       if (key === '.' || key === './package.json' || key.includes('*')) continue
-      // A subpath on the never-seeded list ships no speculative closure:
-      // nothing in this application imports it (see the set's comment).
-      if (NEVER_SEEDED_EXPORT_SUBPATHS.has(`${name}${key}`)) continue
       // Condition keys of a bare-conditional shorthand map ("types",
       // "default", ...) name the '.' entry, not a subpath; treating one as a
       // path mints phantom specifiers (`execa` + "ypes" → `execaypes`).

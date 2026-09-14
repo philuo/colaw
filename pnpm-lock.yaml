@@ -421,9 +421,6 @@ importers:
       '@deepseek-ai/dsh-llm-openai':
         specifier: workspace:^
         version: link:../../packages/llm/llm-openai
-      '@deepseek-ai/dsh-llm-pi-ai':
-        specifier: workspace:^
-        version: link:../../packages/llm/llm-pi-ai
       '@deepseek-ai/dsh-llm-replay':
         specifier: workspace:^
         version: link:../../packages/test-support/llm-replay
@@ -1400,9 +1397,6 @@ importers:
       '@deepseek-ai/dsh-llm-openai':
         specifier: workspace:^
         version: link:../../llm/llm-openai
-      '@deepseek-ai/dsh-llm-pi-ai':
-        specifier: workspace:^
-        version: link:../../llm/llm-pi-ai
       '@deepseek-ai/dsh-llm-retry':
         specifier: workspace:^
         version: link:../../llm/llm-retry
