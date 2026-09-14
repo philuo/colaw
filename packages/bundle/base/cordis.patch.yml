@@ -107,6 +107,14 @@
     - id: llm-pi-ai
       name: '@deepseek-ai/dsh-llm-pi-ai'
 
+    # The OpenAI chat-completions route, mounted dormant like llm-pi-ai: zero
+    # models in the picker until an `llm-openai:` settings section declares the
+    # endpoint's catalog. Serves the official OpenAI API and any
+    # OpenAI-compatible gateway (custom baseURL + credential reference);
+    # reasoning models are declared per catalog entry via `reasoning: true`.
+    - id: llm-openai
+      name: '@deepseek-ai/dsh-llm-openai'
+
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'
       config:
