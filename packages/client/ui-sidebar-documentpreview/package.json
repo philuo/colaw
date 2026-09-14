@@ -27,6 +27,11 @@
   },
   "dsh": {
     "client": {
+      "external": [
+        "@silurus/ooxml/docx",
+        "@silurus/ooxml/pptx",
+        "@silurus/ooxml/xlsx"
+      ],
       "inject": [
         "@deepseek-ai/dsh-api-gateway",
         "@deepseek-ai/dsh-api-workspace-files",

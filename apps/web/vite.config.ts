@@ -1,4 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises'
+import { readdirSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { defineConfig } from 'vite'
 import type { Plugin } from 'vite'
@@ -68,6 +71,36 @@ function emitPreviewPage(): Plugin {
       if (anchor === -1) throw new Error('vite: built index.html lost its module entry tag')
       const tag = `<script type="module" crossorigin src="./${bootstrapFile}"></script>`
       await writeFile(src('./dist/preview.html'), `${page.slice(0, anchor)}${tag}${page.slice(anchor)}`)
+    },
+  }
+}
+
+/**
+ * Emit PDF.js's binary data resources — CJK cmaps, standard fonts, and the
+ * image-decoder wasm — into the static asset tree, where the frontend-static
+ * fallback serves them to the document preview's BinaryDataFactory fetch.
+ * This replaces the base64 inline define that used to carry the same bytes
+ * inside the document-preview client bundle (a ~9 MB base64 tax on every
+ * client load, paid even when no PDF was ever opened). The directory names
+ * under assets/pdfjs/ are the same kind keys PDF.js requests through.
+ */
+function emitPdfjsAssets(): Plugin {
+  return {
+    name: 'dsh-emit-pdfjs-assets',
+    apply: 'build',
+    generateBundle() {
+      const require = createRequire(import.meta.url)
+      const root = dirname(require.resolve('pdfjs-dist/package.json'))
+      for (const directory of ['cmaps', 'standard_fonts', 'wasm']) {
+        const names = readdirSync(join(root, directory)).filter(name => !name.startsWith('LICENSE')).sort()
+        for (const name of names) {
+          this.emitFile({
+            type: 'asset',
+            fileName: `assets/pdfjs/${directory}/${name}`,
+            source: readFileSync(join(root, directory, name)),
+          })
+        }
+      }
     },
   }
 }
@@ -147,7 +180,7 @@ export default defineConfig({
   // Relative asset URLs: preview.html mounts the same output under any base
   // directory, and the served index resolves identically from the site root.
   base: './',
-  plugins: [rejectStandaloneServe(), clientDocumentTitle(), react(), emitPreviewPage()],
+  plugins: [rejectStandaloneServe(), clientDocumentTitle(), react(), emitPreviewPage(), emitPdfjsAssets()],
   build: {
     // The worker bootstrap holds its page at top-level await; Vite's default
     // `modules` target (es2020-era) rejects that syntax.

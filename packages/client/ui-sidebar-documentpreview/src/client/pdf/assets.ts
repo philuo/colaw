@@ -6,14 +6,6 @@ export { workerSource }
 /** Resource kinds used by PDF.js 6's BinaryDataFactory requests. */
 export type PdfAssetKind = 'cMapUrl' | 'standardFontDataUrl' | 'wasmUrl'
 
-/** Original filenames mapped to base64, in the same PDF.js version as the worker. */
-export type PdfAssetMap = Readonly<Record<PdfAssetKind, Readonly<Record<string, string>>>>
-
-declare global {
-  /** Inline artifact data supplied by the package-local build configuration. */
-  const __DSH_PDFJS_ASSETS__: PdfAssetMap
-}
-
 /** Public methods required by PDF.js's BinaryDataFactory option. */
 export interface PdfBinaryDataFactory {
   /** @param request - PDF.js resource kind and exact filename. @returns independent transferable resource bytes. */
@@ -21,19 +13,33 @@ export interface PdfBinaryDataFactory {
 }
 
 /**
+ * The static asset tree the frontend build emits for PDF.js's binary data:
+ * assets/pdfjs/<directory>/<filename>, served by the frontend-static fallback.
+ */
+const ASSET_ROOT = '/assets/pdfjs'
+
+/** The dist directory each PDF.js resource kind maps to under the asset root. */
+const KIND_DIRECTORIES: Readonly<Record<PdfAssetKind, string>> = {
+  cMapUrl: 'cmaps',
+  standardFontDataUrl: 'standard_fonts',
+  wasmUrl: 'wasm',
+}
+
+/**
  * Capture this build's binary assets without network fallbacks.
- * @param assets - build-inlined base64 resources, read only when a PDF is opened.
  * @returns the constructor passed to PDF.js getDocument.
  */
-export function createPdfBinaryDataFactory(assets: PdfAssetMap = __DSH_PDFJS_ASSETS__): new () => PdfBinaryDataFactory {
+export function createPdfBinaryDataFactory(): new () => PdfBinaryDataFactory {
   return class implements PdfBinaryDataFactory {
-    fetch({ kind, filename }: { readonly kind: PdfAssetKind; readonly filename: string }): Promise<Uint8Array> {
-      return Promise.resolve().then(() => {
-        const files = assets[kind]
-        const data = Object.hasOwn(files, filename) ? files[filename] : undefined
-        if (data === undefined) throw new Error(`PDF.js asset is not bundled: ${kind}/${filename}`)
-        return Uint8Array.from(atob(data), character => character.charCodeAt(0))
-      })
+    async fetch({ kind, filename }: { readonly kind: PdfAssetKind; readonly filename: string }): Promise<Uint8Array> {
+      // The frontend-static fallback serves the dist tree publicly (only index
+      // responses authenticate), so a same-origin asset fetch needs no headers.
+      // The absolute anchor matters: PDF.js hands this URL to its worker, and a
+      // relative string would resolve against the worker's own script URL.
+      const url = new URL(`${ASSET_ROOT}/${KIND_DIRECTORIES[kind]}/${encodeURIComponent(filename)}`, location.href)
+      const response = await fetch(url)
+      if (!response.ok) throw new Error(`PDF.js asset is not served: ${kind}/${filename}`)
+      return new Uint8Array(await response.arrayBuffer())
     }
   }
 }
