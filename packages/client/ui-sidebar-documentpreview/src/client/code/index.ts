@@ -18,6 +18,9 @@ export function apply(ctx: Context): void {
     priority: 'builtin',
     title: () => t('title'),
     loading: 'text-pages',
+    // Whether this renderer OFFERS the wrap control — not what it defaults to.
+    // The opening state lives in the preview store (`fresh()`), which now opens
+    // unwrapped.
     wrap: true,
   }))
   ctx.effect(() => ctx.slots.inject('sidebar.right.tab.document', () => ctx.slots.register(

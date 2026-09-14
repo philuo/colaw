@@ -5,17 +5,18 @@
   width: 100%;
   min-height: 0;
   padding: 8px;
-  overflow-x: hidden;
   font-family: var(--dsw-font, sans-serif);
   white-space: normal;
 }
 
+/* One page's slot. Neither this nor the column clips horizontally: past the
+   fit the page is wider than the pane, and the shared document scrollport
+   that holds the column (TextPreview `.body`) is what pans it. */
 .page {
   box-sizing: border-box;
   width: 100%;
   min-width: 0;
   padding: 12px;
-  overflow-x: hidden;
 }
 
 .placeholder {
@@ -26,6 +27,9 @@
   aspect-ratio: 3 / 4;
 }
 
+/* The page's display box: sized by its canvas, centered while it fits. Once
+   the page overflows the pane an auto margin has no free space left to take,
+   so it starts at the left edge and pans like any scrolling document. */
 .pageBox {
   position: relative;
   width: fit-content;
@@ -50,16 +54,31 @@
 .textLayer {
   position: absolute;
   inset: 0;
-  width: calc(100% / var(--pdf-zoom, 1));
-  height: calc(100% / var(--pdf-zoom, 1));
+  /* pdfjs writes inline width/height onto this container built from its own
+     `--total-scale-factor` scale system, which this reader does not publish.
+     Those values fail to resolve today, so the declarations are dropped and
+     this sheet wins — the force is what keeps that true: the layer's geometry
+     is owned here, always laid out at the fitted (zoom-free) page size, with
+     the zoom applied exactly once, by the transform below. */
+  width: calc(100% / var(--pdf-zoom, 1)) !important;
+  height: calc(100% / var(--pdf-zoom, 1)) !important;
   overflow: hidden;
   line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
   text-size-adjust: none;
   forced-color-adjust: none;
   transform: scale(var(--pdf-zoom, 1));
   transform-origin: 0 0;
 }
 
+/* pdfjs supplies each span's position as percentages and its height as
+   `--font-height`, measured in the page's OWN pixels — it ships no type
+   styles, so the font size has to be built here: that height times the fit
+   ratio (`--pdf-fit`, the pane width over the page width, published by the
+   reader because no engine divides a length by a length). `--scale-x` and
+   `--rotate` are pdfjs's own geometry corrections and have to be applied, or
+   multi-glyph runs highlight at the wrong width. */
 .textLayer span,
 .textLayer br {
   color: transparent;
@@ -69,6 +88,17 @@
   transform-origin: 0 0;
   margin: 0;
   padding: 0;
+  font-size: calc(
+    var(--scale-factor, 1) * var(--min-font-size, 1)
+    * var(--font-height, 0px) * var(--pdf-fit, 1)
+  );
+  transform: rotate(var(--rotate, 0deg)) scaleX(var(--scale-x, 1)) scale(calc(1 / var(--min-font-size, 1)));
+}
+
+/* A nested marker group carries no box of its own; its spans lay out against
+   the layer directly, exactly as pdfjs positions them. */
+.textLayer .markedContent {
+  display: contents;
 }
 
 .textLayer span.markedContent {

@@ -7,19 +7,15 @@
  * self-supply, the parser WebAssembly, arrives through the inlined `wasmUrl`
  * blob from {@link ./assets.ts}.
  */
-import { openExternal, writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
-import { DocxScrollViewer, type DocxScrollViewerOptions } from '@silurus/ooxml/docx'
-import { PptxScrollViewer, type PptxScrollViewerOptions } from '@silurus/ooxml/pptx'
+import { writeClipboard } from '@deepseek-ai/dsh-client-ui-primitives'
+import { DocxScrollViewer } from '@silurus/ooxml/docx'
+import { PptxScrollViewer } from '@silurus/ooxml/pptx'
 import { XlsxViewer, XlsxWorkbook, type XlsxViewerOptions } from '@silurus/ooxml/xlsx'
 import type { XlsxSelectionContext } from '@silurus/ooxml/xlsx'
 import { ooxmlWasmUrl, type OoxmlFormat } from './assets.ts'
 
 export type { OoxmlFormat }
 export { DocxScrollViewer, PptxScrollViewer, XlsxViewer, XlsxWorkbook }
-
-/** Scale bounds shared by the viewer options and the body's wheel gesture. */
-export const OFFICE_ZOOM_MIN = 0.25
-export const OFFICE_ZOOM_MAX = 8
 
 /** Failure callbacks the body shares across formats. */
 export interface OfficeHooks {
@@ -51,12 +47,14 @@ export interface XlsxInteractions {
 }
 
 /**
- * A loaded, interactive viewer. `zoom` drives the body's pinch gesture on the
- * paged formats (the library's own wheel zoom is a discrete 1.1x step,
- * replaced by the image preview's continuous curve); the xlsx grid keeps the
- * library's built-in wheel zoom, which scales the grid itself. `scrollHost`
- * is the scrollable element the cursor-anchor math needs, present for the
- * paged formats only.
+ * A loaded, interactive viewer. Zoom belongs to the library end to end:
+ * `⌘`/Ctrl+wheel and trackpad pinch are handled inside the viewer, which
+ * previews the gesture on a CSS transform and settles into a crisp re-render
+ * when it pauses — against its own virtualized scroll host, which is the only
+ * place that knows what is mounted. `zoom` exposes the same scale
+ * programmatically; `scrollHost` is the element it drives (present for the
+ * paged formats only), handed to the pane as its scrollport so the reader's
+ * position survives a remount.
  */
 export interface OfficeHandle {
   readonly dispose: () => void
@@ -69,35 +67,51 @@ export interface OfficeHandle {
   readonly xlsx?: XlsxInteractions
 }
 
-/** Route one hyperlink activation through the app's single external seam. */
-function onHyperlinkClick(target: { kind: string; url?: string }): void {
-  if (target.kind === 'external' && typeof target.url === 'string') openExternal(target.url)
-}
-
 /** The viewer's scrollable element: the wrapper's first child inside the container. */
 function scrollHostOf(container: HTMLElement): HTMLElement | undefined {
   const host = container.firstElementChild?.firstElementChild
   return host instanceof HTMLElement ? host : undefined
 }
 
-/** The viewer options every format shares: parser payload, selection, links, zoom bounds. */
+/**
+ * The viewer options every format shares, aligned option-for-option with the
+ * library's own Try demo (`site/src/lib/try.ts` in its repo) — the one
+ * configuration actually observed to zoom smoothly on a long Word document.
+ *
+ * Two things the demo relies on are absent here, deliberately recorded:
+ * - `mode: 'worker'` + `progressiveLayout` keep pagination and painting off the
+ *   UI thread in the demo; they do not survive this packaging, where the bundle
+ *   ends up calling `new Worker("", { type: 'module' })` — the chunk URL having
+ *   been compiled away — so opting in fails at load. Until the worker chunk
+ *   ships, the main thread pays for what the demo offloads.
+ * - The demo never calls `fitWidth()`: the viewer derives its initial scale
+ *   from the laid-out container width on its own, and an extra fit after
+ *   `load()` fights that contract — which read as "the view jumps when the
+ *   gesture ends". So no fit is forced here either.
+ *
+ * `useGoogleFonts` is also skipped: meaningless in an offline desktop pane.
+ */
 function sharedOptions<Wasm>(wasm: Wasm, hooks: OfficeHooks) {
   return {
     wasmUrl: wasm,
-    // CJK font fallback: documents naming fonts the host lacks (常见于中文
-    // 排版问题) fall back per the auto-detected region instead of rendering
-    // tofu or mis-measured runs.
-    cjkFallback: 'auto',
-    // Render at the display's pixel density so glyph metrics and hit tests
-    // match what the screen shows.
-    dpr: Math.min(window.devicePixelRatio || 1, 2),
+    gap: 26,
+    overscan: 0,
     enableTextSelection: true,
-    enableHyperlinks: true,
-    onHyperlinkClick,
-    // The library's wheel zoom is replaced by the body's continuous gesture;
-    // its zoomIn/zoomOut and the setScale clamp still honor these bounds.
-    zoomMin: OFFICE_ZOOM_MIN,
-    zoomMax: OFFICE_ZOOM_MAX,
+    enableZoom: true,
+    zoomMin: 0.5,
+    pageShadow: false as const,
+    comments: false,
+    // The demo's other pillar, now reachable: the viewers mount through the
+    // shell's Vite pipeline (see PLATFORM_MODULES), which emits the library's
+    // render-worker chunk and rewrites its URL — so pagination and painting run
+    // off the UI thread exactly as the demo configures, and the zoom gesture
+    // no longer fights main-thread rendering for the frame.
+    mode: 'worker' as const,
+    progressiveLayout: true,
+    // Not in the demo, but a CJK document rendering tofu is worse than whatever
+    // this costs: keep the region-detected font fallback for the panes our
+    // readers actually open.
+    cjkFallback: 'auto' as const,
     onError: hooks.onError,
   }
 }
@@ -111,10 +125,9 @@ function sharedOptions<Wasm>(wasm: Wasm, hooks: OfficeHooks) {
  * @returns the viewer handle.
  */
 export async function openDocx(container: HTMLElement, data: ArrayBuffer, hooks: OfficeHooks): Promise<OfficeHandle> {
-  const viewer = new DocxScrollViewer(container, sharedOptions(ooxmlWasmUrl('docx'), hooks) as DocxScrollViewerOptions)
+  const viewer = new DocxScrollViewer(container, sharedOptions(ooxmlWasmUrl('docx'), hooks))
   try {
     await viewer.load(data)
-    viewer.fitWidth()
   } catch (error) {
     viewer.destroy()
     throw error
@@ -131,10 +144,9 @@ export async function openDocx(container: HTMLElement, data: ArrayBuffer, hooks:
  * @returns the viewer handle.
  */
 export async function openPptx(container: HTMLElement, data: ArrayBuffer, hooks: OfficeHooks): Promise<OfficeHandle> {
-  const viewer = new PptxScrollViewer(container, sharedOptions(ooxmlWasmUrl('pptx'), hooks) as PptxScrollViewerOptions)
+  const viewer = new PptxScrollViewer(container, sharedOptions(ooxmlWasmUrl('pptx'), hooks))
   try {
     await viewer.load(data)
-    viewer.fitWidth()
   } catch (error) {
     viewer.destroy()
     throw error

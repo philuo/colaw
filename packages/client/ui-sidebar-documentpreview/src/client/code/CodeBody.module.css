@@ -16,6 +16,9 @@
   /* In a sidebar pane the code sits on the pane's own background; the chat
      card's gray fill stays a chat-only default. */
   --dsl-code-block-background: transparent;
+  /* The gutter is a pinned strip, so it needs something opaque to hide the
+     code scrolling under it — and here that is the pane's own surface. */
+  --dsl-code-block-gutter-background: var(--dsw-alias-bg-base);
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;

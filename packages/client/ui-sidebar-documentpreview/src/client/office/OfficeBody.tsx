@@ -5,25 +5,25 @@
  * text selection and hyperlinks for Word/PowerPoint, the grid plus sheet tab
  * bar for Excel. Reading is scrolling, PDF-style.
  *
- * The zoom gesture (⌘/Ctrl+wheel) runs the image preview's continuous
- * exponential curve. The viewer's own per-event relayout is too costly to run
- * at trackpad event rate, so the gesture previews on a GPU transform — origin
- * at the cursor, zero layout work — and commits one real `setScale` 160ms
- * after the last event, restoring the cursor anchor. Word/PowerPoint also
- * register their scroll host as the pane's scrollport, so the reader's
- * position survives body unmounts (tab switches, sidebar hides) and is
- * restored when the content returns. Excel's merged cells read as one: a
- * single-cell selection inside a merge range expands to the whole range.
+ * Zoom is the library's own: `⌘`/Ctrl+wheel and trackpad pinch are handled
+ * inside the viewer, which previews the gesture with a CSS transform and
+ * settles into a crisp re-render when it pauses (its documented behaviour, and
+ * the only implementation that can be — it knows its own virtualized scroll
+ * host). An earlier revision re-implemented that here and it went wrong in
+ * exactly the ways a second copy would: the transform landed on the scroll
+ * container, so the scrollbar scaled and snapped back on release, and the
+ * gesture drifted off the pane. Word/PowerPoint register their scroll host as
+ * the pane's scrollport, so the reader's position survives body unmounts (tab
+ * switches, sidebar hides) and is restored when the content returns. Excel's
+ * merged cells read as one: a single-cell selection inside a merge range
+ * expands to the whole range.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DocumentPreviewProps } from '../document/contract.ts'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
-import {
-  OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN, openDocx, openPptx, openXlsx, type OfficeHandle,
-} from './runtime.ts'
-import { createWheelZoom } from './zoom.ts'
+import { openDocx, openPptx, openXlsx, type OfficeHandle } from './runtime.ts'
 import type {} from './locales.ts'
 import css from './OfficeBody.module.css'
 
@@ -85,48 +85,11 @@ export function OfficeBody(props: OfficeFormatBodyProps): ReactNode {
     }
   }, [data, format, tab.signal, attempt, props.t, props.scrollportRef])
 
-  // The zoom gesture rides the loaded PAGED viewer: capture-phase wheel lands
-  // before anything the viewer bound; during the gesture a transform preview
-  // scales the painted surface with zero layout work, and the settle commits
-  // one real scale with the cursor anchor restored. The xlsx grid is exempt —
-  // its viewer's built-in ⌘/Ctrl+wheel zoom scales the grid itself (anchored,
-  // re-laid-out), and hijacking the wheel here would scale the whole surface
-  // (tab bar included) instead.
-  useEffect(() => {
-    const surface = surfaceRef.current
-    if (surface === null || handle === undefined || format === 'xlsx') return
-    const host = handle.scrollHost
-    const binding = createWheelZoom(surface, {
-      min: OFFICE_ZOOM_MIN,
-      max: OFFICE_ZOOM_MAX,
-      getScale: () => handle.zoom.getScale(),
-      apply: (scale, origin) => {
-        const before = handle.zoom.getScale()
-        handle.zoom.setScale(scale)
-        const host = handle.scrollHost
-        if (host !== undefined) {
-          // Keep the content point under the cursor under the cursor: the
-          // scrollable offsets scale with the content around the anchor.
-          const rect = host.getBoundingClientRect()
-          const ratio = scale / before
-          const top = origin.y - rect.top
-          const left = origin.x - rect.left
-          host.scrollTop = (host.scrollTop + top) * ratio - top
-          host.scrollLeft = (host.scrollLeft + left) * ratio - left
-        }
-      },
-      preview: (base, target, origin) => {
-        const el = host ?? surface
-        el.style.transformOrigin = `${origin.x}px ${origin.y}px`
-        el.style.transform = `scale(${target / base})`
-      },
-      endPreview: () => {
-        const el = host ?? surface
-        el.style.transform = ''
-      },
-    })
-    return () => { binding.dispose() }
-  }, [handle, format])
+  // Zoom is the viewer's own (see the module comment). Nothing is bound here,
+  // and deliberately so: a second implementation sitting on top of the
+  // virtualized scroll host could only fight it — it did, and that is exactly
+  // the reported "the scrollbar scales with the page and snaps back on release,
+  // and the view jumps when the gesture ends".
 
   // Excel reads one merged cell as one, on click and keyboard navigation.
   //
@@ -170,6 +133,29 @@ export function OfficeBody(props: OfficeFormatBodyProps): ReactNode {
       surface.removeEventListener('keydown', onKey, { capture: true })
     }
   }, [format, handle, props.t])
+
+  // Copy is the document's text, not the selection layer's geometry. The paged
+  // viewers place their selectable runs as absolutely positioned, transparent
+  // spans with the font written inline, and the engine copies that computed
+  // styling into the clipboard's HTML flavour. The reader gets plain text.
+  //
+  // The xlsx grid copies through its own `copySelection`, which never fires this
+  // event — and a canvas selection is collapsed anyway, so the guard below
+  // leaves that path alone.
+  useEffect(() => {
+    const surface = surfaceRef.current
+    if (surface === null) return
+    const onCopy = (event: ClipboardEvent): void => {
+      const selection = document.getSelection()
+      if (selection === null || selection.isCollapsed) return
+      const text = selection.toString()
+      if (text === '') return
+      event.clipboardData?.setData('text/plain', text)
+      event.preventDefault()
+    }
+    surface.addEventListener('copy', onCopy)
+    return () => { surface.removeEventListener('copy', onCopy) }
+  }, [])
 
   if (data === undefined) return <p className={css.status} role="alert">{props.t('unsupported')}</p>
   return (

@@ -65,15 +65,29 @@ const SHIKI_PRE_PROPS = {
 /** Completed-line group size; React reconciles groups while the DOM remains line-for-line identical. */
 const STREAMING_LINE_GROUP_SIZE = 32
 
-function renderLine(line: readonly HighlightSpan[], index: number): ReactNode {
+/**
+ * The gutter box a numbered line carries. It is a real element, not the
+ * `::before` the stylesheet used to draw: `position: sticky` does not hold on a
+ * pseudo in Chromium, so a non-wrapping block used to scroll its numbers away
+ * with the code. The digits themselves come from `counter` in the stylesheet.
+ */
+const LINE_NUMBER = <span className="line-number" aria-hidden="true" />
+
+function renderLine(line: readonly HighlightSpan[], index: number, numbered: boolean): ReactNode {
   return (
     <Fragment key={index}>
       {index > 0 && '\n'}
       <span className="line">
+        {numbered && LINE_NUMBER}
         {line.map((span, spanIndex) => <span key={spanIndex} style={span.style}>{span.text}</span>)}
       </span>
     </Fragment>
   )
+}
+
+/** The same gutter box, spliced into shiki's own generated line markup. */
+function withLineNumbers(html: string): string {
+  return html.replace(/<span class="line">/g, '<span class="line"><span class="line-number" aria-hidden="true"></span>')
 }
 
 /** URL tokens a code surface recognizes — kept conservative (http/https only). */
@@ -167,21 +181,21 @@ export function CodeBlock({ code, lang, streaming, className, contentRef, lineNu
     let pending = sameGeneration ? [...previous.pending] : []
     let nextLine = sameGeneration ? previous.nextLine : 0
     for (const line of frame.appended) {
-      pending.push(renderLine(line, nextLine))
+      pending.push(renderLine(line, nextLine, lineNumbers))
       nextLine += 1
       if (pending.length !== STREAMING_LINE_GROUP_SIZE) continue
       const start = nextLine - pending.length
       groups.push(<Fragment key={start}>{pending}</Fragment>)
       pending = []
     }
-    const tail = frame.tail.map((line, index) => renderLine(line, nextLine + index))
+    const tail = frame.tail.map((line, index) => renderLine(line, nextLine + index, lineNumbers))
     const tailGroup = <Fragment key={nextLine - pending.length}>{[...pending, ...tail]}</Fragment>
     const body = <pre {...SHIKI_PRE_PROPS}><code>{groups}{tailGroup}</code></pre>
     lineCacheRef.current = {
       code: trimmed, lang, generation: frame.generation, frame, groups, pending, nextLine, body,
     }
     return body
-  }, [streaming, highlighting, trimmed, lang, loaded])
+  }, [streaming, highlighting, trimmed, lang, loaded, lineNumbers])
   const html = useMemo(
     () => (highlighting && streaming !== true && streamedBody === undefined
       ? highlightToHtml(trimmed, lang)
@@ -227,11 +241,13 @@ export function CodeBlock({ code, lang, streaming, className, contentRef, lineNu
     : html === undefined
       ? (
         <pre className={css.plain}><code>{sourceLines === undefined ? linkifyCodeText(trimmed) : sourceLines.map((line, index) => (
-          <Fragment key={index}>{index > 0 && '\n'}<span className="line">{linkifyCodeText(line)}</span></Fragment>
+          <Fragment key={index}>{index > 0 && '\n'}<span className="line">{lineNumbers && LINE_NUMBER}{linkifyCodeText(line)}</span></Fragment>
         ))}</code></pre>
       )
       : (
-        <div dangerouslySetInnerHTML={{ __html: linkifyCodeHtml(html) }} />
+        <div dangerouslySetInnerHTML={{
+          __html: lineNumbers ? withLineNumbers(linkifyCodeHtml(html)) : linkifyCodeHtml(html),
+        }} />
       )
 
   return (

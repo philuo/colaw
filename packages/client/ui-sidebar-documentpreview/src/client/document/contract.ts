@@ -31,8 +31,13 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
         readonly content: DocumentContent
         /** The document toolbar's current wrapping preference. */
         readonly wrap: boolean
-        /** Report a renderer-owned scrollport; passing `null` restores the shared body as the owner. */
-        readonly scrollportRef: RefCallback<HTMLElement>
+        /**
+         * Report a renderer-owned scrollport; passing `null` restores the shared
+         * body as the owner. Optional because a body that never claims a
+         * scrollport is a legitimate owner — the seat is only obliged to supply
+         * it when it forwards one.
+         */
+        readonly scrollportRef?: RefCallback<HTMLElement>
       }
       hookContext: UseSidebarRightTabInfo
       inject: {

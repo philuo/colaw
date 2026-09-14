@@ -26,8 +26,24 @@ const loads: Array<{
   dispose: ReturnType<typeof vi.fn>
 }> = []
 
+/** jsdom ships no ResizeObserver: the stub records the observed node, so a case
+ * can prove the gutter measurement is wired to the rendered section. */
+class ResizeObserverStub {
+  static instances: ResizeObserverStub[] = []
+  readonly observed = new Set<Element>()
+  disconnected = false
+
+  constructor() { ResizeObserverStub.instances.push(this) }
+
+  observe(element: Element): void { this.observed.add(element) }
+  unobserve(element: Element): void { this.observed.delete(element) }
+  disconnect(): void { this.disconnected = true; this.observed.clear() }
+}
+
 beforeEach(() => {
   loads.length = 0
+  ResizeObserverStub.instances = []
+  vi.stubGlobal('ResizeObserver', ResizeObserverStub)
   engine.open.mockReset().mockImplementation(() => {
     const deferred = Promise.withResolvers<PdfDocument>()
     const dispose = vi.fn(async () => {})
@@ -40,6 +56,8 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup()
+  // A lingering selection would leak into the next case's copy assertion.
+  window.getSelection()?.removeAllRanges()
   vi.unstubAllGlobals()
 })
 
@@ -220,4 +238,122 @@ describe('PDF body', () => {
     expect(screen.queryByRole('alert')).toBeNull()
     expect(screen.getByRole('img', { name: 'PDF page 1' })).toBeTruthy()
   })
+
+  it('binds the zoom gutter and the pane observer to the section the moment the pages render', async () => {
+    const h = harness()
+    const view = render(<h.View />)
+    // Behind the loader there is no section yet, so there is nothing to bind.
+    expect(view.container.querySelector('[data-pdf-preview]')).toBeNull()
+    expect(ResizeObserverStub.instances).toHaveLength(0)
+    await act(async () => { loads[0]!.deferred.resolve(documentOf(1)) })
+    const section = view.container.querySelector<HTMLElement>('[data-pdf-preview]')!
+    expect(section.style.getPropertyValue('--pdf-zoom')).toBe('1')
+    // jsdom reports no layout, so the measured gutter floors at 1px; what
+    // matters is that the section was measured at all.
+    expect(section.style.getPropertyValue('--pdf-pane-width')).toBe('1px')
+    expect(ResizeObserverStub.instances.some(instance => instance.observed.has(section))).toBe(true)
+    // The fit ratio the text layer's font size multiplies by: pane width over
+    // page width, on the page box that owns the layer. jsdom reports no layout,
+    // so the pane floors at 1px against the 100px page the renderer reported.
+    expect(view.container.querySelector('canvas')!.parentElement!.style.getPropertyValue('--pdf-fit')).toBe('0.01')
+  })
+
+  it('zooms the pages on a ctrl/⌘ wheel and leaves a plain wheel to the scrollport', async () => {
+    const h = harness()
+    const view = render(<h.View />)
+    await act(async () => { loads[0]!.deferred.resolve(documentOf(1)) })
+    const section = view.container.querySelector<HTMLElement>('[data-pdf-preview]')!
+    fireEvent.wheel(section, { ctrlKey: true, deltaY: -100, clientX: 10, clientY: 20 })
+    // The gesture frame writes the variable straight to the section, so the
+    // reader sees the zoom before React hears about it.
+    await settleFrame()
+    expect(section.style.getPropertyValue('--pdf-zoom')).toBe('2')
+    expect(h.instance.getSnapshot().byTab[h.tabId]).toBeUndefined()
+    // The store only catches up once the gesture has stopped.
+    await settleGesture()
+    expect(h.instance.getSnapshot().byTab[h.tabId]?.zoom).toBe(2)
+    fireEvent.wheel(section, { deltaY: -100, clientX: 10, clientY: 20 })
+    await settleGesture()
+    expect(h.instance.getSnapshot().byTab[h.tabId]?.zoom).toBe(2)
+  })
+
+  it('keeps the drawn canvas in place through a crisp re-render, so the text layer survives', async () => {
+    const h = harness()
+    const view = render(<h.View />)
+    await act(async () => { loads[0]!.deferred.resolve(documentOf(1)) })
+    const section = view.container.querySelector<HTMLElement>('[data-pdf-preview]')!
+    const canvas = section.querySelector('canvas')!
+    expect(canvas.hasAttribute('hidden')).toBe(false)
+    // The page's own geometry lands on the canvas that displays it — that is
+    // what the fit math and the text layer's scale both read.
+    expect(canvas.style.getPropertyValue('--pdf-page-width')).toBe('100px')
+    expect(engine.render).toHaveBeenCalledTimes(1)
+    // Zooming in needs more pixels, so the page re-renders…
+    fireEvent.wheel(section, { ctrlKey: true, deltaY: -100 })
+    await settleGesture()
+    expect(engine.render).toHaveBeenCalledTimes(2)
+    expect(screen.queryByRole('status')).toBeNull()
+    expect(canvas.hasAttribute('hidden')).toBe(false)
+    expect(canvas.style.getPropertyValue('--pdf-page-width')).toBe('100px')
+    // …while zooming back out does not: the bitmap already on screen is bigger
+    // than the new size needs, and hiding it is what used to break selection.
+    fireEvent.wheel(section, { ctrlKey: true, deltaY: 100 })
+    await settleGesture()
+    expect(h.instance.getSnapshot().byTab[h.tabId]?.zoom).toBe(1)
+    expect(engine.render).toHaveBeenCalledTimes(2)
+    expect(canvas.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('zooms the pages from a WebKit pinch, which is what this shell reports instead of a ctrl+wheel', async () => {
+    const h = harness()
+    const view = render(<h.View />)
+    await act(async () => { loads[0]!.deferred.resolve(documentOf(1)) })
+    const section = view.container.querySelector<HTMLElement>('[data-pdf-preview]')!
+    await act(async () => { section.dispatchEvent(new Event('gesturestart', { bubbles: true, cancelable: true })) })
+    const pinch = new Event('gesturechange', { bubbles: true, cancelable: true })
+    Object.defineProperty(pinch, 'scale', { value: 1.5 })
+    await act(async () => { section.dispatchEvent(pinch) })
+    await settleFrame()
+    expect(section.style.getPropertyValue('--pdf-zoom')).toBe('1.5')
+    await settleGesture()
+    expect(h.instance.getSnapshot().byTab[h.tabId]?.zoom).toBe(1.5)
+  })
+
+  it('copies the selection as plain text, without the layer’s typography', async () => {
+    const h = harness()
+    const view = render(<h.View />)
+    await act(async () => { loads[0]!.deferred.resolve(documentOf(1)) })
+    const section = view.container.querySelector<HTMLElement>('[data-pdf-preview]')!
+    const layer = view.container.querySelector<HTMLElement>('[data-pdf-text-layer]')!
+    // pdfjs fills this layer itself; one span stands in for its output.
+    const span = document.createElement('span')
+    span.textContent = 'Selectable PDF text'
+    layer.append(span)
+    const range = document.createRange()
+    range.selectNodeContents(span)
+    const selection = window.getSelection()!
+    selection.removeAllRanges()
+    selection.addRange(range)
+    const clipboard = { setData: vi.fn() }
+    const copy = new Event('copy', { bubbles: true, cancelable: true })
+    Object.defineProperty(copy, 'clipboardData', { value: clipboard })
+    await act(async () => { section.dispatchEvent(copy) })
+    expect(clipboard.setData).toHaveBeenCalledWith('text/plain', 'Selectable PDF text')
+    expect(copy.defaultPrevented).toBe(true)
+  })
 })
+
+/** Let the gesture's coalesced animation frame run. */
+async function settleFrame(): Promise<void> {
+  await act(async () => {
+    await new Promise<void>((resolve) => { requestAnimationFrame(() => { resolve() }) })
+  })
+}
+
+/** Past the gesture's idle window, where the store write and its render land. */
+async function settleGesture(): Promise<void> {
+  await settleFrame()
+  await act(async () => {
+    await new Promise<void>((resolve) => { setTimeout(resolve, 220) })
+  })
+}

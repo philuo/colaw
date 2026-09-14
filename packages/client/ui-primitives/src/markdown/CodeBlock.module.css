@@ -9,6 +9,12 @@
   --dsl-code-block-banner-font: 11px/18px var(--dsw-font-family);
   --dsl-code-block-content-font: var(--dsw-font-markdown-code-block);
   --dsl-code-block-background: var(--dsw-alias-markdown-code-block);
+  /* The code surface's own inset. The numbered gutter pins to it, so a block
+     that scrolls sideways keeps its numbers at the code's left edge. */
+  --dsl-code-block-padding: 16px;
+  /* What the pinned gutter paints behind itself; owners on a different surface
+     (the sidebar pane) repoint it. */
+  --dsl-code-block-gutter-background: var(--dsl-code-block-background);
 
   position: relative;
   margin: 16px 0;
@@ -77,7 +83,7 @@
 
 .block :where(pre) {
   font: var(--dsl-code-block-content-font);
-  padding: 16px;
+  padding: var(--dsl-code-block-padding);
   margin: 0 !important;
   overflow-x: auto;
   white-space: pre-wrap;
@@ -110,21 +116,60 @@
   white-space: normal;
 }
 
+/* The numbered block gives up the surface's own inline start: the gutter box
+   below carries that inset instead, so the strip it pins to and the strip it
+   rests in while nothing is scrolled are the same one — no sideways jump the
+   moment the reader starts scrolling. */
+.numbered :where(pre) {
+  padding-inline-start: 0;
+}
+
 .numbered :where(pre) code > :global(.line) {
-  position: relative;
   display: block;
+  /* `fit-content` is load-bearing. A sticky box can only travel as far as its
+     own parent allows, and a line box sized to the viewport strands the number
+     off-screen the moment the code scrolls past that width — the reported
+     "the gutter disappears once you scroll far enough". Sized to its content,
+     the line stays as wide as the code, so the number has room to hold the
+     edge all the way to the end. */
+  width: fit-content;
+  min-width: 100%;
   min-height: 1lh;
-  padding-inline-start: calc(var(--dsl-code-block-line-number-width) + 12px);
   counter-increment: source-line;
   white-space: var(--dsl-code-block-line-white-space, pre-wrap);
 }
 
-.numbered :where(pre) code > :global(.line)::before {
-  position: absolute;
+/* The number is pinned to the scrollport, never to the line: a block that does
+   not wrap scrolls sideways, and a number riding along with the code leaves the
+   reader without a reference. `position: sticky` on a `::before` does not hold
+   in Chromium (measured), so this is a real box the line carries — the span the
+   renderers emit — with the counter drawing the digits inside it. Its opaque
+   fill hides the code scrolling underneath. */
+/* The gutter box, pinned to the scrollport so a non-wrapping block keeps its
+   numbers at the code edge while the code itself slides underneath.
+   Everything here is load-bearing and measured in Chromium:
+   - it must be a real element: `position: sticky` never holds on a `::before`;
+   - it must stay `inline`: an inline-block sibling does not hold either;
+   - its `inset-inline-start` must be `0`: a non-zero threshold against this
+     scrollport stops holding altogether;
+   - so the number's own inset rides on the box's `padding-inline-start`, which
+     is also why the block above gives that padding up.
+   The `::before` is free to be an inline-block — it is the part that gives the
+   counter a fixed strip and end alignment — and the opaque fill hides the code
+   scrolling underneath. */
+.numbered :where(pre) code > :global(.line) > :global(.line-number) {
+  position: sticky;
   inset-inline-start: 0;
-  width: var(--dsl-code-block-line-number-width);
+  padding-inline-start: var(--dsl-code-block-padding);
   color: var(--dsw-alias-label-tertiary);
+  user-select: none;
+  background: var(--dsl-code-block-gutter-background);
+}
+
+.numbered :where(pre) code > :global(.line) > :global(.line-number)::before {
+  display: inline-block;
+  width: var(--dsl-code-block-line-number-width);
+  margin-inline-end: 12px;
   text-align: end;
   content: counter(source-line);
-  user-select: none;
 }

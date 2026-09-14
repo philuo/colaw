@@ -362,6 +362,27 @@ function ZoomableImage({ url, name, path, sessionId, ready, onDecoded, onFailed,
     if (deepFrame.current !== undefined) cancelAnimationFrame(deepFrame.current)
   }, [])
 
+  // Copy is the recognized text, not the overlay's geometry. The OCR lines are
+  // absolutely positioned spans, and the engine inlines that computed styling
+  // into the clipboard's HTML flavour — pasted elsewhere the text arrives with
+  // pixel offsets and a font size measured for the pane (which is why it only
+  // showed up sometimes, depending on where the paste landed). The reader gets
+  // the selection's plain text instead.
+  useEffect(() => {
+    const element = frame.current
+    if (element === null) return
+    const onCopy = (event: ClipboardEvent): void => {
+      const selection = document.getSelection()
+      if (selection === null || selection.isCollapsed) return
+      const text = selection.toString()
+      if (text === '') return
+      event.clipboardData?.setData('text/plain', text)
+      event.preventDefault()
+    }
+    element.addEventListener('copy', onCopy)
+    return () => { element.removeEventListener('copy', onCopy) }
+  }, [])
+
   /** Fold the in-flight gesture into React state and stop the stream. */
   const commitLive = useCallback((): void => {
     window.clearTimeout(settle.current)

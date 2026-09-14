@@ -81,7 +81,9 @@ export function fresh(): TextTabState {
     loading: false,
     failure: undefined,
     scrollTop: 0,
-    wrap: true,
+    // Source reads as it is written: a preview opens unwrapped, and the toolbar
+    // toggle turns wrapping on for the reader who wants it.
+    wrap: false,
     revision: undefined,
   }
 }

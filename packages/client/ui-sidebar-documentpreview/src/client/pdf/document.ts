@@ -25,7 +25,9 @@ export interface PdfPageSize {
 /**
  * Render one page into an exclusively owned canvas. Cancellation cannot write
  * dimensions after a delayed getPage; active render tasks are cancelled and
- * awaited before the page is cleaned up.
+ * awaited before the page is cleaned up. Only the bitmap belongs to the
+ * renderer — the caller places the returned CSS geometry on whatever element
+ * displays the page, which may not be the canvas drawn into here.
  * @param document - loaded pdfjs document.
  * @param pageNumber - 1-based selected page.
  * @param canvas - canvas owned by this render only.
@@ -49,8 +51,6 @@ export async function renderPdfPage(
     const ratio = Math.min(pixelRatio, Math.sqrt(16_777_216 / (viewport.width * viewport.height)))
     canvas.width = Math.max(1, Math.floor(viewport.width * ratio))
     canvas.height = Math.max(1, Math.floor(viewport.height * ratio))
-    canvas.style.setProperty('--pdf-page-width', `${viewport.width}px`)
-    canvas.style.setProperty('--pdf-page-height', `${viewport.height}px`)
     const task = page.render({
       canvas,
       viewport,
