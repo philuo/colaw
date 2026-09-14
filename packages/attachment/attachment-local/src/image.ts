@@ -88,7 +88,7 @@ function toDetected(metadata: AdapterMetadata): DetectedImage {
  */
 export async function probeImage(data: Uint8Array): Promise<DetectedImage> {
   try {
-    return toDetected(await openPipeline(data, { failOn: 'error', limitInputPixels: false }).metadata())
+    return toDetected(await openPipeline(data, { failOn: 'error', limitInputPixels: false }).probe())
   } catch (error) {
     if (error instanceof AttachmentError) throw error
     throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
@@ -112,6 +112,8 @@ export interface DecodedImageLimits {
 export async function detectImage(data: Uint8Array, limits?: DecodedImageLimits): Promise<DetectedImage> {
   try {
     const pipeline = openPipeline(data, { failOn: 'error', limitInputPixels: false })
+    // metadata() materializes the full pixel buffer (CGDataProviderCopyData):
+    // the integrity proof and the depth/space truth arrive in one decode.
     const detected = toDetected(await pipeline.metadata())
     if (limits?.maxPixels !== undefined && detected.width * detected.height > limits.maxPixels) {
       throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
@@ -119,9 +121,6 @@ export async function detectImage(data: Uint8Array, limits?: DecodedImageLimits)
     if (limits?.maxDimension !== undefined && Math.max(detected.width, detected.height) > limits.maxDimension) {
       throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
     }
-    // Force a full pixel decode: truncated or corrupt containers fail here,
-    // before the bytes can enter the content-addressed store.
-    await pipeline.raw().toBuffer()
     return detected
   } catch (error) {
     if (error instanceof AttachmentError) throw error

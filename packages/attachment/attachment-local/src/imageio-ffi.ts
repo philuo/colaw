@@ -47,6 +47,8 @@ interface CgSymbols {
   CGImageGetAlphaInfo(image: CfHandle): number
   CGImageGetBitsPerComponent(image: CfHandle): bigint
   CGImageGetColorSpace(image: CfHandle): CfHandle | null
+  CGImageGetDataProvider(image: CfHandle): CfHandle | null
+  CGDataProviderCopyData(provider: CfHandle): CfHandle | null
   CGColorSpaceGetModel(space: CfHandle): number
   CGImageRelease(image: CfHandle): void
 }
@@ -88,6 +90,8 @@ function ffi(): Ffi {
     CGImageGetAlphaInfo: { args: ['ptr'], returns: 'i32' },
     CGImageGetBitsPerComponent: { args: ['ptr'], returns: 'i64' },
     CGImageGetColorSpace: { args: ['ptr'], returns: 'ptr' },
+    CGImageGetDataProvider: { args: ['ptr'], returns: 'ptr' },
+    CGDataProviderCopyData: { args: ['ptr'], returns: 'ptr' },
     CGColorSpaceGetModel: { args: ['ptr'], returns: 'i32' },
     CGImageRelease: { args: ['ptr'], returns: 'void' },
   })
@@ -240,10 +244,18 @@ export const CMYK_MODEL = 2
 const ALPHA_INFO_OPAQUE = new Set([0, 5]) // kCGImageAlphaNone, kCGImageAlphaNoneSkipLast
 
 export function decodedFactsOf(source: ImageSource): DecodedFacts {
-  const { io, cg } = ffi()
+  const { cf, io, cg } = ffi()
   const image = io.CGImageSourceCreateImageAtIndex(source.handle, 0, null)
   if (!isHandle(image)) throw new Error('ImageIO: frame decode failed (truncated or corrupt input)')
   try {
+    // Force full pixel materialization: CGImage is lazy, so corrupt trailing
+    // data only surfaces when the pixels are actually decoded (copied out).
+    // This is the integrity proof; it decodes once with no re-encode cost.
+    const provider = cg.CGImageGetDataProvider(image)
+    if (!isHandle(provider)) throw new Error('ImageIO: pixel provider unavailable (corrupt input)')
+    const pixels = cg.CGDataProviderCopyData(provider)
+    if (!isHandle(pixels)) throw new Error('ImageIO: pixel materialization failed (corrupt input)')
+    cf.CFRelease(pixels)
     const colorSpace = cg.CGImageGetColorSpace(image)
     return {
       hasAlpha: !ALPHA_INFO_OPAQUE.has(cg.CGImageGetAlphaInfo(image)),

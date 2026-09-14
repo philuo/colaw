@@ -21,6 +21,7 @@ import {
   mediaTypeOf,
   decodedFactsOf,
   GRAY_MODEL,
+  RGB_MODEL,
   CMYK_MODEL,
 } from './imageio-ffi.ts'
 
@@ -51,6 +52,9 @@ export interface AdapterEncoded {
 
 /** sharp 的管线接口 —— 业务与质量阶梯只消费这些成员。 */
 export interface AdapterPipeline {
+  /** 仅容器级元数据（不解码像素）。 */
+  probe(): Promise<AdapterMetadata>
+  /** 容器级元数据 + 像素物化（完整性证明 + depth/space 真值）。 */
   metadata(): Promise<AdapterMetadata>
   raw(): { toBuffer(): Promise<Uint8Array> }
   rotate(): AdapterPipeline
@@ -88,10 +92,12 @@ function depthOf(bitsPerComponent: number): string {
   return bitsPerComponent === 16 ? 'ushort' : 'uchar'
 }
 
-/** 统一编码出口：Bun.Image 的格式方法返回新的 Image 实例，字节经 toBuffer 取出。 */
+/** 统一编码出口：格式方法返回新的 Image 实例（toBuffer 取字节）；bytes() 直接返回像素 Uint8Array。 */
 async function toBytes(value: unknown): Promise<Uint8Array> {
-  const image = value as { toBuffer: () => Promise<Buffer> }
-  return new Uint8Array(await image.toBuffer())
+  if (value instanceof Uint8Array) return value
+  const image = value as { toBuffer?: () => Promise<Buffer> }
+  if (typeof image.toBuffer === 'function') return new Uint8Array(await image.toBuffer())
+  throw new Error(`image-adapter: unknown encoder output ${String((value as { constructor?: { name?: string } }).constructor?.name ?? typeof value)}`)
 }
 
 const ICC_MARKER = (() => {
@@ -181,7 +187,14 @@ function hasEmbeddedIccProfile(data: Uint8Array): boolean {
   return indexOfSubsequence(data, marker) !== -1 || indexOfSubsequence(data, iccp) !== -1
 }
 
-/** 容器级元数据（不解码像素）：format/尺寸/orientation/帧数/七项存在性。 */
+/** ImageIO ColorModel 字符串 → CGColorSpaceModel 数值（供 spaceOf 复用）。 */
+const COLOR_MODEL_TO_SPACE_MODEL: Readonly<Record<string, number>> = {
+  RGB: RGB_MODEL,
+  Gray: GRAY_MODEL,
+  CMYK: CMYK_MODEL,
+}
+
+/** 容器级元数据（不解码像素）：format/尺寸/orientation/帧数/七项存在性/depth/space 近似真值。 */
 function containerMetadata(data: Uint8Array): AdapterMetadata {
   const source = imageSourceOf(data)
   try {
@@ -192,6 +205,11 @@ function containerMetadata(data: Uint8Array): AdapterMetadata {
       throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE')
     }
     const hasProfile = hasEmbeddedIccProfile(data)
+    // depth/space 的容器近似值：属性字典的 Depth 键与 sharp 的口径不完全一致
+    // （个别 16-bit 容器可能报 8），admission 路径由解码后的 decodedFactsOf 矫正；
+    // 这里的近似值服务缓存读路径（缓存字节是本包自己写出的 uchar 输出）。
+    const containerBits = props.depth ?? 8
+    const spaceModel = COLOR_MODEL_TO_SPACE_MODEL[props.colorModel ?? 'RGB'] ?? RGB_MODEL
     return {
       format,
       width: props.pixelWidth,
@@ -206,8 +224,8 @@ function containerMetadata(data: Uint8Array): AdapterMetadata {
       tifftagPhotoshop: props.metadataDictionaries.includes('{TIFF}') ? {} : undefined,
       icc: hasProfile ? {} : undefined,
       hasProfile,
-      space: undefined, // 由解码后的真实像素色彩空间填充（container 层不可靠）
-      depth: undefined, // 同上：ImageIO 的 Depth 键口径与 sharp 不一致
+      space: spaceOf(spaceModel, containerBits),
+      depth: depthOf(containerBits),
       hasAlpha: props.hasAlpha === true,
     }
   } finally {
@@ -222,10 +240,20 @@ class BunPipeline implements AdapterPipeline {
     private readonly options: AdapterOptions,
   ) {}
 
-  /** 容器级元数据 + 解码补齐 depth/space 的像素级真值。hasAlpha 以容器声明为准。 */
-  metadata(): Promise<AdapterMetadata> {
-    const container = containerMetadata(this.sourceBytes)
+  /** 仅容器级元数据（不解码像素）—— 缓存读等已验证字节的低成本路径。 */
+  probe(): Promise<AdapterMetadata> {
     try {
+      return Promise.resolve(containerMetadata(this.sourceBytes))
+    } catch (error) {
+      if (error instanceof AttachmentError) throw error
+      throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
+    }
+  }
+
+  /** 容器级元数据 + 像素物化补齐 depth/space 真值（完整性证明在同一遍解码内完成）。hasAlpha 以容器声明为准。 */
+  metadata(): Promise<AdapterMetadata> {
+    try {
+      const container = containerMetadata(this.sourceBytes)
       const source = imageSourceOf(this.sourceBytes)
       try {
         const decoded = decodedFactsOf(source)
@@ -237,20 +265,20 @@ class BunPipeline implements AdapterPipeline {
       } finally {
         source.release()
       }
+      return Promise.resolve(container)
     } catch (error) {
       // 解码失败 = 坏图：与 sharp 的 raw().toBuffer() 行为一致，向上抛。
       if (error instanceof AttachmentError) throw error
       throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
     }
-    return Promise.resolve(container)
   }
 
-  /** 强制完整像素解码：编码必经像素缓冲，截断/损坏输入在这里抛错。 */
+  /** 强制完整像素解码：bytes() 是 Bun.Image 的像素出口，截断/损坏输入在此抛错。 */
   raw(): { toBuffer(): Promise<Uint8Array> } {
     return {
       toBuffer: async () => {
         try {
-          return await toBytes(await (this.image as { png(): unknown }).png())
+          return await toBytes(await (this.image as { bytes(): unknown }).bytes())
         } catch (error) {
           if (error instanceof AttachmentError) throw error
           throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
