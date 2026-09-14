@@ -42,7 +42,10 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve }
 }
 
-async function harness(persistence?: Partial<SessionPersistence>) {
+async function harness(
+  persistence?: Partial<SessionPersistence>,
+  mount: 'root' | 'sibling-entry' = 'root',
+) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-workspace-controller-')))
   tempDirs.push(root)
   const ctx = new Context()
@@ -63,7 +66,30 @@ async function harness(persistence?: Partial<SessionPersistence>) {
     lookups: { configure: () => dispose },
     contexts: { configureHost: () => dispose },
   } as never)
-  const controller = new WorkspaceController(ctx)
+  let controller: WorkspaceController
+  if (mount === 'sibling-entry') {
+    // The loader mounts every entry in its own plugin fiber — a SIBLING of the
+    // session store's fiber, not a descendant. Constructing the controller
+    // inside such a fiber reproduces the production shape in which a bare
+    // `ctx.sessions` property read throws "cannot get property ... without
+    // inject"; only soft `ctx.get` resolution reaches the store.
+    let mounted: WorkspaceController | undefined
+    await ctx.plugin({
+      name: 'workspace-controller-entry',
+      // The loader builds each entry fiber from the service's own static
+      // inject list; the wrapper must declare the same list so the entry's
+      // declared dependencies (typert, workspaceRegistry) resolve while the
+      // undeclared ones (sessions) stay invisible — the exact production mix.
+      inject: ['typert', 'workspaceRegistry'],
+      apply: (entryCtx: Context) => {
+        mounted = new WorkspaceController(entryCtx)
+      },
+    })
+    if (mounted === undefined) throw new Error('sibling-entry mount did not run')
+    controller = mounted
+  } else {
+    controller = new WorkspaceController(ctx)
+  }
   return { controller, ctx, root, storageDomain }
 }
 
@@ -359,8 +385,11 @@ describe('WorkspaceController trash', () => {
   }
 
   /** Two archived sessions, one of them still admitted in the session store. */
-  async function archivedPair(persistence: { remove: (id: SessionId) => Promise<void> }) {
-    const { controller, ctx, root } = await harness(persistence)
+  async function archivedPair(
+    persistence: { remove: (id: SessionId) => Promise<void> },
+    mount: 'root' | 'sibling-entry' = 'root',
+  ) {
+    const { controller, ctx, root } = await harness(persistence, mount)
     const workspace = await controller.create({ path: stageDir(root, 'ws') })
     const admitted = ctx.sessions.create(SessionId('admitted-archived'), {
       meta: { cwd: workspace.workspace.path },
@@ -424,5 +453,73 @@ describe('WorkspaceController trash', () => {
     await expect(controller.deleteArchivedSession({ sessionId: SessionId('never-archived') }))
       .rejects.toMatchObject({ code: 'workspace/trash-conflict' })
     expect(removed).toEqual([])
+  })
+
+  it('deletes and clears from a controller mounted as a sibling entry of the session store', async () => {
+    // The production loader shape: the controller's fiber cannot see the store
+    // through a bare property read. The trash verbs must still end.
+    const { removed, persistence } = recordingPersistence()
+    const { controller, ctx, admitted, idle } = await archivedPair(persistence, 'sibling-entry')
+    await expect(controller.deleteArchivedSession({ sessionId: admitted.id }))
+      .resolves.toEqual({ archivedSessionIds: [idle.id] })
+    await expect(controller.clearTrash()).resolves.toEqual({ archivedSessionIds: [] })
+    expect(removed.sort()).toEqual([admitted.id, idle.id].sort())
+    expect(ctx.sessions.get(admitted.id)).toBeUndefined()
+    expect(ctx.sessions.get(idle.id)).toBeUndefined()
+  })
+
+  it('flushes an admitted session before archiving it', async () => {
+    const { controller, ctx, root } = await harness()
+    const workspace = await controller.create({ path: stageDir(root, 'ws') })
+    const session = ctx.sessions.create(SessionId('flushed'), {
+      meta: { cwd: workspace.workspace.path },
+    })
+    const flushed: SessionId[] = []
+    ctx.on('session/flush', (s) => { flushed.push(s.id) })
+    await expect(controller.archiveSession({ sessionId: session.id }))
+      .resolves.toEqual({ archivedSessionIds: [session.id] })
+    expect(flushed).toEqual([session.id])
+  })
+
+  it('leaves a session unarchived when its durability flush fails', async () => {
+    const { controller, ctx, root } = await harness()
+    const workspace = await controller.create({ path: stageDir(root, 'ws') })
+    const session = ctx.sessions.create(SessionId('protected'), {
+      meta: { cwd: workspace.workspace.path },
+    })
+    ctx.on('session/flush', () => { throw new Error('checkpoint failed') })
+    await expect(controller.archiveSession({ sessionId: session.id })).rejects.toThrow('checkpoint failed')
+    expect(ctx.workspaceRegistry.archivedSessionIds).not.toContain(session.id)
+    expect(ctx.sessions.get(session.id)).toBeDefined()
+  })
+
+  it('previews an entry with no durable log from its admitted instance', async () => {
+    const persistence = {
+      remove: async () => {},
+      open: async () => {
+        throw new Error('session never materialized')
+      },
+    }
+    const { controller, ctx, root } = await harness(persistence)
+    const workspace = await controller.create({ path: stageDir(root, 'ws') })
+    const session = ctx.sessions.create(SessionId('branched-live'), {
+      meta: { cwd: workspace.workspace.path },
+    })
+    const events = [{
+      type: 'user/message', seq: 0, time: 1, surfaceOp: 'append',
+      data: { content: [{ type: 'text', text: 'branch content' }] },
+    }]
+    ctx.provide('sessionQuery', {
+      observeSession: async () => ({
+        source: 'live',
+        events,
+        [Symbol.dispose]: () => {},
+      }),
+    } as never)
+    await expect(controller.archiveSession({ sessionId: session.id }))
+      .resolves.toEqual({ archivedSessionIds: [session.id] })
+    await expect(controller.trashEntries()).resolves.toMatchObject({
+      entries: [{ sessionId: session.id, digest: 'branch content' }],
+    })
   })
 })

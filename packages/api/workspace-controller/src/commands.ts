@@ -13,6 +13,10 @@ import type {} from '@deepseek-ai/dsh-spill'
 // Type-only: pulls the SessionPersistence Context merge (ctx.sessionPersistence).
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import { SessionPersistenceNotFoundError } from '@deepseek-ai/dsh-session-persistence'
+// Type-only: the Context merge makes `ctx.get('sessions')` resolve to the
+// store type; SessionObservation types the trash preview's live fallback read.
+import type { SessionId, SessionStore } from '@deepseek-ai/dsh-session'
+import type { SessionObservation } from '@deepseek-ai/dsh-session-query'
 import { trashDigest } from './trash-digest.ts'
 import type {
   WorkspaceDeleteSessionRequest,
@@ -159,10 +163,23 @@ export class WorkspaceCommands {
 
   /**
    * Add one known Session to the registry-global archive set.
+   *
+   * Archiving removes the session from every live grouping surface, so the
+   * ordinary durability checkpoints (model requests, top-level dispatch) may
+   * never fire for it again. A branched or short session can hold its whole
+   * life in the store's routed buffer at this moment — nothing on disk for
+   * the trash preview to read and nothing for a restore to come back to
+   * after a restart. The flush is therefore the archive's own durability
+   * barrier, taken before the registry flips: a failure leaves the session
+   * live and visible, ready to retry. An unavailable store (or an id admitted
+   * to no store) has nothing routed, so both degrade to the plain archive.
    * @param request - Session identity to archive.
    * @returns the complete resulting archive set.
    */
   async archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
+    const sessions = this.resolveSessions()
+    const live = sessions?.get(request.sessionId)
+    if (sessions !== undefined && live !== undefined) await sessions.flush(live)
     try {
       await this.ctx.workspaceRegistry.archiveSession(request.sessionId)
     } catch (error) {
@@ -194,6 +211,24 @@ export class WorkspaceCommands {
         } catch {
           // An archived log that cannot be read previews empty; the entry
           // stays listed so it can still be restored or deleted.
+        }
+      }
+      if (preview.title === undefined && preview.digest === undefined) {
+        // A log that says nothing (an entry archived before its store buffer
+        // materialized, or one whose durable log is gone) still previews from
+        // its admitted instance: the live-preferred observation reads the
+        // same events the sidebar previewed. A cold cut would only re-read
+        // the log that already answered empty, so only a live one digests.
+        const sessionQuery = this.ctx.get('sessionQuery') as
+          | { observeSession: (sessionId: SessionId) => Promise<SessionObservation> }
+          | undefined
+        if (sessionQuery !== undefined) {
+          try {
+            using observation = await sessionQuery.observeSession(sessionId)
+            if (observation.source === 'live') preview = trashDigest(observation.events)
+          } catch {
+            // Keep the empty preview; the entry stays restorable and deletable.
+          }
         }
       }
       entries.push({
@@ -265,7 +300,7 @@ export class WorkspaceCommands {
     // before): the persistence backend must already have dropped the id's
     // write route, or its `session/disposed` teardown would drain the routed
     // buffer straight back onto the disk.
-    this.ctx.sessions.retire(sessionId)
+    this.resolveSessions()?.retire(sessionId)
     // Session-scoped temp artifacts (spilled tool results under the OS temp
     // area) leave with the session; the contract is best-effort, so a spill
     // backend that is absent or fails never fails the deletion itself.
@@ -308,6 +343,19 @@ export class WorkspaceCommands {
     const workspace = this.ctx.workspaceRegistry.get(WorkspaceId(workspaceId))
     if (workspace === undefined) throw workspaceNotFound(workspaceId)
     return workspace
+  }
+
+  /**
+   * The live session store, or undefined when the host mounts none.
+   *
+   * Soft by design: `ctx.get` reads the root store, while a bare `ctx.sessions`
+   * property read only walks the mount context's own fiber chain and throws
+   * for a sibling-mounted store — the shape every loader entry actually runs
+   * in. Absence of a store means there are no admitted instances, so every
+   * caller degrades (nothing to flush, preview, or retire).
+   */
+  private resolveSessions(): SessionStore | undefined {
+    return this.ctx.get('sessions')
   }
 
   private enqueue<T>(operation: () => Promise<T>): Promise<T> {

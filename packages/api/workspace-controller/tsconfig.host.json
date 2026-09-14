@@ -24,6 +24,9 @@
       "path": "../../host/directory-picker"
     },
     {
+      "path": "../../session-query/session-query"
+    },
+    {
       "path": "../../storage/storage-domain"
     },
     {
