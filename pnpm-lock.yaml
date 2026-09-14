@@ -415,6 +415,9 @@ importers:
       '@deepseek-ai/dsh-llm-mock-server':
         specifier: workspace:^
         version: link:../../packages/test-support/llm-mock-server
+      '@deepseek-ai/dsh-llm-openai':
+        specifier: workspace:^
+        version: link:../../packages/llm/llm-openai
       '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:^
         version: link:../../packages/llm/llm-pi-ai
@@ -1388,6 +1391,9 @@ importers:
       '@deepseek-ai/dsh-llm-deepseek':
         specifier: workspace:^
         version: link:../../llm/llm-deepseek
+      '@deepseek-ai/dsh-llm-openai':
+        specifier: workspace:^
+        version: link:../../llm/llm-openai
       '@deepseek-ai/dsh-llm-pi-ai':
         specifier: workspace:^
         version: link:../../llm/llm-pi-ai
