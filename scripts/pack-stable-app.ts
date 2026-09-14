@@ -158,6 +158,55 @@ function isBare(spec: string): boolean {
     && !spec.startsWith('cordis:') && !isBuiltin(spec)
 }
 
+/**
+ * Packages the private profile never loads, whatever scanned file names them.
+ *
+ * - session-telemetry-otel is the upstream deployment's optional OTLP
+ *   exporter: no code in this application requires it (the host has zero load
+ *   sites and its own package ships no runtime requires), no endpoint is
+ *   configured, and a personal build ships no telemetry. The install manifest
+ *   and the base dependency list still *name* it, though, and the
+ *   product-namespace literal scan was dragging its whole @opentelemetry tree
+ *   (8.1 MiB) into every artifact. Remove from this set if a deployment ever
+ *   wants OTLP egress back.
+ * - koffi is the Windows FFI bridge (advapi32/kernel32 ACL shims): its only
+ *   import sites are the two `process.platform === 'win32'` shims in
+ *   dsh-fs-local and the jsonl persistence package, so a darwin-arm64 closure
+ *   never executes the import — the scan just cannot see the platform guard,
+ *   and the `@koromix/koffi-*` platform payload (~4 MiB) rode along with it.
+ * - web-streams-polyfill is fetch-blob's ponyfill for runtimes without a
+ *   native ReadableStream, behind that same-runtime guard (and node:stream/web
+ *   is tried first even there); Bun ships one, so the branch is unreachable
+ *   (~2.5 MiB).
+ *
+ * The specifier still lands in `closure.specifiers` — every bundle keeps the
+ * import external rather than inlining the repo-installed copy — and the
+ * audit exempts the dangling import (see auditApp).
+ */
+const neverShipped = (spec: string): boolean =>
+  spec === '@deepseek-ai/dsh-session-telemetry-otel'
+  || spec.startsWith('@opentelemetry/')
+  || spec === 'koffi'
+  || spec.startsWith('@koromix/koffi-')
+  || spec.startsWith('web-streams-polyfill')
+
+/**
+ * Exports subpaths of an otherwise-shipped package that nothing in this
+ * application imports, unseeded so their transitive trees stay out of the
+ * artifact. The declared-exports scan seeds every non-wildcard subpath of a
+ * shipped package ("any config or SDK import may name the rest"), which for
+ * `@earendil-works/pi-ai` meant shipping `./bedrock-provider` — the AWS
+ * Bedrock transport dragging the whole @aws-sdk/@smithy/@aws-crypto family
+ * (~6 MiB) — and `./compat`, a pi-ai-internal browser bundle re-importing
+ * openai, although the application reaches pi-ai only through its root and
+ * `./providers/all`. A future import of one resolves-or-fails exactly like
+ * any other package: the exemption stops only the speculative seeding.
+ */
+const NEVER_SEEDED_EXPORT_SUBPATHS = new Set([
+  '@earendil-works/pi-ai./bedrock-provider',
+  '@earendil-works/pi-ai./compat',
+])
+
 /** The package-name root of a possibly-subpathed bare specifier. */
 function packageRootName(spec: string): string {
   const segments = spec.split('/')
@@ -470,6 +519,10 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
       return
     }
     closure.specifiers.add(spec)
+    // Policy-excluded packages stay external (the emitted import survives,
+    // unreachable at runtime exactly as today) but never join the closure;
+    // the audit exempts the dangling specifier.
+    if (neverShipped(spec)) return
     let resolved: { file: string; wildcard: boolean }
     try {
       resolved = resolveBareFile(spec, fromFile)
@@ -526,19 +579,6 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     return set
   }
 
-  /**
-   * Packages the private profile never loads. session-telemetry-otel is the
-   * upstream deployment's optional OTLP exporter: no code in this application
-   * requires it (the host has zero load sites and its own package ships no
-   * runtime requires), no endpoint is configured, and a personal build ships no
-   * telemetry. The install manifest and the base dependency list still *name*
-   * it, though, and the product-namespace literal scan was dragging its whole
-   * @opentelemetry tree (8.1 MiB) into every artifact. Remove from this set if a
-   * deployment ever wants OTLP egress back.
-   */
-  const neverShipped = (spec: string): boolean =>
-    spec === '@deepseek-ai/dsh-session-telemetry-otel' || spec.startsWith('@opentelemetry/')
-
   const scanFile = (file: string): void => {
     if (scanned.has(file)) return
     scanned.add(file)
@@ -552,7 +592,7 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     const tableServed = clientExternalsOf(file)
     try {
       for (const imported of new bun.Transpiler({ loader }).scanImports(code)) {
-        if (tableServed.has(imported.path) || neverShipped(imported.path)) continue
+        if (tableServed.has(imported.path)) continue
         handleSpecifier(imported.path, file)
       }
     } catch {
@@ -588,6 +628,7 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
       const spec = match[1]
       if (spec === undefined || !isBare(spec)) continue
       closure.specifiers.add(spec)
+      if (neverShipped(spec)) continue
       let resolved: { file: string; wildcard: boolean } | undefined
       try {
         resolved = resolveBareFile(spec, file)
@@ -723,6 +764,9 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     const specs: string[] = []
     for (const [key, value] of Object.entries(exports as Record<string, unknown>)) {
       if (key === '.' || key === './package.json' || key.includes('*')) continue
+      // A subpath on the never-seeded list ships no speculative closure:
+      // nothing in this application imports it (see the set's comment).
+      if (NEVER_SEEDED_EXPORT_SUBPATHS.has(`${name}${key}`)) continue
       // Condition keys of a bare-conditional shorthand map ("types",
       // "default", ...) name the '.' entry, not a subpath; treating one as a
       // path mints phantom specifiers (`execa` + "ypes" → `execaypes`).
@@ -1306,7 +1350,8 @@ function auditApp(closure: Closure): void {
       continue
     }
     for (const imported of imports) {
-      if (isBare(imported.path) && !closure.unresolved.has(imported.path) && !resolvable(imported.path, dirname(file))) {
+      if (isBare(imported.path) && !closure.unresolved.has(imported.path) && !neverShipped(imported.path)
+        && !resolvable(imported.path, dirname(file))) {
         missing.add(`${imported.path} (from ${relative(stableApp, file)})`)
       }
     }
