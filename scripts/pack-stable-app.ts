@@ -146,6 +146,8 @@ interface Closure {
    * matching the resolution failure the repository install itself has.
    */
   unresolved: Set<string>
+  /** Package roots replaced by a generated stub package (see STUB_PACKAGES). */
+  stubs: Set<string>
 }
 
 function isBuiltin(spec: string): boolean {
@@ -205,6 +207,30 @@ const neverShipped = (spec: string): boolean =>
 const NEVER_SEEDED_EXPORT_SUBPATHS = new Set([
   '@earendil-works/pi-ai./bedrock-provider',
   '@earendil-works/pi-ai./compat',
+])
+
+/**
+ * Packages replaced at emit time by a generated stub module, so a heavyweight
+ * SDK whose only consumer is a provider this product never configures stays
+ * out of the artifact while the importing bundle still links.
+ *
+ * `@google/genai` is statically imported by pi-ai's Google transports
+ * (`api/google-shared.js`, `api/google-generative-ai.js`,
+ * `api/google-vertex.js`), which the `providers/all` aggregator loads
+ * eagerly — so the specifier must RESOLVE even though no Gemini route exists
+ * in this product and none may be configured by policy. pi-ai 0.85.1 takes
+ * exactly five named bindings (`FinishReason`, `FunctionCallingConfigMode`,
+ * `GoogleGenAI`, `ResourceScope`, `ThinkingLevel`) and every use site sits
+ * inside a request-path function (verified against the installed dist), so a
+ * stub exporting those names links cleanly and any actual Gemini attempt
+ * fails loudly at the stub. Dropping the real SDK takes its whole dependency
+ * tree with it (protobufjs, google-auth-library/gaxios/gcp-metadata).
+ */
+const STUB_PACKAGES: ReadonlyMap<string, readonly string[]> = new Map([
+  [
+    '@google/genai',
+    ['FinishReason', 'FunctionCallingConfigMode', 'GoogleGenAI', 'ResourceScope', 'ThinkingLevel'],
+  ],
 ])
 
 /** The package-name root of a possibly-subpathed bare specifier. */
@@ -449,6 +475,7 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     units: new Map(),
     verbatim: new Map(),
     unresolved: new Set(),
+    stubs: new Set(),
   }
   const scanned = new Set<string>()
   const fileQueue: string[] = []
@@ -523,6 +550,13 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     // unreachable at runtime exactly as today) but never join the closure;
     // the audit exempts the dangling specifier.
     if (neverShipped(spec)) return
+    // Stubbed packages also stay external, but the emitted import resolves at
+    // runtime — to the generated stub written into the closure plane.
+    const stubbedRoot = packageRootName(spec)
+    if (STUB_PACKAGES.has(stubbedRoot)) {
+      closure.stubs.add(stubbedRoot)
+      return
+    }
     let resolved: { file: string; wildcard: boolean }
     try {
       resolved = resolveBareFile(spec, fromFile)
@@ -1120,6 +1154,42 @@ function emitDevkitPackage(pkgDir: string, outDir: string): void {
 }
 
 /**
+ * Write one generated stub package into the closure plane (see STUB_PACKAGES).
+ * Each declared binding exports a Proxy that throws on access, call, and
+ * construct, so any use of the removed SDK names its absence directly instead
+ * of failing with a resolution error.
+ */
+function emitStubPackage(name: string, bindings: readonly string[]): void {
+  const outDir = join(closureRoot, ...name.split('/'))
+  rmSync(outDir, { recursive: true, force: true })
+  mkdirSync(outDir, { recursive: true })
+  const lines = [
+    `// ${name} colaw-stub: the real SDK never ships in this product (no Gemini provider).`,
+    '// The exports below are the exact named bindings the importing bundle takes',
+    '// from this package; their only job is module linking — every real use site',
+    '// sits in a request path that this build never runs.',
+    'const removed = (what) => {',
+    '  throw new Error(`colaw-stub: ${what} is not shipped in this build (no Gemini provider)`)',
+    '}',
+    'const stub = (what) => new Proxy(function () {}, {',
+    '  apply: () => removed(what),',
+    '  construct: () => removed(what),',
+    '  get: () => removed(what),',
+    '})',
+  ]
+  for (const binding of bindings) lines.push(`export const ${binding} = stub(${JSON.stringify(binding)})`)
+  writeFileSync(join(outDir, 'index.js'), `${lines.join('\n')}\n`)
+  writeFileSync(join(outDir, 'package.json'), `${JSON.stringify({
+    name,
+    version: '0.0.0-colaw-stub',
+    type: 'module',
+    private: true,
+    main: './index.js',
+    exports: { '.': './index.js' },
+  }, undefined, 2)}\n`)
+}
+
+/**
  * Ship one CommonJS package verbatim: the published tree (pruned like every
  * other data copy, binaries kept executable) and the source manifest's own
  * main/exports/type, so Node's CJS↔ESM interop reads it exactly as upstream
@@ -1447,6 +1517,12 @@ async function main(): Promise<void> {
     if (record === undefined) throw new Error(`pack-stable-app: package ${pkg} left the closure during emission`)
     const version = (JSON.parse(readFileSync(join(record.dir, 'package.json'), 'utf8')) as { version?: string }).version
     installDependencies[pkg] = typeof version === 'string' ? version : '0.0.0'
+  }
+  for (const stub of [...closure.stubs].sort()) {
+    const bindings = STUB_PACKAGES.get(stub)
+    if (bindings === undefined) throw new Error(`pack-stable-app: stub ${stub} lost its bindings during emission`)
+    emitStubPackage(stub, bindings)
+    installDependencies[stub] = '0.0.0-colaw-stub'
   }
   writeFileSync(join(installDir, 'package.json'), `${JSON.stringify({
     name: '@deepseek-ai/dsh',
