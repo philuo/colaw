@@ -13,6 +13,8 @@ export const PLAIN_BODY_ID = '@deepseek-ai/dsh-client-ui-sidebar-documentpreview
  * @returns plain-text registration metadata.
  */
 export function textBodyDefinition(title: () => string): DocumentPreviewDefinition {
+  // `wrap` here means "this renderer offers the wrap control"; the opening
+  // default comes from the preview store's `fresh()`.
   return { id: PLAIN_BODY_ID, extensions: [], priority: 'builtin', title, loading: 'text-pages', wrap: true }
 }
 

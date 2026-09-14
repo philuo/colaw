@@ -102,7 +102,9 @@ describe('CodeBody', () => {
     expect(view.container.querySelector('[data-line-numbers]')).not.toBeNull()
     const continuation = pre.querySelectorAll('.line').item(2)
     expect(continuation.textContent).toBe('still a comment')
-    expect(element(continuation as HTMLElement, 'span').style.color).toBe('var(--shiki-token-comment)')
+    // The line's first span is the gutter box now; the token is the styled one,
+    // and the gutter contributes no text (`counter` draws it).
+    expect(element(continuation as HTMLElement, 'span[style]').style.color).toBe('var(--shiki-token-comment)')
     expect(pre.textContent).toBe(`${first}\n${next}`)
     view.rerender(<CodeBody {...props(contents([first, next], true))} />)
     expect(element(view.container, '.shiki')).toBe(pre)

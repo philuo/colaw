@@ -82,6 +82,19 @@
   min-height: 0;
 }
 
+/*
+ * Only the leftmost pane keeps the window-edge inset the frame publishes for
+ * the desktop traffic lights. The kit's strip pads its inline start from
+ * --dsh-dockkit-strip-pad-start, a custom property this panel sets and every
+ * pane inside inherits — so in a split the second pane's chips were indented by
+ * the reserved room for controls that are not in front of them. Panes after the
+ * first fall back to the kit's own 6px. (`data-dockkit-strip` is the kit's
+ * stable hook for that row.)
+ */
+.panel :global([data-dockkit-pane]:not(:first-child)) :global([data-dockkit-strip]) {
+  padding-inline-start: 6px;
+}
+
 /* The geometry of a message's action row button (ui-chat MessageIconActions),
    shared with the kit's split control beside it: a 28px circle around a 15px glyph. */
 .iconButton {

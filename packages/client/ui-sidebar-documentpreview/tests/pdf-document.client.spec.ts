@@ -37,7 +37,7 @@ describe('PDF canvas rendering', () => {
     expect(render).not.toHaveBeenCalled()
     expect(cleanup).toHaveBeenCalledOnce()
     expect(canvas.width).toBe(300)
-    expect(canvas.style.getPropertyValue('--pdf-page-width')).toBe('')
+    expect(canvas.height).toBe(150)
   })
 
   it('cancels an active task and cleans up only after its promise settles', async () => {
@@ -75,7 +75,8 @@ describe('PDF canvas rendering', () => {
       .resolves.toEqual({ width: 8192, height: 8192 })
     expect(getViewport).toHaveBeenCalledWith({ scale: 96 / 72 })
     expect(canvas.width * canvas.height).toBe(16_777_216)
-    expect(canvas.style.getPropertyValue('--pdf-page-width')).toBe('8192px')
+    // The renderer owns the bitmap only; the display geometry is the caller's.
+    expect(canvas.style.getPropertyValue('--pdf-page-width')).toBe('')
     expect(cleanup).toHaveBeenCalledOnce()
   })
 })

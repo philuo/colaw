@@ -39,6 +39,7 @@ describe('code renderer registration', () => {
     const h = await boot()
     await h.rt.mount(plugin)
     expect(h.previews.getSnapshot()).toHaveLength(1)
+    // `wrap` is the "offers the wrap control" flag, not the opening state.
     expect(h.previews.getSnapshot()[0]).toMatchObject({ id: ID, extensions: CODE_EXTENSIONS, priority: 'builtin', loading: 'text-pages', wrap: true })
     expect(h.rt.slots.entries(SLOT)).toEqual([])
     await h.declare()

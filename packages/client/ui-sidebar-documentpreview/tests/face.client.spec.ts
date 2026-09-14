@@ -271,7 +271,7 @@ describe('textFace', () => {
     await settleAll(result)
     expect(tab()).toMatchObject({
       complete: result.value, version: 'v2', loading: false, eof: true,
-      rendererId: 'test/whole-file', scrollTop: 77, wrap: false, revision: 3,
+      rendererId: 'test/whole-file', scrollTop: 77, wrap: true, revision: 3,
     })
   })
 

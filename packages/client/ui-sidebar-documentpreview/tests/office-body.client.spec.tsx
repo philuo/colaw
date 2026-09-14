@@ -17,7 +17,7 @@ vi.mock('../src/client/office/runtime.ts', async importOriginal => ({
   openDocx: engine.docx, openPptx: engine.pptx, openXlsx: engine.xlsx,
 }))
 import { OfficeBody, type OfficeFormatBodyProps } from '../src/client/office/OfficeBody.tsx'
-import { OFFICE_ZOOM_MAX, OFFICE_ZOOM_MIN, type XlsxInteractions } from '../src/client/office/runtime.ts'
+import type { XlsxInteractions } from '../src/client/office/runtime.ts'
 import { en } from '../src/client/office/locales.ts'
 
 /** One scripted loader session, shared by every format's mocked opener. */
@@ -48,16 +48,6 @@ function zoomDouble(scale = 1): {
   const setScale = vi.fn((next: number) => { current = next })
   const getScale = vi.fn(() => current)
   return { zoom: { getScale, setScale }, setScale, getScale }
-}
-
-/** The scroll-host double the paged handles carry: observable scroll writes. */
-function scrollHostDouble(): HTMLElement & { scrollTop: number; scrollLeft: number } {
-  return {
-    scrollTop: 200,
-    scrollLeft: 100,
-    style: {} as CSSStyleDeclaration,
-    getBoundingClientRect: () => ({ top: 0, left: 0 } as DOMRect),
-  } as unknown as HTMLElement & { scrollTop: number; scrollLeft: number }
 }
 
 const handleOf = (options: {
@@ -139,45 +129,7 @@ describe('Office body', () => {
     expect(screen.queryByRole('button', { name: 'Previous slide' })).toBeNull()
   })
 
-  it('zooms on the pinch gesture with the image-preview curve and a cursor anchor', async () => {
-    const h = harness()
-    const view = render(<h.View format="docx" />)
-    const zoom = zoomDouble(1)
-    const host = scrollHostDouble()
-    await act(async () => { loads[0]!.deferred.resolve(handleOf({ zoom, scrollHost: host })) })
-    await act(async () => {})
-
-    // One pinch notch: exp(12*0.007) ≈ 1.088 — smooth, not the library's 1.1 jump.
-    const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
-    fireEvent(surface, new WheelEvent('wheel', { ctrlKey: true, deltaY: -12, clientX: 60, clientY: 40, cancelable: true }))
-    const expected = Math.min(OFFICE_ZOOM_MAX, Math.max(OFFICE_ZOOM_MIN, Math.exp(12 * 0.007)))
-    // The gesture previews on a transform and commits the real scale on settle.
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
-    expect(zoom.setScale).toHaveBeenCalledWith(expected)
-    // Cursor-anchored scroll correction: content point scales around the anchor.
-    expect(host.scrollTop).toBeCloseTo((200 + 40) * expected - 40, 5)
-    expect(host.scrollLeft).toBeCloseTo((100 + 60) * expected - 60, 5)
-
-    // Plain wheel is untouched: no zoom, native scrolling.
-    zoom.setScale.mockClear()
-    fireEvent(surface, new WheelEvent('wheel', { deltaY: -50, cancelable: true }))
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
-    expect(zoom.setScale).not.toHaveBeenCalled()
-  })
-
-  it('clamps the zoom bounds on both ends', async () => {
-    const h = harness()
-    render(<h.View format="docx" />)
-    const zoom = zoomDouble(7.9)
-    await act(async () => { loads[0]!.deferred.resolve(handleOf({ zoom })) })
-    await act(async () => {})
-    const surface = document.querySelector('[class*="surface"]') as HTMLElement
-    fireEvent(surface, new WheelEvent('wheel', { ctrlKey: true, deltaY: -40, cancelable: true }))
-    await act(async () => { await new Promise(resolve => setTimeout(resolve, 220)) })
-    expect(zoom.setScale).toHaveBeenLastCalledWith(OFFICE_ZOOM_MAX)
-  })
-
-  it('renders no pagination chrome for Excel, and leaves the wheel to its own viewer', async () => {
+  it('renders no pagination chrome and leaves the wheel to the viewer, for every format', async () => {
     const h = harness()
     const view = render(<h.View format="xlsx" />)
     const zoom = zoomDouble(1)
@@ -185,9 +137,10 @@ describe('Office body', () => {
     await act(async () => {})
     expect(view.container.querySelector('[data-office-preview="xlsx"]')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull()
-    // The grid keeps the library's built-in ⌘/Ctrl+wheel zoom (anchored to the
-    // grid), so the body's capture gesture must not intercept: the wheel is
-    // neither prevented nor forwarded to the body's zoom seam.
+    // Zoom belongs to the library for every format — it previews the gesture on
+    // its own virtualized scroll host and settles into a crisp re-render. The
+    // body must stay out of the way: the wheel is neither prevented nor routed
+    // through any zoom seam of ours.
     const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
     const wheel = new WheelEvent('wheel', { metaKey: true, deltaY: -20, clientX: 10, clientY: 10, cancelable: true })
     fireEvent(surface, wheel)

@@ -557,28 +557,29 @@ describe('TextPreview — navigation and view', () => {
     expect(h.instance.getSnapshot().byTab[TAB_ID]?.revision).toBe(2)
   })
 
-  it('wraps by default and stops when the shared store says so', async () => {
+  it('opens unwrapped and wraps when the shared store says so', async () => {
     const h = harness({ 1: page(1, ['a'], true) })
     const view = render(<TextPreview {...h.props()} />)
     await settle()
-    expect(body(view.container).hasAttribute('data-textpreview-wrap')).toBe(true)
-    act(() => { h.instance.actions.toggledWrap(TAB_ID) })
+    // Source reads as written until the reader asks otherwise.
     expect(body(view.container).hasAttribute('data-textpreview-wrap')).toBe(false)
+    act(() => { h.instance.actions.toggledWrap(TAB_ID) })
+    expect(body(view.container).hasAttribute('data-textpreview-wrap')).toBe(true)
   })
 })
 
 describe('TextPreview — header controls', () => {
-  it('toggles wrap off from the header, reporting the pressed state', async () => {
+  it('toggles wrap on from the header, reporting the pressed state', async () => {
     const h = harness({ 1: page(1, ['a'], true) })
     const view = render(<TextPreview {...h.props()} />)
     await settle()
     const wrap = view.container.querySelector<HTMLButtonElement>('[data-textpreview-tool="wrap"]')
     if (wrap === null) throw new Error('expected the wrap control')
-    expect(wrap.getAttribute('aria-pressed')).toBe('true')
-    fireEvent.click(wrap)
-    expect(h.instance.getSnapshot().byTab[TAB_ID]?.wrap).toBe(false)
     expect(wrap.getAttribute('aria-pressed')).toBe('false')
-    expect(body(view.container).hasAttribute('data-textpreview-wrap')).toBe(false)
+    fireEvent.click(wrap)
+    expect(h.instance.getSnapshot().byTab[TAB_ID]?.wrap).toBe(true)
+    expect(wrap.getAttribute('aria-pressed')).toBe('true')
+    expect(body(view.container).hasAttribute('data-textpreview-wrap')).toBe(true)
   })
 
   it('reloads only this tab from the header without a change announced', async () => {
