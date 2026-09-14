@@ -26,17 +26,6 @@ function pdfLicenseBanner(): string {
   return ['//! Bundled PDF.js license notices', ...notice.split('\n').map(line => `// ${line}`)].join('\n')
 }
 
-/** Keep font mappings and image decoders in the same artifact as their PDF.js runtime. */
-function pdfAssets(): string {
-  const root = dirname(require.resolve('pdfjs-dist/package.json'))
-  return JSON.stringify(Object.fromEntries([
-    ['cMapUrl', 'cmaps'], ['standardFontDataUrl', 'standard_fonts'], ['wasmUrl', 'wasm'],
-  ].map(([kind, directory]) => [kind, Object.fromEntries(
-    readdirSync(join(root, directory!)).filter(name => !name.startsWith('LICENSE')).sort()
-      .map(name => [name, readFileSync(join(root, directory!, name)).toString('base64')]),
-  )])))
-}
-
 /** The parser payload filenames the Office renderers fetch through their `wasmUrl` option. */
 const OOXML_FORMATS = ['docx', 'pptx', 'xlsx'] as const
 
@@ -102,7 +91,6 @@ export default (options: Parameters<typeof bundle>[0]): UserConfig[] => bundle(o
     plugins: [config.plugins, pdfWorker, ooxmlModuleUrl],
     define: {
       ...config.define,
-      __DSH_PDFJS_ASSETS__: pdfAssets(),
       __DSH_OOXML_WASM__: ooxmlAssets(),
     },
   } : config,
