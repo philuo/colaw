@@ -1,6 +1,6 @@
 /** Deterministic provider-independent image normalization. */
 
-import sharp, { type Sharp } from 'sharp'
+import { openPipeline, type AdapterPipeline } from './image-adapter.ts'
 import { AttachmentError, requestImageDimensions } from '@deepseek-ai/dsh-attachment'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { encodeFirstWithinLimit, encodingLadder, isExhaustedEncoding } from './encoding.ts'
@@ -70,8 +70,8 @@ async function verifyNormalizedImage(
 }
 
 /** Build one fixed-size, oriented, metadata-free sRGB pipeline from submitted bytes. */
-function preparedPipeline(data: Uint8Array, width: number, height: number): Sharp {
-  return sharp(data, { failOn: 'error', limitInputPixels: false })
+function preparedPipeline(data: Uint8Array, width: number, height: number): AdapterPipeline {
+  return openPipeline(data, { failOn: 'error', limitInputPixels: false })
     .rotate()
     .toColourspace('srgb')
     .resize({ width, height, fit: 'inside', withoutEnlargement: true })

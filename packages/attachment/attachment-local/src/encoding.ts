@@ -1,6 +1,6 @@
 /** Shared quality ladder and lazy candidate execution for normalization and request-image encoders. */
 
-import type { Sharp } from 'sharp'
+import type { AdapterPipeline } from './image-adapter.ts'
 
 /** Shared ladder for both encoders: spaced so each step buys a real size reduction. */
 export const IMAGE_ENCODING_QUALITIES = [85, 75, 60] as const
@@ -15,12 +15,11 @@ export interface EncodedImage {
   height: number
 }
 
-async function encode(pipeline: Sharp, mediaType: EncodedImage['mediaType'], quality: number): Promise<EncodedImage> {
+async function encode(pipeline: AdapterPipeline, mediaType: EncodedImage['mediaType'], quality: number): Promise<EncodedImage> {
   const encoded = mediaType === 'image/webp'
-    ? pipeline.webp({ quality, effort: WEBP_ENCODING_EFFORT })
-    : pipeline.jpeg({ quality })
-  const { data, info } = await encoded.toBuffer({ resolveWithObject: true })
-  return { data: new Uint8Array(data), mediaType, width: info.width, height: info.height }
+    ? await pipeline.webp({ quality, effort: WEBP_ENCODING_EFFORT })
+    : await pipeline.jpeg({ quality })
+  return { data: encoded.data, mediaType, width: encoded.info.width, height: encoded.info.height }
 }
 
 /**
@@ -30,7 +29,7 @@ async function encode(pipeline: Sharp, mediaType: EncodedImage['mediaType'], qua
  * @param hasAlpha - decoded source alpha fact selecting the codec.
  * @returns encoders ordered from highest to lowest ladder quality.
  */
-export function encodingLadder(prepared: Sharp, hasAlpha: boolean): Array<() => Promise<EncodedImage>> {
+export function encodingLadder(prepared: AdapterPipeline, hasAlpha: boolean): Array<() => Promise<EncodedImage>> {
   const mediaType = hasAlpha ? 'image/webp' : 'image/jpeg'
   return IMAGE_ENCODING_QUALITIES.map(quality => (
     () => encode(prepared.clone(), mediaType, quality)

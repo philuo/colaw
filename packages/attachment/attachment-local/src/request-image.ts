@@ -3,7 +3,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import sharp, { type Sharp } from 'sharp'
+import { openPipeline, type AdapterPipeline } from './image-adapter.ts'
 import { AttachmentError, ImageVariantId, requestImageDimensions } from '@deepseek-ai/dsh-attachment'
 import type {
   ImageMediaType,
@@ -80,13 +80,13 @@ export function requestImageVariantId(
   return ImageVariantId(`sha256:${digest(descriptor(attachment, policy))}`)
 }
 
-function pipeline(attachment: StoredImageAttachment, width: number, height: number): Sharp {
+function pipeline(attachment: StoredImageAttachment, width: number, height: number): AdapterPipeline {
   return sourcePipeline(attachment)
     .resize({ width, height, fit: 'inside', withoutEnlargement: true })
 }
 
-function sourcePipeline(attachment: StoredImageAttachment): Sharp {
-  return sharp(attachment.data, { failOn: 'error', limitInputPixels: false }).toColourspace('srgb')
+function sourcePipeline(attachment: StoredImageAttachment): AdapterPipeline {
+  return openPipeline(attachment.data, { failOn: 'error', limitInputPixels: false }).toColourspace('srgb')
 }
 
 async function createRequestImage(

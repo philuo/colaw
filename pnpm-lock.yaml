@@ -1141,6 +1141,9 @@ importers:
       '@deepseek-ai/dsh-session':
         specifier: workspace:^
         version: link:../../core/session
+      '@deepseek-ai/dsh-session-query':
+        specifier: workspace:^
+        version: link:../../session-query/session-query
       '@deepseek-ai/dsh-storage-domain':
         specifier: workspace:^
         version: link:../../storage/storage-domain
@@ -1208,9 +1211,6 @@ importers:
       '@deepseek-ai/schemastery':
         specifier: link:../../../vendor/schemastery
         version: link:../../../vendor/schemastery
-      sharp:
-        specifier: ^0.35.3
-        version: 0.35.3(@types/node@22.20.0)
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^
@@ -1224,6 +1224,9 @@ importers:
       '@types/bun':
         specifier: ^1.4.2
         version: 1.4.2
+      sharp:
+        specifier: ^0.35.3
+        version: 0.35.3(@types/node@22.20.0)
 
   packages/boot/app-boot:
     dependencies:

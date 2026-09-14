@@ -1,8 +1,8 @@
 /** Raster inspection: full decode at admission, header-only probe on verified reads. */
 
-import sharp, { type Sharp } from 'sharp'
 import { AttachmentError } from '@deepseek-ai/dsh-attachment'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
+import { openPipeline, type AdapterMetadata, type AdapterPipeline } from './image-adapter.ts'
 
 /** Decoded metadata from a supported image. */
 export interface DetectedImage {
@@ -15,9 +15,9 @@ export interface DetectedImage {
   animated: boolean
   /** Whether the bytes carry descriptive metadata, a color profile, or orientation. */
   carriesMetadata: boolean
-  /** Sharp sample depth reported for the decoded channels. */
+  /** Sample depth reported for the decoded channels. */
   depth: string
-  /** Sharp colour space reported for the decoded pixels. */
+  /** Colour space reported for the decoded pixels. */
   space: string
   /** Whether decoded pixels carry an alpha channel. */
   hasAlpha: boolean
@@ -25,7 +25,7 @@ export interface DetectedImage {
 
 /**
  * Check alpha metadata for bytes produced by this package's encoders.
- * Sharp/libvips may omit an all-opaque alpha plane from WebP output; every
+ * Encoders may omit an all-opaque alpha plane from WebP output; every
  * other addition or removal indicates that the encoded result is incompatible
  * with its source facts.
  * @param sourceHasAlpha - whether the source bytes declare an alpha plane, or undefined when the source frame is unspecified.
@@ -48,35 +48,33 @@ const MEDIA_TYPES: Readonly<Record<string, ImageMediaType>> = {
   gif: 'image/gif',
 }
 
-function carriesRetainedMetadata(metadata: Awaited<ReturnType<Sharp['metadata']>>): boolean {
-  return metadata.exif !== undefined
-    || metadata.xmp !== undefined
-    || metadata.iptc !== undefined
-    || metadata.icc !== undefined
-    || metadata.hasProfile
-    || metadata.tifftagPhotoshop !== undefined
-    || metadata.comments !== undefined
-    || metadata.orientation !== undefined
-}
-
-async function imageMetadata(image: Sharp): Promise<DetectedImage> {
-  const metadata = await image.metadata()
-  const mediaType = MEDIA_TYPES[metadata.format as string]
+/** Project the adapter's metadata onto the pipeline's DetectedImage facts. */
+function toDetected(metadata: AdapterMetadata): DetectedImage {
+  const mediaType = MEDIA_TYPES[metadata.format ?? '']
   if (mediaType === undefined) {
     throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE')
   }
   // EXIF orientations 5-8 transpose the stored raster; report the perceived
   // axes so limits, source facts, and coordinate advice all share them.
   const transposed = metadata.orientation !== undefined && metadata.orientation >= 5
+  const storedWidth = metadata.width ?? 0
+  const storedHeight = metadata.height ?? 0
   return {
     mediaType,
-    width: transposed ? metadata.height : metadata.width,
-    height: transposed ? metadata.width : metadata.height,
+    width: transposed ? storedHeight : storedWidth,
+    height: transposed ? storedWidth : storedHeight,
     animated: (metadata.pages ?? 1) > 1,
-    carriesMetadata: carriesRetainedMetadata(metadata),
-    depth: metadata.depth,
-    space: metadata.space,
-    hasAlpha: metadata.hasAlpha,
+    carriesMetadata: metadata.exif !== undefined
+      || metadata.xmp !== undefined
+      || metadata.iptc !== undefined
+      || metadata.icc !== undefined
+      || metadata.hasProfile
+      || metadata.tifftagPhotoshop !== undefined
+      || metadata.comments !== undefined
+      || metadata.orientation !== undefined,
+    depth: metadata.depth ?? 'uchar',
+    space: metadata.space ?? 'srgb',
+    hasAlpha: metadata.hasAlpha ?? false,
   }
 }
 
@@ -90,7 +88,7 @@ async function imageMetadata(image: Sharp): Promise<DetectedImage> {
  */
 export async function probeImage(data: Uint8Array): Promise<DetectedImage> {
   try {
-    return await imageMetadata(sharp(data, { failOn: 'error', limitInputPixels: false }))
+    return toDetected(await openPipeline(data, { failOn: 'error', limitInputPixels: false }).metadata())
   } catch (error) {
     if (error instanceof AttachmentError) throw error
     throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
@@ -113,18 +111,23 @@ export interface DecodedImageLimits {
  */
 export async function detectImage(data: Uint8Array, limits?: DecodedImageLimits): Promise<DetectedImage> {
   try {
-    const image = sharp(data, { failOn: 'error', limitInputPixels: false })
-    const detected = await imageMetadata(image)
+    const pipeline = openPipeline(data, { failOn: 'error', limitInputPixels: false })
+    const detected = toDetected(await pipeline.metadata())
     if (limits?.maxPixels !== undefined && detected.width * detected.height > limits.maxPixels) {
       throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
     }
     if (limits?.maxDimension !== undefined && Math.max(detected.width, detected.height) > limits.maxDimension) {
       throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
     }
-    await image.raw().toBuffer()
+    // Force a full pixel decode: truncated or corrupt containers fail here,
+    // before the bytes can enter the content-addressed store.
+    await pipeline.raw().toBuffer()
     return detected
   } catch (error) {
     if (error instanceof AttachmentError) throw error
     throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
   }
 }
+
+/** The prepared (oriented, sRGB, resized) pixel pipeline behind the quality ladder. */
+export type PreparedPipeline = AdapterPipeline
