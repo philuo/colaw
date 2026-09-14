@@ -497,6 +497,48 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     addUnit(spec, resolved.file, fromFile, resolved.wildcard)
   }
 
+  /**
+   * Specifiers one client bundle declares under `dsh.client.external`: the
+   * loader's module table answers those requires — through a static seed row
+   * (PLATFORM_MODULES) or another dynamic package's row — so the npm package a
+   * specifier names never needs to ship. Without this exemption the closure
+   * would drag in the full body of every library a bundle merely addresses
+   * through the table (observed: +8.7 MiB of @silurus/ooxml that nothing read).
+   */
+  const clientExternalsCache = new Map<string, ReadonlySet<string>>()
+  const clientExternalsOf = (file: string): ReadonlySet<string> => {
+    const dir = nearestPackageDir(file, '')
+    const cached = clientExternalsCache.get(dir)
+    if (cached !== undefined) return cached
+    let declared: unknown
+    try {
+      const manifest = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8')) as {
+        dsh?: { client?: { external?: unknown } }
+      }
+      declared = manifest.dsh?.client?.external
+    } catch {
+      declared = undefined
+    }
+    const set = new Set(
+      Array.isArray(declared) ? declared.filter((entry): entry is string => typeof entry === 'string') : [],
+    )
+    clientExternalsCache.set(dir, set)
+    return set
+  }
+
+  /**
+   * Packages the private profile never loads. session-telemetry-otel is the
+   * upstream deployment's optional OTLP exporter: no code in this application
+   * requires it (the host has zero load sites and its own package ships no
+   * runtime requires), no endpoint is configured, and a personal build ships no
+   * telemetry. The install manifest and the base dependency list still *name*
+   * it, though, and the product-namespace literal scan was dragging its whole
+   * @opentelemetry tree (8.1 MiB) into every artifact. Remove from this set if a
+   * deployment ever wants OTLP egress back.
+   */
+  const neverShipped = (spec: string): boolean =>
+    spec === '@deepseek-ai/dsh-session-telemetry-otel' || spec.startsWith('@opentelemetry/')
+
   const scanFile = (file: string): void => {
     if (scanned.has(file)) return
     scanned.add(file)
@@ -507,8 +549,10 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
       return
     }
     const loader = /\.(?:ts|mts|cts|tsx)$/u.test(file) ? 'ts' : 'js'
+    const tableServed = clientExternalsOf(file)
     try {
       for (const imported of new bun.Transpiler({ loader }).scanImports(code)) {
+        if (tableServed.has(imported.path) || neverShipped(imported.path)) continue
         handleSpecifier(imported.path, file)
       }
     } catch {
@@ -565,6 +609,7 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     for (const match of code.matchAll(/['"`](@deepseek-ai\/[a-z0-9-._~]+(?:\/[a-z0-9-._~]+)*)['"`]/gu)) {
       const spec = match[1]
       if (spec === undefined) continue
+      if (neverShipped(spec)) continue
       closure.specifiers.add(spec)
       try {
         const resolved = resolveBareFile(spec, file)
@@ -603,6 +648,7 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     for (const match of code.matchAll(/(?<![.\w$])require\(\s*['"]([^'"]+)['"]\s*\)/gu)) {
       const spec = match[1]
       if (spec === undefined) continue
+      if (tableServed.has(spec)) continue
       if (spec.startsWith('./') || spec.startsWith('../')) {
         const target = resolveRelative(spec, file)
         if (target === undefined) continue
