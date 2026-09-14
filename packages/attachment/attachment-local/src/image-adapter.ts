@@ -52,11 +52,21 @@ export interface AdapterEncoded {
 }
 
 /** sharp 的管线接口 —— 业务与质量阶梯只消费这些成员。 */
+export interface AdapterLimits {
+  maxPixels?: number
+  maxDimension?: number
+}
+
 export interface AdapterPipeline {
   /** 仅容器级元数据（不解码像素）。 */
   probe(): Promise<AdapterMetadata>
   /** 容器级元数据 + 像素物化（完整性证明 + depth/space 真值）。 */
   metadata(): Promise<AdapterMetadata>
+  /**
+   * admission 的单次打开路径：容器事实 → limits 从头声明尺寸先行检查 →
+   * 像素物化（完整性证明 + 真值）。一次 source 打开，无双开冗余。
+   */
+  detect(limits?: AdapterLimits): Promise<AdapterMetadata>
   raw(): { toBuffer(): Promise<Uint8Array> }
   rotate(): AdapterPipeline
   toColourspace(space: 'srgb'): AdapterPipeline
@@ -325,6 +335,37 @@ class BunPipeline implements AdapterPipeline {
       }
     } catch (error) {
       // 解码失败 = 坏图：与 sharp 的 raw().toBuffer() 行为一致，向上抛。
+      if (error instanceof AttachmentError) throw error
+      throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
+    }
+  }
+
+  /** admission 的单次打开路径：容器事实 → limits 先行 → 像素物化（完整性证明 + 真值）。 */
+  detect(limits?: AdapterLimits): Promise<AdapterMetadata> {
+    try {
+      // ONE source open serves everything: header facts for the budget check,
+      // then pixel materialization for the integrity proof and true facts.
+      const source = imageSourceOf(this.sourceBytes)
+      try {
+        const container = containerFromSource(source, this.sourceBytes)
+        if (limits?.maxPixels !== undefined
+          && (container.width ?? 0) * (container.height ?? 0) > limits.maxPixels) {
+          throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
+        }
+        if (limits?.maxDimension !== undefined
+          && Math.max(container.width ?? 0, container.height ?? 0) > limits.maxDimension) {
+          throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
+        }
+        const decoded = decodedFactsOf(source)
+        container.depth = depthOf(decoded.bitsPerComponent)
+        container.space = spaceOf(decoded.colorSpaceModel, decoded.bitsPerComponent)
+        // hasAlpha 保持容器声明（HasAlpha 键）—— 解码表面的 alphaInfo 对无 alpha
+        // 的 JPEG 也是 premultiplied，用它会把每个不透明源都误判成带 alpha。
+        return Promise.resolve(container)
+      } finally {
+        source.release()
+      }
+    } catch (error) {
       if (error instanceof AttachmentError) throw error
       throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
     }

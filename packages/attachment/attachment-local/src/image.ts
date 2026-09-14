@@ -112,19 +112,11 @@ export interface DecodedImageLimits {
 export async function detectImage(data: Uint8Array, limits?: DecodedImageLimits): Promise<DetectedImage> {
   try {
     const pipeline = openPipeline(data, { failOn: 'error', limitInputPixels: false })
-    // Header facts first: the pixel budget is enforced from the declared
-    // dimensions BEFORE any pixel materialization, so a decompression bomb
-    // (crafted header, truncated body) is rejected without ever decoding.
-    const header = toDetected(await pipeline.probe())
-    if (limits?.maxPixels !== undefined && header.width * header.height > limits.maxPixels) {
-      throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
-    }
-    if (limits?.maxDimension !== undefined && Math.max(header.width, header.height) > limits.maxDimension) {
-      throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
-    }
-    // Materialize once: the integrity proof (corrupt trailing data fails here)
-    // and the pixel-true depth/space arrive together in this single decode.
-    const detected = toDetected(await pipeline.metadata())
+    // detect() opens the source once: header facts feed the pixel budget check
+    // BEFORE materialization (decompression bombs never decode), then one
+    // pixel materialization serves the integrity proof and the pixel-true
+    // depth/space.
+    const detected = toDetected(await pipeline.detect(limits))
     return detected
   } catch (error) {
     if (error instanceof AttachmentError) throw error
