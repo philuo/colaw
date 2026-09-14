@@ -150,6 +150,7 @@ const EXTENSION_TYPES: Readonly<Record<string, CodeFileType>> = {
   'hxx': 'cpp',
   'ini': 'ini',
   'ipp': 'cpp',
+  'ipynb': 'python',
   'java': 'java',
   'js': 'javascript',
   'json': 'json',

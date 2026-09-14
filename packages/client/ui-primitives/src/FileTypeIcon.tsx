@@ -10,15 +10,24 @@ import css from './FileTypeIcon.module.css'
 /** File categories with distinct 28px glyphs. */
 export type FileType =
   | CodeFileType
+  | 'archive'
+  | 'audio'
   | 'code'
+  | 'database'
+  | 'design'
+  | 'ebook'
   | 'excel'
+  | 'exe'
   | 'folder'
+  | 'font'
   | 'html'
   | 'image'
   | 'markdown'
+  | 'ofd'
   | 'other'
   | 'pdf'
   | 'ppt'
+  | 'text'
   | 'video'
   | 'word'
 
@@ -55,6 +64,40 @@ const EXTENSION_TYPES: Readonly<Record<string, ClassifiedFileType>> = {
   cmd: 'code',
   csv: 'code',
   tsv: 'code',
+  aac: 'audio',
+  aif: 'audio',
+  aiff: 'audio',
+  amr: 'audio',
+  ape: 'audio',
+  caf: 'audio',
+  flac: 'audio',
+  m4a: 'audio',
+  mid: 'audio',
+  midi: 'audio',
+  mp3: 'audio',
+  oga: 'audio',
+  ogg: 'audio',
+  opus: 'audio',
+  wav: 'audio',
+  wma: 'audio',
+  '7z': 'archive',
+  bz2: 'archive',
+  gz: 'archive',
+  iso: 'archive',
+  rar: 'archive',
+  tar: 'archive',
+  tgz: 'archive',
+  xz: 'archive',
+  zip: 'archive',
+  zst: 'archive',
+  azw: 'ebook',
+  azw3: 'ebook',
+  cbr: 'ebook',
+  cbz: 'ebook',
+  djvu: 'ebook',
+  epub: 'ebook',
+  fb2: 'ebook',
+  mobi: 'ebook',
   html: 'html',
   htm: 'html',
   png: 'image',
@@ -73,16 +116,29 @@ const EXTENSION_TYPES: Readonly<Record<string, ClassifiedFileType>> = {
   md: 'markdown',
   mdx: 'markdown',
   markdown: 'markdown',
+  ofd: 'ofd',
   pdf: 'pdf',
   ppt: 'ppt',
   pptx: 'ppt',
   key: 'ppt',
+  ass: 'text',
+  bib: 'text',
+  log: 'text',
+  srt: 'text',
+  ssa: 'text',
+  tex: 'text',
+  text: 'text',
+  txt: 'text',
+  vtt: 'text',
   mp4: 'video',
   mov: 'video',
   m4v: 'video',
   webm: 'video',
   mkv: 'video',
   avi: 'video',
+  flv: 'video',
+  wmv: 'video',
+  '3gp': 'video',
   mpg: 'video',
   mpeg: 'video',
   doc: 'word',
@@ -90,10 +146,36 @@ const EXTENSION_TYPES: Readonly<Record<string, ClassifiedFileType>> = {
   rtf: 'word',
   odt: 'word',
   pages: 'word',
+  wps: 'word',
   xls: 'excel',
   xlsx: 'excel',
   xlsm: 'excel',
   numbers: 'excel',
+  et: 'excel',
+  dps: 'ppt',
+  apk: 'exe',
+  app: 'exe',
+  appimage: 'exe',
+  deb: 'exe',
+  dmg: 'exe',
+  exe: 'exe',
+  jar: 'exe',
+  msi: 'exe',
+  rpm: 'exe',
+  db: 'database',
+  db3: 'database',
+  sqlite: 'database',
+  sqlite3: 'database',
+  eot: 'font',
+  otf: 'font',
+  ttf: 'font',
+  woff: 'font',
+  woff2: 'font',
+  ai: 'design',
+  fig: 'design',
+  psd: 'design',
+  sketch: 'design',
+  xd: 'design',
 }
 
 const NAME_TYPES: Readonly<Record<string, ClassifiedFileType>> = {
@@ -174,8 +256,87 @@ function FolderGlyph({ size, className }: IconProps): ReactNode {
   )
 }
 
+/** Archive: a rounded tile whose staircase zipper is cut out of the solid fill. */
+function ArchiveGlyph({ size, className }: IconProps): ReactNode {
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path
+        fillRule="evenodd"
+        clipRule="evenodd"
+        d="M16.4 20.4h-2.4v-2.4h-2.4v-2.4h2.4v2.4h2.4m0-7.2h-2.4v2.4h2.4v2.4h-2.4v-2.4h-2.4V10h2.4V7.6h-2.4V5.2h2.4v2.4h2.4m4.2-2.6H7.4C6.1 5 5 6.1 5 7.4v13.2C5 21.9 6.1 23 7.4 23h13.2c1.3 0 2.4-1.1 2.4-2.4V7.4C23 6.1 21.9 5 20.6 5"
+        fill="currentColor"
+      />
+    </svg>
+  )
+}
+
+/** Font: a capital A beside a lowercase a. */
+function FontGlyph({ size, className }: IconProps): ReactNode {
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path d="M6.2 19.6L9.7 9.9L13.2 19.6M7.5 16.3H11.9" stroke="currentColor" strokeWidth="1.8" fill="none" />
+      <circle cx="16.7" cy="16.6" r="2.4" stroke="currentColor" strokeWidth="1.8" fill="none" />
+      <path d="M19.1 14.2V19.6" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  )
+}
+
+/** Executable: a cog with eight teeth around a hub. */
+function ExeGlyph({ size, className }: IconProps): ReactNode {
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <circle cx="14" cy="16" r="4.1" stroke="currentColor" strokeWidth="1.8" fill="none" />
+      <circle cx="14" cy="16" r="1.3" fill="currentColor" />
+      <path
+        d="M14 8.3V10.3M14 21.7V23.7M6.3 16H8.3M19.7 16H21.7M8.5 10.5L10 12M18 20L19.5 21.5M8.5 21.5L10 20M18 12L19.5 10.5"
+        stroke="currentColor"
+        strokeWidth="1.8"
+      />
+    </svg>
+  )
+}
+
+/** Database: a storage cylinder with one inner ring. */
+function DatabaseGlyph({ size, className }: IconProps): ReactNode {
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <ellipse cx="14" cy="9.4" rx="8" ry="3.1" stroke="currentColor" strokeWidth="1.7" fill="none" />
+      <path d="M6 9.4V19.8C6 21.6 9.6 23.1 14 23.1C18.4 23.1 22 21.6 22 19.8V9.4" stroke="currentColor" strokeWidth="1.7" fill="none" />
+      <path d="M6 14.7C6 16.5 9.6 18 14 18C18.4 18 22 16.5 22 14.7" stroke="currentColor" strokeWidth="1.7" fill="none" />
+    </svg>
+  )
+}
+
+/** Design: a pen nib with its slit and ink hole. */
+function DesignGlyph({ size, className }: IconProps): ReactNode {
+  return (
+    <svg width={size} height={size} className={className} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+      <path
+        d="M14 7.6L19.2 13.1C19.2 16.8 17.2 19.5 14 20.6C10.8 19.5 8.8 16.8 8.8 13.1L14 7.6Z"
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinejoin="round"
+        fill="none"
+      />
+      <circle cx="14" cy="14.1" r="1.6" stroke="currentColor" strokeWidth="1.6" fill="none" />
+      <path d="M14 15.7V20.6" stroke="currentColor" strokeWidth="1.6" />
+    </svg>
+  )
+}
+
 function glyph(type: TraditionalFileType, size: number, className: string | undefined): ReactNode {
   switch (type) {
+    case 'archive': return <ArchiveGlyph size={size} className={className} />
+    case 'audio':
+      return (
+        <FileGlyph size={size} className={className}>
+          <path d="M10.9 13.3V11.4L18.4 9.9V11.8L10.9 13.3Z" fill="currentColor" />
+          <path d="M10.9 13.3H12.4V18H10.9V13.3Z" fill="currentColor" />
+          <path d="M16.9 11.8H18.4V16.7H16.9V11.8Z" fill="currentColor" />
+          <ellipse cx="10.8" cy="18.4" rx="1.9" ry="1.4" transform="rotate(-16 10.8 18.4)" fill="currentColor" />
+          <ellipse cx="16.8" cy="17.1" rx="1.9" ry="1.4" transform="rotate(-16 16.8 17.1)" fill="currentColor" />
+        </FileGlyph>
+      )
     case 'code':
       return (
         <FileGlyph size={size} className={className}>
@@ -183,13 +344,29 @@ function glyph(type: TraditionalFileType, size: number, className: string | unde
           <path d="M16.1918 14.3301V12.5801L20.9518 15.6601V17.0601L16.1918 20.1401V18.3901L19.3418 16.3601L16.1918 14.3301Z" fill="currentColor" />
         </FileGlyph>
       )
+    case 'ebook':
+      return (
+        <FileGlyph size={size} className={className}>
+          <path
+            d="M14 10.9C12.6 9.95 10.3 9.7 8.1 9.9V18.8C10.3 18.6 12.6 18.85 14 19.8C15.4 18.85 17.7 18.6 19.9 18.8V9.9C17.7 9.7 15.4 9.95 14 10.9ZM14 10.9V19.8"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinejoin="round"
+            fill="none"
+          />
+        </FileGlyph>
+      )
+    case 'database': return <DatabaseGlyph size={size} className={className} />
+    case 'design': return <DesignGlyph size={size} className={className} />
     case 'excel':
       return (
         <FileGlyph size={size} className={className} markTransform={LARGE_FILE_MARK_TRANSFORM}>
           <path d="M10.2932 20.5L13.3532 16.25L13.3432 17.66L10.4032 13.5H12.6332L14.5132 16.21L13.5632 16.22L15.4132 13.5H17.5532L14.6132 17.58V16.18L17.7132 20.5H15.4332L13.5232 17.65H14.4332L12.5532 20.5H10.2932Z" fill="currentColor" />
         </FileGlyph>
       )
+    case 'exe': return <ExeGlyph size={size} className={className} />
     case 'folder': return <FolderGlyph size={size} className={className} />
+    case 'font': return <FontGlyph size={size} className={className} />
     case 'html':
       return (
         <FileGlyph size={size} className={className}>
@@ -212,7 +389,24 @@ function glyph(type: TraditionalFileType, size: number, className: string | unde
     case 'markdown':
       return (
         <FileGlyph size={size} className={className} markTransform={LARGE_FILE_MARK_TRANSFORM}>
-          <path d="M8.7588 19.5V14.6H9.8998L11.9298 17.932H11.3278L13.3018 14.6H14.4428L14.4568 19.5H13.1828L13.1688 16.539H13.3858L11.9088 19.017H11.2928L9.7738 16.539H10.0398V19.5H8.7588ZM15.4375 19.5V14.6H17.7545C18.2958 14.6 18.7718 14.7003 19.1825 14.901C19.5932 15.1017 19.9128 15.384 20.1415 15.748C20.3748 16.112 20.4915 16.546 20.4915 17.05C20.4915 17.5493 20.3748 17.9833 20.1415 18.352C19.9128 18.716 19.5932 18.9983 19.1825 19.199C18.7718 19.3997 18.2958 19.5 17.7545 19.5H15.4375ZM16.8235 18.394H17.6985C17.9785 18.394 18.2212 18.3427 18.4265 18.24C18.6365 18.1327 18.7998 17.9787 18.9165 17.778C19.0332 17.5727 19.0915 17.33 19.0915 17.05C19.0915 16.7653 19.0332 16.5227 18.9165 16.322C18.7998 16.1213 18.6365 15.9697 18.4265 15.867C18.2212 15.7597 17.9785 15.706 17.6985 15.706H16.8235V18.394Z" fill="currentColor" />
+          <path d="M8.7588 19.5V14.6H9.8998L11.9298 17.932H11.3278L13.3018 14.6H14.4428L14.4568 19.5H13.1828L13.1688 16.539H13.3858L11.9088 19.017H11.2928L9.7738 16.539H10.0398V19.5H8.7588Z" fill="currentColor" />
+          <path transform="translate(3.15 0)" d="M11.8989 19.5V14.6H14.2159C14.7573 14.6 15.2333 14.7003 15.6439 14.901C16.0546 15.1017 16.3743 15.384 16.6029 15.748C16.8363 16.112 16.9529 16.546 16.9529 17.05C16.9529 17.5493 16.8363 17.9833 16.6029 18.352C16.3743 18.716 16.0546 18.9983 15.6439 19.199C15.2333 19.3997 14.7573 19.5 14.2159 19.5H11.8989ZM13.2849 18.394H14.1599C14.4399 18.394 14.6826 18.3427 14.8879 18.24C15.0979 18.1327 15.2613 17.9787 15.3779 17.778C15.4946 17.5727 15.5529 17.33 15.5529 17.05C15.5529 16.7653 15.4946 16.5227 15.3779 16.322C15.2613 16.1213 15.0979 15.9697 14.8879 15.867C14.6826 15.7597 14.4399 15.706 14.1599 15.706H13.2849V18.394Z" fill="currentColor" />
+        </FileGlyph>
+      )
+    case 'ofd':
+      return (
+        <FileGlyph size={size} className={className} markTransform={LARGE_FILE_MARK_TRANSFORM}>
+          <path
+            fillRule="evenodd"
+            d="M8.3 14.6C9.5 14.6 10.35 15.65 10.35 17.05C10.35 18.45 9.5 19.5 8.3 19.5C7.1 19.5 6.25 18.45 6.25 17.05C6.25 15.65 7.1 14.6 8.3 14.6ZM8.3 15.7C7.65 15.7 7.35 16.3 7.35 17.05C7.35 17.8 7.65 18.4 8.3 18.4C8.95 18.4 9.25 17.8 9.25 17.05C9.25 16.3 8.95 15.7 8.3 15.7Z"
+            fill="currentColor"
+          />
+          <path d="M11.4 19.5V14.6H15.35V15.65H12.85V16.7H15V17.75H12.85V19.5H11.4Z" fill="currentColor" />
+          <path
+            transform="translate(4.35 0)"
+            d="M11.8989 19.5V14.6H14.2159C14.7573 14.6 15.2333 14.7003 15.6439 14.901C16.0546 15.1017 16.3743 15.384 16.6029 15.748C16.8363 16.112 16.9529 16.546 16.9529 17.05C16.9529 17.5493 16.8363 17.9833 16.6029 18.352C16.3743 18.716 16.0546 18.9983 15.6439 19.199C15.2333 19.3997 14.7573 19.5 14.2159 19.5H11.8989ZM13.2849 18.394H14.1599C14.4399 18.394 14.6826 18.3427 14.8879 18.24C15.0979 18.1327 15.2613 17.9787 15.3779 17.778C15.4946 17.5727 15.5529 17.33 15.5529 17.05C15.5529 16.7653 15.4946 16.5227 15.3779 16.322C15.2613 16.1213 15.0979 15.9697 14.8879 15.867C14.6826 15.7597 14.4399 15.706 14.1599 15.706H13.2849V18.394Z"
+            fill="currentColor"
+          />
         </FileGlyph>
       )
     case 'other': return <FileGlyph size={size} className={className} muted />
@@ -234,10 +428,23 @@ function glyph(type: TraditionalFileType, size: number, className: string | unde
           <path d="M17.5 14.634C18.1667 15.0189 18.1667 15.9811 17.5 16.366L11.5 19.8301C10.8333 20.215 10 19.7339 10 18.9641L10 12.0359C10 11.2661 10.8333 10.785 11.5 11.1699L17.5 14.634Z" fill="currentColor" />
         </FileGlyph>
       )
+    case 'text':
+      return (
+        <FileGlyph size={size} className={className} markTransform={LARGE_FILE_MARK_TRANSFORM}>
+          <path
+            d="M6.9 15.5H10.2M8.55 15.5V19.5M11.7 15.2L15.0 19.0M15.0 15.2L11.7 19.0M17.0 15.5H20.3M18.65 15.5V19.5"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            fill="none"
+          />
+        </FileGlyph>
+      )
     case 'word':
       return (
         <FileGlyph size={size} className={className} markTransform={LARGE_FILE_MARK_TRANSFORM}>
-          <path d="M10.5118 20.5L8.24179 13.5H10.2818L12.1918 19.56H11.1618L13.1718 13.5H14.9918L16.8918 19.56H15.9018L17.8718 13.5H19.7618L17.4918 20.5H15.3718L13.7518 15.35H14.3218L12.6318 20.5H10.5118Z" fill="currentColor" />
+          <path transform="translate(-5.1 0)" d="M11.8989 19.5V14.6H14.2159C14.7573 14.6 15.2333 14.7003 15.6439 14.901C16.0546 15.1017 16.3743 15.384 16.6029 15.748C16.8363 16.112 16.9529 16.546 16.9529 17.05C16.9529 17.5493 16.8363 17.9833 16.6029 18.352C16.3743 18.716 16.0546 18.9983 15.6439 19.199C15.2333 19.3997 14.7573 19.5 14.2159 19.5H11.8989ZM13.2849 18.394H14.1599C14.4399 18.394 14.6826 18.3427 14.8879 18.24C15.0979 18.1327 15.2613 17.9787 15.3779 17.778C15.4946 17.5727 15.5529 17.33 15.5529 17.05C15.5529 16.7653 15.4946 16.5227 15.3779 16.322C15.2613 16.1213 15.0979 15.9697 14.8879 15.867C14.6826 15.7597 14.4399 15.706 14.1599 15.706H13.2849V18.394Z" fill="currentColor" />
+          <path transform="translate(6.3 0)" d="M8.3 14.6C9.5 14.6 10.35 15.65 10.35 17.05C10.35 18.45 9.5 19.5 8.3 19.5C7.1 19.5 6.25 18.45 6.25 17.05C6.25 15.65 7.1 14.6 8.3 14.6ZM8.3 15.7C7.65 15.7 7.35 16.3 7.35 17.05C7.35 17.8 7.65 18.4 8.3 18.4C8.95 18.4 9.25 17.8 9.25 17.05C9.25 16.3 8.95 15.7 8.3 15.7Z" fill="currentColor" />
+          <path d="M20.718 15.173A2.05 2.45 0 1 0 20.718 18.927L20.011 17.931A0.95 1.15 0 1 1 20.011 16.169Z" fill="currentColor" />
         </FileGlyph>
       )
     /* v8 ignore next -- closed-union backstop; only reached if a type is forged */

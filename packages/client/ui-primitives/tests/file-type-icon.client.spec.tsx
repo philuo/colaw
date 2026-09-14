@@ -37,9 +37,40 @@ describe('classifyFileType', () => {
     ['letter.pages', 'word'],
     ['report.pdf', 'pdf'],
     ['deck.pptx', 'ppt'],
+    ['song.flac', 'audio'],
+    ['voice.MP3', 'audio'],
+    ['lecture.opus', 'audio'],
     ['clip.webm', 'video'],
+    ['screen.wmv', 'video'],
+    ['backup.7z', 'archive'],
+    ['photos.tar.gz', 'archive'],
+    ['disk.iso', 'archive'],
     ['letter.docx', 'word'],
+    ['document.wps', 'word'],
     ['budget.xlsx', 'excel'],
+    ['sheet.et', 'excel'],
+    ['deck.dps', 'ppt'],
+    ['slides.key', 'ppt'],
+    ['book.epub', 'ebook'],
+    ['book.azw3', 'ebook'],
+    ['papers.cbr', 'ebook'],
+    ['manual.ofd', 'ofd'],
+    ['MANUAL.OFD', 'ofd'],
+    ['notes/meeting.txt', 'text'],
+    ['app.LOG', 'text'],
+    ['film.srt', 'text'],
+    ['thesis.tex', 'text'],
+    ['refs.bib', 'text'],
+    ['logo.psd', 'design'],
+    ['poster.fig', 'design'],
+    ['Roboto.TTF', 'font'],
+    ['fonts.woff2', 'font'],
+    ['setup.exe', 'exe'],
+    ['installer.msi', 'exe'],
+    ['app.dmg', 'exe'],
+    ['data.sqlite', 'database'],
+    ['store.db', 'database'],
+    ['notebook.ipynb', 'python'],
     ['Makefile', 'makefile'],
     ['README', 'markdown'],
     ['.env', 'env'],
@@ -55,7 +86,8 @@ describe('classifyFileType', () => {
 
 describe('FileTypeIcon', () => {
   const types: FileTypeKind[] = [
-    'code', 'excel', 'folder', 'html', 'image', 'markdown', 'other', 'pdf', 'ppt', 'video', 'word',
+    'archive', 'audio', 'code', 'database', 'design', 'ebook', 'excel', 'exe', 'folder', 'font', 'html',
+    'image', 'markdown', 'ofd', 'other', 'pdf', 'ppt', 'text', 'video', 'word',
   ]
 
   it.each(types)('%s renders a distinct aria-hidden svg without literal colors', (type) => {
@@ -76,7 +108,11 @@ describe('FileTypeIcon', () => {
     ].includes(value))).toBe(true)
   })
 
-  it.each(types)('%s uses a solid sheet fill', (type) => {
+  // The standalone shapes (folder, archive, font, exe, database, design) are not
+  // sheets: their strokes and fills are asserted by the paint check above.
+  const sheetTypes = types.filter(type => !['archive', 'exe', 'folder', 'font', 'database', 'design'].includes(type))
+
+  it.each(sheetTypes)('%s uses a solid sheet fill', (type) => {
     const { container } = render(<FileTypeIcon kind={type} />)
     const sheet = container.querySelector('svg > path')!
     expect(sheet.getAttribute('fill')).toBe('currentColor')
@@ -103,7 +139,7 @@ describe('FileTypeIcon', () => {
     expect(new Set(paths).size).toBe(types.length)
   })
 
-  it.each(['code', 'folder', 'html', 'image', 'video'] as const)(
+  it.each(['audio', 'code', 'ebook', 'folder', 'html', 'image', 'video'] as const)(
     'enlarges the %s center mark without scaling the file shell',
     (type) => {
       const { container } = render(<FileTypeIcon kind={type} />)
@@ -112,7 +148,7 @@ describe('FileTypeIcon', () => {
     },
   )
 
-  it.each(['excel', 'markdown', 'pdf', 'ppt', 'word'] as const)(
+  it.each(['excel', 'markdown', 'ofd', 'pdf', 'ppt', 'text', 'word'] as const)(
     'gives the %s center mark the larger emphasis scale',
     (type) => {
       const { container } = render(<FileTypeIcon kind={type} />)

@@ -40,13 +40,22 @@ export function classifyLinkPath(path: string): LinkIconKind {
   switch (type) {
     case 'code':
     case 'html': return 'code'
+    case 'design':
     case 'image': return 'image'
+    case 'ebook':
     case 'excel':
+    case 'ofd':
     case 'pdf':
     case 'ppt':
     case 'word': return 'document'
+    case 'archive':
+    case 'audio':
+    case 'database':
+    case 'exe':
+    case 'font':
     case 'markdown':
     case 'other':
+    case 'text':
     case 'video': return 'other'
     /* v8 ignore next -- classifyFileType returns a closed union exhausted above */
     default: return assertNever(type)

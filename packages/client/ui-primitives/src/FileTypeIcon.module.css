@@ -5,8 +5,36 @@
   color: var(--dsh-file-type-icon-color, var(--dsh-file-type-default-color));
 }
 
+.audio {
+  --dsh-file-type-default-color: var(--dsw-static-blue-500);
+}
+
+.archive {
+  --dsh-file-type-default-color: var(--dsw-static-amber-600);
+}
+
 .code {
   --dsh-file-type-default-color: var(--dsw-static-deepseek-500);
+}
+
+.database {
+  --dsh-file-type-default-color: var(--dsw-static-colaw-600);
+}
+
+.design {
+  --dsh-file-type-default-color: var(--dsw-static-red-400);
+}
+
+.ebook {
+  --dsh-file-type-default-color: var(--dsw-static-colaw-500);
+}
+
+.exe {
+  --dsh-file-type-default-color: var(--dsw-static-neutral-400);
+}
+
+.font {
+  --dsh-file-type-default-color: var(--dsh-file-type-violet);
 }
 
 .excel {
@@ -26,7 +54,11 @@
 }
 
 .markdown {
-  --dsh-file-type-default-color: var(--dsw-static-deepseek-500);
+  --dsh-file-type-default-color: var(--dsh-file-type-violet);
+}
+
+.ofd {
+  --dsh-file-type-default-color: var(--dsw-static-red-400);
 }
 
 .other {
@@ -41,10 +73,14 @@
   --dsh-file-type-default-color: var(--dsw-static-amber-500);
 }
 
+.text {
+  --dsh-file-type-default-color: var(--dsw-static-neutral-500);
+}
+
 .video {
   --dsh-file-type-default-color: var(--dsh-file-type-violet);
 }
 
 .word {
-  --dsh-file-type-default-color: var(--dsw-static-deepseek-450);
+  --dsh-file-type-default-color: var(--dsw-static-blue-800);
 }
