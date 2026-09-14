@@ -100,10 +100,7 @@ async function toBytes(value: unknown): Promise<Uint8Array> {
   throw new Error(`image-adapter: unknown encoder output ${String((value as { constructor?: { name?: string } }).constructor?.name ?? typeof value)}`)
 }
 
-const ICC_MARKER = (() => {
-  const bytes = new TextEncoder().encode('ICC_PROFILE\x00')
-  return bytes
-})()
+
 
 function indexOfSubsequence(haystack: Uint8Array, needle: Uint8Array, from = 0): number {
   outer: for (let start = from; start <= haystack.length - needle.length; start += 1) {
@@ -175,16 +172,72 @@ function stripIccProfile(data: Uint8Array, format: string): Uint8Array {
   return data
 }
 
+const ICC_MARKER = new TextEncoder().encode('ICC_PROFILE\x00')
+
+function matchesAt(data: Uint8Array, offset: number, needle: Uint8Array): boolean {
+  if (offset + needle.length > data.length) return false
+  for (let index = 0; index < needle.length; index += 1) {
+    if (data[offset + index] !== needle[index]) return false
+  }
+  return true
+}
+
 /**
- * Whether the container embeds a real ICC profile chunk: JPEG's APP2
- * `ICC_PROFILE` marker or PNG's `iCCP`. ImageIO's `profileName` cannot be used
- * for this — it reports ColorSync's default sRGB even for files with no
- * embedded profile, which misclassifies every clean JPEG as metadata-carrying.
+ * Whether the container embeds a real ICC profile chunk, detected by a
+ * structured header walk instead of a whole-buffer byte scan:
+ * - JPEG: APP segments before SOS; ICC lives in APP2 payloads that start with
+ *   `ICC_PROFILE\0` (a profile may be split across several such segments).
+ * - PNG: chunks before IDAT; `iCCP` must precede the first IDAT per spec.
+ * - WebP: RIFF chunks before the image payload; `ICCP` chunk (extended format).
+ * ImageIO's `profileName` cannot be used for this — it reports ColorSync's
+ * default sRGB even for files with no embedded profile, which misclassifies
+ * every clean JPEG as metadata-carrying. GIF cannot carry an ICC profile.
  */
 function hasEmbeddedIccProfile(data: Uint8Array): boolean {
-  const marker = new TextEncoder().encode('ICC_PROFILE')
-  const iccp = new TextEncoder().encode('iCCP')
-  return indexOfSubsequence(data, marker) !== -1 || indexOfSubsequence(data, iccp) !== -1
+  // JPEG: SOI (FFD8) then a marker chain
+  if (data[0] === 0xff && data[1] === 0xd8) {
+    let i = 2
+    while (i + 4 <= data.length && data[i] === 0xff) {
+      const marker = data[i + 1] ?? 0
+      if (marker === 0xda || marker === 0xd9) return false // SOS/EOI: APP segments are over
+      if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) { i += 2; continue } // standalone
+      const length = ((data[i + 2] ?? 0) << 8) | (data[i + 3] ?? 0)
+      if (marker === 0xe2 && matchesAt(data, i + 4, ICC_MARKER)) return true
+      i += 2 + length
+    }
+    return false
+  }
+  // PNG: 8-byte signature then a chunk chain
+  if (data[0] === 0x89 && data[1] === 0x50 && data[2] === 0x4e && data[3] === 0x47) {
+    let i = 8
+    while (i + 8 <= data.length) {
+      const view = new DataView(data.buffer, data.byteOffset + i)
+      const length = view.getUint32(0)
+      const type = String.fromCharCode(data[i + 4] ?? 0, data[i + 5] ?? 0, data[i + 6] ?? 0, data[i + 7] ?? 0)
+      if (type === 'iCCP') return true
+      if (type === 'IDAT' || type === 'IEND') return false // iCCP must precede IDAT
+      const chunkEnd = i + 12 + length
+      if (chunkEnd > data.length) return false
+      i = chunkEnd
+    }
+    return false
+  }
+  // WebP: RIFF container, ICCP chunk before the image payload chunk
+  if (data[0] === 0x52 && data[1] === 0x49 && data[2] === 0x46 && data[3] === 0x46
+    && data[8] === 0x57 && data[9] === 0x45 && data[10] === 0x42 && data[11] === 0x50) {
+    let i = 12
+    while (i + 8 <= data.length) {
+      const type = String.fromCharCode(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0, data[i + 3] ?? 0)
+      const view = new DataView(data.buffer, data.byteOffset + i)
+      const length = view.getUint32(4, true)
+      if (type === 'ICCP') return true
+      const chunkEnd = i + 8 + length + (length % 2)
+      if (chunkEnd > data.length) return false
+      i = chunkEnd
+    }
+    return false
+  }
+  return false
 }
 
 /** ImageIO ColorModel 字符串 → CGColorSpaceModel 数值（供 spaceOf 复用）。 */

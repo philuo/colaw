@@ -112,15 +112,19 @@ export interface DecodedImageLimits {
 export async function detectImage(data: Uint8Array, limits?: DecodedImageLimits): Promise<DetectedImage> {
   try {
     const pipeline = openPipeline(data, { failOn: 'error', limitInputPixels: false })
-    // metadata() materializes the full pixel buffer (CGDataProviderCopyData):
-    // the integrity proof and the depth/space truth arrive in one decode.
-    const detected = toDetected(await pipeline.metadata())
-    if (limits?.maxPixels !== undefined && detected.width * detected.height > limits.maxPixels) {
+    // Header facts first: the pixel budget is enforced from the declared
+    // dimensions BEFORE any pixel materialization, so a decompression bomb
+    // (crafted header, truncated body) is rejected without ever decoding.
+    const header = toDetected(await pipeline.probe())
+    if (limits?.maxPixels !== undefined && header.width * header.height > limits.maxPixels) {
       throw new AttachmentError('Image exceeds the configured decoded-pixel limit.', 'IMAGE_TOO_MANY_PIXELS')
     }
-    if (limits?.maxDimension !== undefined && Math.max(detected.width, detected.height) > limits.maxDimension) {
+    if (limits?.maxDimension !== undefined && Math.max(header.width, header.height) > limits.maxDimension) {
       throw new AttachmentError('Image exceeds the configured per-side pixel limit.', 'IMAGE_DIMENSION_TOO_LARGE')
     }
+    // Materialize once: the integrity proof (corrupt trailing data fails here)
+    // and the pixel-true depth/space arrive together in this single decode.
+    const detected = toDetected(await pipeline.metadata())
     return detected
   } catch (error) {
     if (error instanceof AttachmentError) throw error
