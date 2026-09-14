@@ -165,8 +165,10 @@ export interface ImageSource {
 /** Open an image container for metadata reading. Throws on undecodable input. */
 export function imageSourceOf(data: Uint8Array): ImageSource {
   const { cf, io } = ffi()
-  const bytes = new Uint8Array(data)
-  const cfData = cf.CFDataCreate(null, ptr(bytes), bytes.byteLength)
+  // Single copy: CFDataCreate duplicates the bytes into CF-owned memory, so
+  // pass the caller's buffer directly — an extra JS-side copy would double
+  // the transient peak for large images.
+  const cfData = cf.CFDataCreate(null, ptr(data), data.byteLength)
   if (!isHandle(cfData)) throw new Error('ImageIO: CFData creation failed')
   const source = io.CGImageSourceCreateWithData(cfData, null)
   cf.CFRelease(cfData)

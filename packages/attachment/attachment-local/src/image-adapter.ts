@@ -20,6 +20,7 @@ import {
   framePropertiesOf,
   mediaTypeOf,
   decodedFactsOf,
+  type ImageSource,
   GRAY_MODEL,
   RGB_MODEL,
   CMYK_MODEL,
@@ -247,44 +248,40 @@ const COLOR_MODEL_TO_SPACE_MODEL: Readonly<Record<string, number>> = {
   CMYK: CMYK_MODEL,
 }
 
-/** 容器级元数据（不解码像素）：format/尺寸/orientation/帧数/七项存在性/depth/space 近似真值。 */
-function containerMetadata(data: Uint8Array): AdapterMetadata {
-  const source = imageSourceOf(data)
-  try {
-    const props = framePropertiesOf(source)
-    const mediaType = mediaTypeOf(source)
-    const format = mediaType === undefined ? undefined : mediaType.slice('image/'.length)
-    if (format === undefined || MEDIA_TYPES[format] === undefined) {
-      throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE')
-    }
-    const hasProfile = hasEmbeddedIccProfile(data)
-    // depth/space 的容器近似值：属性字典的 Depth 键与 sharp 的口径不完全一致
-    // （个别 16-bit 容器可能报 8），admission 路径由解码后的 decodedFactsOf 矫正；
-    // 这里的近似值服务缓存读路径（缓存字节是本包自己写出的 uchar 输出）。
-    const containerBits = props.depth ?? 8
-    const spaceModel = COLOR_MODEL_TO_SPACE_MODEL[props.colorModel ?? 'RGB'] ?? RGB_MODEL
-    return {
-      format,
-      width: props.pixelWidth,
-      height: props.pixelHeight,
-      orientation: props.orientation,
-      pages: source.frameCount,
-      // sharp 的存在性字段映射：exif↔{Exif}、iptc↔{IPTC}、tifftagPhotoshop↔{TIFF}、
-      // icc/hasProfile↔内嵌 ICC chunk（字节级检查）。xmp/comments 在 ImageIO 属性字典
-      // 没有对应键 —— 携带这两种而无其他元数据的图会漏判 carriesMetadata（罕见；记录在案）。
-      exif: props.metadataDictionaries.includes('{Exif}') ? {} : undefined,
-      iptc: props.metadataDictionaries.includes('{IPTC}') ? {} : undefined,
-      tifftagPhotoshop: props.metadataDictionaries.includes('{TIFF}') ? {} : undefined,
-      icc: hasProfile ? {} : undefined,
-      hasProfile,
-      space: spaceOf(spaceModel, containerBits),
-      depth: depthOf(containerBits),
-      hasAlpha: props.hasAlpha === true,
-    }
-  } finally {
-    source.release()
+/** 从已打开的 source 读容器级元数据（不解码像素）：format/尺寸/orientation/帧数/七项存在性/depth/space 近似真值。 */
+function containerFromSource(source: ImageSource, data: Uint8Array): AdapterMetadata {
+  const props = framePropertiesOf(source)
+  const mediaType = mediaTypeOf(source)
+  const format = mediaType === undefined ? undefined : mediaType.slice('image/'.length)
+  if (format === undefined || MEDIA_TYPES[format] === undefined) {
+    throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE')
+  }
+  const hasProfile = hasEmbeddedIccProfile(data)
+  // depth/space 的容器近似值：属性字典的 Depth 键与 sharp 的口径不完全一致
+  // （个别 16-bit 容器可能报 8），admission 路径由解码后的 decodedFactsOf 矫正；
+  // 这里的近似值服务缓存读路径（缓存字节是本包自己写出的 uchar 输出）。
+  const containerBits = props.depth ?? 8
+  const spaceModel = COLOR_MODEL_TO_SPACE_MODEL[props.colorModel ?? 'RGB'] ?? RGB_MODEL
+  return {
+    format,
+    width: props.pixelWidth,
+    height: props.pixelHeight,
+    orientation: props.orientation,
+    pages: source.frameCount,
+    // sharp 的存在性字段映射：exif↔{Exif}、iptc↔{IPTC}、tifftagPhotoshop↔{TIFF}、
+    // icc/hasProfile↔内嵌 ICC chunk（字节级检查）。xmp/comments 在 ImageIO 属性字典
+    // 没有对应键 —— 携带这两种而无其他元数据的图会漏判 carriesMetadata（罕见；记录在案）。
+    exif: props.metadataDictionaries.includes('{Exif}') ? {} : undefined,
+    iptc: props.metadataDictionaries.includes('{IPTC}') ? {} : undefined,
+    tifftagPhotoshop: props.metadataDictionaries.includes('{TIFF}') ? {} : undefined,
+    icc: hasProfile ? {} : undefined,
+    hasProfile,
+    space: spaceOf(spaceModel, containerBits),
+    depth: depthOf(containerBits),
+    hasAlpha: props.hasAlpha === true,
   }
 }
+
 
 class BunPipeline implements AdapterPipeline {
   constructor(
@@ -296,7 +293,12 @@ class BunPipeline implements AdapterPipeline {
   /** 仅容器级元数据（不解码像素）—— 缓存读等已验证字节的低成本路径。 */
   probe(): Promise<AdapterMetadata> {
     try {
-      return Promise.resolve(containerMetadata(this.sourceBytes))
+      const source = imageSourceOf(this.sourceBytes)
+      try {
+        return Promise.resolve(containerFromSource(source, this.sourceBytes))
+      } finally {
+        source.release()
+      }
     } catch (error) {
       if (error instanceof AttachmentError) throw error
       throw new AttachmentError('Unsupported or malformed image data.', 'INVALID_IMAGE', { cause: error })
@@ -306,19 +308,21 @@ class BunPipeline implements AdapterPipeline {
   /** 容器级元数据 + 像素物化补齐 depth/space 真值（完整性证明在同一遍解码内完成）。hasAlpha 以容器声明为准。 */
   metadata(): Promise<AdapterMetadata> {
     try {
-      const container = containerMetadata(this.sourceBytes)
+      // ONE open, ONE copy: the same source serves the container facts and the
+      // pixel materialization — no second imageSourceOf pass over the bytes.
       const source = imageSourceOf(this.sourceBytes)
       try {
+        const container = containerFromSource(source, this.sourceBytes)
         const decoded = decodedFactsOf(source)
         container.depth = depthOf(decoded.bitsPerComponent)
         container.space = spaceOf(decoded.colorSpaceModel, decoded.bitsPerComponent)
         // hasAlpha 保持容器声明（HasAlpha 键）—— 解码表面的 alphaInfo 对无 alpha
         // 的 JPEG 也是 premultiplied，用它会把每个不透明源都误判成带 alpha，
         // 进而让质量阶梯错选 WebP。
+        return Promise.resolve(container)
       } finally {
         source.release()
       }
-      return Promise.resolve(container)
     } catch (error) {
       // 解码失败 = 坏图：与 sharp 的 raw().toBuffer() 行为一致，向上抛。
       if (error instanceof AttachmentError) throw error
