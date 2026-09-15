@@ -41,7 +41,7 @@ export function BuiltInCard(props: BuiltInCardProps) {
         text={state.secret.text}
         configured={state.configured}
         stateLabel={state.configured ? t('builtinApiKeySet') : t('builtinApiKeyUnset')}
-        placeholder={t('builtinApiKeyPlaceholder')}
+        placeholder={state.configured ? t('builtinApiKeyStored') : t('builtinApiKeyPlaceholder') }
         onEdit={(text) => { props.edit('apiKey', text) }}
       />
     </PluginCard>

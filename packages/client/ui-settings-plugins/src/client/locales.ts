@@ -18,7 +18,7 @@ export type PluginsSettingsLocaleKey =
   | 'subagentModelSelectionUnavailableGroup' | 'subagentModelSelectionEmpty'
   | 'subagentModelSelectionRequired' | 'subagentModelSelectionConflict' | 'subagentModelSelectionOff'
   | 'builtinTab'
-  | 'builtinApiKey' | 'builtinApiKeySet' | 'builtinApiKeyUnset' | 'builtinApiKeyPlaceholder'
+  | 'builtinApiKey' | 'builtinApiKeySet' | 'builtinApiKeyUnset' | 'builtinApiKeyPlaceholder' | 'builtinApiKeyStored'
   | 'builtin.pkulaw' | 'builtin.pkulawDescription' | 'builtin.pkulawHint'
   | 'builtin.qcc' | 'builtin.qccDescription' | 'builtin.qccHint'
   | 'builtin.firecrawl' | 'builtin.firecrawlDescription' | 'builtin.firecrawlHint'
@@ -66,6 +66,7 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   builtinApiKeySet: 'A key is configured.',
   builtinApiKeyUnset: 'No key is configured; this service is unavailable until one is.',
   builtinApiKeyPlaceholder: 'Enter the API key',
+  builtinApiKeyStored: 'Configured — enter a new value to replace',
   'builtin.pkulaw': 'PKULaw',
   'builtin.pkulawDescription': 'Statute and case search MCP tools (8). The key applies on the next app start.',
   'builtin.pkulawHint': 'Leave blank to keep the current key.',
@@ -131,12 +132,13 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchApiKeySet: '已配置密钥',
   webSearchApiKeyUnset: '未配置密钥；配置之前搜索不可用。',
   webSearchApiKeyStored: '已配置——输入新值可替换',
-  webSearchApiKeyPlaceholder: '输入 API Key',
+  webSearchApiKeyPlaceholder: '输入 API 密钥',
   builtinTab: '内置插件',
   builtinApiKey: 'API 密钥',
   builtinApiKeySet: '已配置密钥',
   builtinApiKeyUnset: '未配置密钥；配置前该服务不可用',
   builtinApiKeyPlaceholder: '输入 API 密钥',
+  builtinApiKeyStored: '已配置——输入新值可替换',
   'builtin.pkulaw': '北大法宝',
   'builtin.pkulawDescription': '法规与案例检索 MCP 工具（8 个）；密钥保存后重启应用生效。',
   'builtin.pkulawHint': '留空表示保持当前密钥。',
