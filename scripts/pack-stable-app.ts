@@ -1449,6 +1449,22 @@ function stageStableApp(): void {
   console.log(`pack-stable-app: staged ${stagedApp}`)
 }
 
+/**
+ * The composition and the exclusion list must agree. `neverShipped` keeps a
+ * package out of the closure; a mounted row that names one still tries to
+ * import it at boot, and the loader's failure takes the whole deferred tree —
+ * including the window's URL — down with it. Disable the row (or drop it from
+ * the exclusion list) when this fires.
+ */
+function auditMountedPolicy(entryNames: readonly string[]): void {
+  const offending = entryNames.filter(neverShipped)
+  if (offending.length === 0) return
+  console.error('pack-stable-app: the composition mounts packages this packer excludes from the payload:')
+  for (const spec of offending) console.error(`  - ${spec}`)
+  console.error('Either mark that row `disabled: true` in the profile overlay, or remove it from neverShipped().')
+  process.exit(1)
+}
+
 async function main(): Promise<void> {
   ensureBuilds()
   run(
@@ -1462,6 +1478,7 @@ async function main(): Promise<void> {
 
   const { entries: entryNames, bundles: bundleNames } = composeProfileEntries()
   console.log(`pack-stable-app: profile composes ${String(entryNames.length)} plugin entries over ${String(bundleNames.length)} bundles`)
+  auditMountedPolicy(entryNames)
   const closure = analyzeClosure(entryNames, bundleNames)
 
   rmSync(closureRoot, { recursive: true, force: true })
@@ -1508,6 +1525,14 @@ async function main(): Promise<void> {
 
   emitHostBundle(closure)
   auditApp(closure)
+  // The runnable form lives inside the checkout when a developer runs it from
+  // build/, and Bun resolves tsconfig `paths` by walking up from each importing
+  // file: without a nearer tsconfig the repo's own path aliases capture the
+  // app's imports, which then resolve against the workspace node_modules
+  // instead of the payload (a renamed or removed package there is an ENOENT at
+  // boot). One empty file at the Resources root stops the walk, so every import
+  // stays inside the payload. Outside a checkout it is inert.
+  writeFileSync(join(stableApp, 'Contents', 'Resources', 'tsconfig.json'), '{ "compilerOptions": {} }\n')
   reportSize()
   stageStableApp()
 }
