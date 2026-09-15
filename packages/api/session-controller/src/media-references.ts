@@ -19,6 +19,31 @@ const BASE_HEADERS = {
   'Content-Security-Policy': "sandbox; default-src 'none'",
 }
 
+/** Per-request window for open-ended media ranges; players follow up with more ranges. */
+const RANGE_WINDOW_BYTES = 4 * 1024 * 1024
+
+/** Parse one `Range: bytes=…` header into an inclusive [start, end] pair. */
+function parseByteRange(header: string | null, size: number): { start: number; end: number } | 'invalid' | undefined {
+  if (header === null) return undefined
+  // Suffix form: the last N bytes (players read the container tail this way).
+  const suffix = /^bytes=-(\d+)$/.exec(header.trim())
+  if (suffix !== null) {
+    const tail = Number(suffix[1])
+    if (tail === 0 || size === 0) return undefined
+    const start = Math.max(0, size - tail)
+    return { start, end: size - 1 }
+  }
+  const match = /^bytes=(\d+)-(\d*)$/.exec(header.trim())
+  if (match === null) return undefined
+  const start = Number(match[1])
+  const end = match[2] === '' ? undefined : Number(match[2])
+  if (start >= size) return undefined
+  return {
+    start,
+    end: end === undefined ? size - 1 : Math.min(end, size - 1),
+  }
+}
+
 async function serveFile(request: Request, fs: FileSystem, maxBytes: number): Promise<Response> {
   const fail = (status: number, text: string): Response =>
     new Response(request.method === 'HEAD' ? null : text, { status, headers: BASE_HEADERS })
@@ -31,6 +56,8 @@ async function serveFile(request: Request, fs: FileSystem, maxBytes: number): Pr
     const headers: Record<string, string> = {
       ...BASE_HEADERS,
       'Content-Type': mediaType,
+      // Media players (<video>/<audio>) advertise and probe this before playing.
+      'Accept-Ranges': 'bytes',
     }
     if (request.method === 'HEAD') {
       const info = await fs.stat(target, request.signal)
@@ -41,6 +68,23 @@ async function serveFile(request: Request, fs: FileSystem, maxBytes: number): Pr
         headers['Content-Length'] = String(info.size)
       }
       return new Response(null, { headers })
+    }
+    const info = await fs.stat(target, request.signal).catch(() => undefined)
+    const size = info?.type === 'file' ? info.size : undefined
+    const range = parseByteRange(request.headers.get('range'), size ?? Number.MAX_SAFE_INTEGER)
+    if (range !== undefined && range !== 'invalid' && size !== undefined) {
+      // Bounded window: an open-ended range returns the first window and lets
+      // the player follow up, so one seek never buffers the whole media file.
+      const end = Math.min(range.end, range.start + RANGE_WINDOW_BYTES - 1)
+      const bytes = await fs.readByteRange(target, { offset: range.start, length: end - range.start + 1 }, request.signal)
+      return new Response(bytes.slice(), {
+        status: 206,
+        headers: {
+          ...headers,
+          'Content-Length': String(bytes.byteLength),
+          'Content-Range': `bytes ${String(range.start)}-${String(range.start + bytes.byteLength - 1)}/${String(size)}`,
+        },
+      })
     }
     const bytes = await fs.readBytes(target, request.signal, maxBytes)
     headers['Content-Length'] = String(bytes.byteLength)

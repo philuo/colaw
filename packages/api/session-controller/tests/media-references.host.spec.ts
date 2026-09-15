@@ -56,17 +56,29 @@ describe('SessionMediaReferences /api/file', () => {
     }
   }
 
-  it('serves the inclusive image cap and refuses larger images for GET, HEAD and Range', async () => {
+  it('serves the inclusive image cap and refuses larger images for GET and HEAD', async () => {
     const route = await mount(PNG_BYTES.length)
     const path = join(root, 'bounded.png')
     await writeFile(path, PNG_BYTES)
     expect(await responseBytes(await route.call(path))).toEqual(PNG_BYTES)
     await appendFile(path, new Uint8Array(1))
     expect((await route.call(path)).status).toBe(413)
-    expect((await route.call(path, { headers: { range: 'bytes=0-0' } })).status).toBe(413)
     const head = await route.call(path, { method: 'HEAD' })
     expect(head.status).toBe(413)
     expect(head.body).toBeNull()
+  })
+
+  it('serves bounded media windows for ranges even above the image cap', async () => {
+    // Media preview (video/audio) legitimately exceeds the image byte cap:
+    // each range request is bounded by its own window instead.
+    const route = await mount(PNG_BYTES.length)
+    const path = join(root, 'clip.mp4')
+    const content = new Uint8Array(PNG_BYTES.length + 4)
+    content.set(PNG_BYTES, 0)
+    await writeFile(path, content)
+    const windowed = await route.call(path, { headers: { range: `bytes=0-${String(PNG_BYTES.length - 1)}` } })
+    expect(windowed.status).toBe(206)
+    expect((await windowed.arrayBuffer()).byteLength).toBe(PNG_BYTES.length)
   })
 
   it('rejects a sparse 1 GiB image before content I/O', async () => {
@@ -121,15 +133,20 @@ describe('SessionMediaReferences /api/file', () => {
     expect((await route.call(path, { method: 'HEAD' })).status).toBe(413)
   })
 
-  it('ignores Range headers and returns complete bodies without advertising ranges', async () => {
+  it('serves the Range forms players use and ignores the ones it cannot', async () => {
     const route = await mount()
     const path = join(root, 'clip.mp4')
     await writeFile(path, PNG_BYTES)
-    for (const range of ['bytes=0-3', 'bytes=-4', 'bytes=999-', 'bytes=abc', 'items=0-0', 'bytes=0-1,3-4']) {
+    const open_ = await route.call(path, { headers: { range: 'bytes=0-3' } })
+    expect(open_.status).toBe(206)
+    expect(await responseBytes(open_)).toEqual(PNG_BYTES.slice(0, 4))
+    const suffix = await route.call(path, { headers: { range: 'bytes=-4' } })
+    expect(suffix.status).toBe(206)
+    expect(await responseBytes(suffix)).toEqual(PNG_BYTES.slice(-4))
+    // Wrong unit, malformed, and multipart ranges fall back to full bodies.
+    for (const range of ['items=0-0', 'bytes=abc', 'bytes=0-1,3-4']) {
       const response = await route.call(path, { headers: { range } })
       expect(response.status).toBe(200)
-      expect(response.headers.get('accept-ranges')).toBeNull()
-      expect(response.headers.get('content-range')).toBeNull()
       expect(await responseBytes(response)).toEqual(PNG_BYTES)
     }
   })
@@ -220,5 +237,54 @@ describe('SessionMediaReferences /api/file', () => {
     const route = await mount()
     await route.dispose()
     expect(route.unregister).toHaveBeenCalledTimes(1)
+  })
+
+  describe('SessionMediaReferences /api/file byte ranges', () => {
+    it('serves 206 windows with Content-Range and honors Accept-Ranges on 200', async () => {
+      const route = await mount()
+      const file = join(root, 'clip.mp4')
+      const content = new Uint8Array(1024)
+      for (let at = 0; at < content.length; at++) content[at] = at % 251
+      await writeFile(file, content)
+
+      const full = await route.call(file)
+      expect(full.status).toBe(200)
+      expect(full.headers.get('accept-ranges')).toBe('bytes')
+      expect(full.headers.get('content-length')).toBe('1024')
+
+      const partial = await route.call(file, { headers: { range: 'bytes=100-' } })
+      expect(partial.status).toBe(206)
+      expect(partial.headers.get('content-range')).toBe('bytes 100-1023/1024')
+      expect(partial.headers.get('accept-ranges')).toBe('bytes')
+      const bytes = await partial.arrayBuffer()
+      expect(bytes.byteLength).toBe(924)
+      expect(new Uint8Array(bytes)[0]).toBe(content[100])
+    })
+
+    it('serves exact start-end windows clamped to the file', async () => {
+      const route = await mount()
+      const file = join(root, 'data.bin')
+      await writeFile(file, new Uint8Array([1, 2, 3, 4, 5, 6, 7, 8]))
+      const windowed = await route.call(file, { headers: { range: 'bytes=2-4' } })
+      expect(windowed.status).toBe(206)
+      expect(windowed.headers.get('content-range')).toBe('bytes 2-4/8')
+      expect(new Uint8Array(await windowed.arrayBuffer())).toEqual(new Uint8Array([3, 4, 5]))
+      // End beyond the file clamps to the last byte.
+      const clamped = await route.call(file, { headers: { range: 'bytes=6-99' } })
+      expect(clamped.status).toBe(206)
+      expect(new Uint8Array(await clamped.arrayBuffer())).toEqual(new Uint8Array([7, 8]))
+    })
+
+    it('answers 416-class ranges outside the file and ignores malformed ranges', async () => {
+      const route = await mount()
+      const file = join(root, 'small.bin')
+      await writeFile(file, new Uint8Array([9, 9, 9]))
+      // A range starting past the end is unsatisfiable: serve the full file instead.
+      const beyond = await route.call(file, { headers: { range: 'bytes=10-' } })
+      expect(beyond.status).toBe(200)
+      // A malformed header is ignored per RFC 9110.
+      const malformed = await route.call(file, { headers: { range: 'bytes=zz' } })
+      expect(malformed.status).toBe(200)
+    })
   })
 })

@@ -1,0 +1,10 @@
+.status {
+  padding: 16px;
+  color: var(--dsh-text-secondary, inherit);
+  font-size: 13px;
+}
+
+.media {
+  display: block;
+  width: 100%;
+}
