@@ -23,6 +23,16 @@
 - id: command-feedback
   disabled: true
 
+# This payload ships no OTLP exporter: pack-stable-app.ts excludes
+# @deepseek-ai/dsh-session-telemetry-otel and its @opentelemetry tree from the
+# closure on purpose (a personal build phones home to nobody). A row naming an
+# excluded package fails to import at boot and takes the whole deferred tree —
+# and with it the window's URL — down, so the mount goes off here whenever the
+# exclusion is on there. pack-stable-app.ts also fails the build if the two
+# ever disagree again.
+- id: session-telemetry-otel
+  disabled: true
+
 # Don't print the URL or hand off to the default browser; Electrobun owns the
 # window. The loader entry id is `web-runtime` (plugin name `web-app`).
 - id: web-runtime
