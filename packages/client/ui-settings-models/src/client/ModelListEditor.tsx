@@ -1,6 +1,6 @@
 /**
- * The model list of one pi-ai provider profile, plus the action that asks the
- * provider what it serves.
+ * The model list of one protocol-adapter provider profile, plus the action
+ * that asks the provider what it serves.
  *
  * The list is the profile's `models` array as the card holds it: an empty list
  * means "serve this route's built-in catalog", and any entry replaces that
@@ -88,6 +88,8 @@ export interface ModelListEditorProps {
   disabled: boolean
   /** Effective per-model modalities the Host resolved, by model id. */
   resolvedModalities: ReadonlyMap<string, readonly string[]>
+  /** Modalities this adapter's wire can represent; omission means the full vocabulary. */
+  allowed?: readonly string[]
 }
 
 /** Disclosure chevron; rotates to point down while its row is open. */
@@ -121,11 +123,10 @@ type CapacityField = 'contextWindow' | 'maxTokens'
  * What an empty capacity field is worth, shown as its placeholder so a row left
  * blank does not read as a model with no capacity at all.
  *
- * The magnitudes are the adapter's own route-level fallbacks (`llm-pi-ai`'s
- * `defaultContextWindow` and `defaultMaxTokens`), spelled the way a person
+ * The magnitudes are the adapters' own route-level fallbacks, spelled the way a person
  * would say them. They are a hint, not a mirror: this page counts `K` as 1000,
  * so typing `256K` stores 256000 while leaving the field blank keeps the
- * adapter's 262144. A deployment that overrides those defaults is not
+ * adapter's own default. A deployment that overrides those defaults is not
  * reflected here — nothing on this page can read them.
  */
 const CAPACITY_HINT: Readonly<Record<CapacityField, string>> = {
@@ -437,11 +438,12 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   />
                 </label>
                 <ModelInputTypes
-                  declared={arrayOf(model['input'])}
+                  declared={arrayOf(model['inputModalities'])}
                   resolved={props.resolvedModalities.get(textOf(model, 'id'))}
                   t={t}
                   disabled={disabled}
-                  onChange={(next) => { patch(index, { input: next }) }}
+                  {...props.allowed === undefined ? {} : { allowed: props.allowed }}
+                  onChange={(next) => { patch(index, { inputModalities: next }) }}
                 />
               </div>
             )
@@ -458,7 +460,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             // A new row claims the modern default explicitly instead of
             // inheriting whatever the route falls back to; the checkboxes let
             // the user correct either way.
-            input: ['text', 'image'],
+            inputModalities: ['text', 'image'],
           }])
         }}
       >

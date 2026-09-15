@@ -472,6 +472,6 @@ export class AnthropicAdapter extends LlmAdapter {
       throw new LlmError('Anthropic API returned no response body', 'EMPTY_RESPONSE')
     }
 
-    yield* translate(parseSse(response.body, onActivity))
+    yield* translate(parseSse(response.textStream(), onActivity))
   }
 }

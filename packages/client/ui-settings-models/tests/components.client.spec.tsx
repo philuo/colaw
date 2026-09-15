@@ -1066,7 +1066,7 @@ describe('ModelsSection', () => {
       resolvedModalities={new Map()}
     />)
     fireEvent.click(screen.getByText(en.addModel))
-    expect(piAi).toHaveBeenLastCalledWith([{ id: '', input: ['text', 'image'] }])
+    expect(piAi).toHaveBeenLastCalledWith([{ id: '', inputModalities: ['text', 'image'] }])
   })
 
   it('writes a declared input-type array through the card to the settings ops', async () => {
@@ -1178,13 +1178,13 @@ describe('ModelsSection', () => {
     expect(mutate).not.toHaveBeenCalled()
   })
 
-  it('edits a pi-ai profile with the curated fields only', async () => {
+  it('edits an openai-family profile with the curated fields only', async () => {
     const { mutate } = await mountSection()
     fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
     // The configured credential shows as the stored placeholder.
     const editorKey = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
     await waitFor(() => { expect(editorKey.placeholder).toBe(en.keyStored) })
-    // pi-ai carries Base URL too: the stored override shows as the value and
+    // The family carries Base URL too: the stored override shows as the value and
     // the effective profile endpoint as its placeholder source.
     fireEvent.click(screen.getByText(en.customized))
     const url = screen.getByLabelText<HTMLInputElement>(en.baseUrl)
@@ -1207,12 +1207,12 @@ describe('ModelsSection', () => {
     const pick = await screen.findByLabelText<HTMLSelectElement>(en.provider)
     expect([...pick.options].map(option => option.value)).toEqual(['anthropic', 'broken', 'plain'])
     expect(pick.value).toBe('anthropic')
-    // A dormant profile has no endpoint anywhere: the pi-ai placeholder
-    // falls back to the provider-default wording.
+    // A dormant profile has no endpoint stored; the family's own public API
+    // base is what clearing the field would restore to.
     fireEvent.click(screen.getByText(en.customized))
-    expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder).toBe(en.baseUrlDefault)
+    expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder).toBe('https://api.openai.com/v1')
     const addKey = screen.getByLabelText<HTMLInputElement>(en.keyInput)
-    expect(addKey.placeholder).toBe(en.keyPlaceholderNative)
+    expect(addKey.placeholder).toBe(en.keyPlaceholder)
     fireEvent.change(addKey, { target: { value: 'sk-ant' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -1224,7 +1224,7 @@ describe('ModelsSection', () => {
     await waitFor(() => { expect(set).toHaveBeenCalledWith('ANTHROPIC_API_KEY', 'sk-ant') })
   })
 
-  it('keeps pi-ai provider-native authentication when no key is entered', async () => {
+  it('materializes an empty profile when no key is entered', async () => {
     const { mutate, set } = await mountSection()
     fireEvent.click(screen.getByText(en.add))
     await screen.findByLabelText(en.provider)
@@ -1379,7 +1379,7 @@ describe('ModelsSection', () => {
     face.credentials.describe.mockImplementation(() => Promise.resolve(remoteFail('down', 'gateway/internal')))
     fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
     const editorKey = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
-    expect(editorKey.placeholder).toBe(en.keyPlaceholderNative)
+    expect(editorKey.placeholder).toBe(en.keyPlaceholder)
     fireEvent.change(editorKey, { target: { value: 'sk-live' } })
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(set).toHaveBeenCalledTimes(1) })

@@ -708,7 +708,7 @@ export class DeepSeekAdapter extends LlmAdapter {
         throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE')
       }
 
-      yield* translate(parseSse(response.body, onActivity))
+      yield* translate(parseSse(response.textStream(), onActivity))
       return
     }
   }

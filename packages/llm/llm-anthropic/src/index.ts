@@ -14,8 +14,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, convertLegacyPiAiProfile, LlmError, migrateLegacyPiAiProfiles, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import type { LlmConfigurableProvider, LegacyPiAiProfile, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -58,6 +58,17 @@ export const PUBLIC_BASE_URL = 'https://api.anthropic.com'
 
 /** Environment variable naming a route's endpoint, honored only from trusted layers. */
 const BASE_URL_ENV = 'ANTHROPIC_BASE_URL'
+
+/**
+ * The well-known catalog route this adapter serves, offered by configuration
+ * surfaces as a one-key setup before any profile exists. The route id is the
+ * family's identity on the Models page; pi-ai's own `anthropic` catalog id
+ * left with its unmount, and the former `anthropic-compatible` naming was
+ * only ever a collision avoidance.
+ */
+const CATALOG_PROVIDERS: readonly { provider: string; displayName: string }[] = [
+  { provider: 'anthropic', displayName: 'Anthropic' },
+]
 
 // The Messages wire carries text and (for vision models) image input.
 const MODEL_MODALITIES = ['text', 'image', 'video', 'file'] as const satisfies readonly ModelModality[]
@@ -348,23 +359,30 @@ export function apply(ctx: Context, config: Config): void {
   }
   ensureRegistrationFacts()
 
+  /**
+   * The configurable-provider directory: the well-known catalog route
+   * (offered from the moment the plugin mounts, dormant or not) plus every
+   * route the current profiles declare, so a hand-declared route keeps a
+   * settings address configuration surfaces can show and edit.
+   */
   let directory: ReturnType<typeof ctx.llm.registerConfigurableProviders> | undefined
   let directoryFacts: unknown
   const ensureDirectory = (): void => {
-    const entries = [...profiles().entries()].map(([provider, profile]) => ({
-      provider,
-      displayName: profile.displayName,
-      settingsNs: NS,
-      settingsPath: ['providers', provider],
-      declared: true,
-    }))
-    if (deepEqualJson(entries, directoryFacts)) return
-    if (entries.length === 0) {
-      directory?.()
-      directory = undefined
-      directoryFacts = entries
-      return
+    const entries: LlmConfigurableProvider[] = []
+    const catalogIds = new Set(CATALOG_PROVIDERS.map(entry => entry.provider))
+    const declare = (provider: string, displayName: string): void => {
+      if (entries.some(entry => entry.provider === provider)) return
+      entries.push({
+        provider,
+        displayName,
+        settingsNs: NS,
+        settingsPath: ['providers', provider],
+        declared: !catalogIds.has(provider),
+      })
     }
+    for (const entry of CATALOG_PROVIDERS) declare(entry.provider, entry.displayName)
+    for (const [provider, profile] of profiles()) declare(provider, profile.displayName)
+    if (deepEqualJson(entries, directoryFacts)) return
     if (directory === undefined) directory = ctx.llm.registerConfigurableProviders(entries)
     else directory.replace(entries)
     directoryFacts = entries
@@ -408,6 +426,23 @@ export function apply(ctx: Context, config: Config): void {
           ctx.logger.error(error)
         }
       },
+    })
+    // One-shot upgrade import: stored pi-ai profiles that speak the Messages
+    // protocol fold into the user layer after installSection registered the
+    // namespace; the change notification drives registration above.
+    void migrateLegacyPiAiProfiles(
+      settingsCtx.settings,
+      {
+        ns: NS,
+        accepts: (route: string, profile: LegacyPiAiProfile): boolean =>
+          profile.api === 'anthropic-messages'
+          || (profile.api === undefined && route === 'anthropic'),
+        convert: (profile: LegacyPiAiProfile) => convertLegacyPiAiProfile(profile),
+      },
+      (line) => { ctx.logger.info(line) },
+    ).catch((error) => {
+      ctx.logger.warn('llm-anthropic: migrating the legacy llm-pi-ai section failed; its routes stay there')
+      ctx.logger.warn(error)
     })
   })
 }

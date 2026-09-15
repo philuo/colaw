@@ -115,15 +115,44 @@ export function deriveKeyRef(provider: string): string {
 }
 
 /**
- * The wire protocols a hand-declared route may name, read out of the owning
- * namespace's own schema. This stays a schema read rather than a wire field so
- * the choices the page offers cannot drift from the ones the adapter accepts:
- * both come from the same `Config`.
- * @param namespace - the namespace view whose schema declares the profile shape.
+ * Every wire protocol a hand-declared route may name, in the order the
+ * retired pi-ai adapter offered them (most-reached first, so the first stays
+ * the create card's default). The owning adapter of each: llm-openai serves
+ * the two OpenAI protocols, llm-anthropic the Messages protocol.
+ */
+export const PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages'] as const
+
+/** One PROTOCOLS entry. */
+export type Protocol = typeof PROTOCOLS[number]
+
+/** The settings namespace whose adapter serves one wire protocol. */
+export function nsOfProtocol(protocol: string): string {
+  return protocol === 'anthropic-messages' ? 'llm-anthropic' : 'llm-openai'
+}
+
+/**
+ * The wire protocols a hand-declared route may name, in the retired pi-ai
+ * adapter's order: whatever the llm-openai profile schema's `api` union
+ * declares, plus the Messages protocol whenever the llm-anthropic namespace
+ * is mounted. The Messages protocol has no schema field (it is that
+ * adapter's only wire), so namespace presence offers it; the openai half
+ * stays a schema read so the page's choices cannot drift from the ones the
+ * adapter accepts.
+ * @param namespaces - the mounted namespace views.
  * @param schema - settings schema operations.
- * @returns the protocol identifiers, or an empty list when the schema has none.
+ * @returns the offered protocol identifiers, or an empty list when no namespace mounted.
  */
 export function protocolChoices(
+  namespaces: ReadonlyMap<string, SettingsNamespaceView | undefined>,
+  schema: SettingsSchemaOperations,
+): string[] {
+  const offered = new Set(protocolUnionOf(namespaces.get('llm-openai'), schema))
+  if (namespaces.has('llm-anthropic')) offered.add('anthropic-messages')
+  return PROTOCOLS.filter(protocol => offered.has(protocol))
+}
+
+/** The `api` union a namespace's profile schema declares, in schema order. */
+function protocolUnionOf(
   namespace: SettingsNamespaceView | undefined,
   schema: SettingsSchemaOperations,
 ): string[] {

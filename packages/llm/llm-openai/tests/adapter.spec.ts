@@ -194,6 +194,146 @@ describe('failures', () => {
   })
 })
 
+describe('openai-responses wire', () => {
+  /** A direct adapter speaking the Responses protocol against a mock endpoint. */
+  function responsesAdapter(baseURL: string, config: Partial<LlmOpenAi.ProviderProfile> = {}): OpenAIAdapter {
+    return adapterOf({ baseURL, api: 'openai-responses', models: [{ id: 'gpt-5-turbo', reasoning: true }], ...config })
+  }
+
+  /** A complete streamed text answer on the Responses wire (no [DONE] sentinel). */
+  const textFrames = [
+    'data: {"type":"response.created","response":{"id":"resp_9"}}\n\n',
+    'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","role":"assistant"}}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":0,"delta":"bon"}\n\n',
+    'data: {"type":"response.output_text.delta","output_index":0,"delta":"jour"}\n\n',
+    'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"message","content":[{"type":"output_text","text":"bonjour"}]}}\n\n',
+    'data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":9,"output_tokens":3,"total_tokens":12}}}\n\n',
+  ]
+
+  it('assembles text, usage, and a stop finish over the plugin harness', async () => {
+    const server = await mockServer([{ kind: 'raw-sse', frames: textFrames }])
+    const ctx = new Context()
+    await ctx.plugin(LocalCredentialProvider, { watch: false })
+    await ctx.credentials.set(credentialRef('OPENAI_API_KEY'), 'test-key')
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmOpenAi, {
+      providers: {
+        'openai-compatible': {
+          baseURL: server.url,
+          apiKeyEnv: 'OPENAI_API_KEY',
+          api: 'openai-responses',
+          models: [{ id: 'gpt-5-turbo' }],
+        },
+      },
+    })
+    const result = await assemble(ctx, { model: 'gpt-5-turbo', messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'plugin', plugin: 'test' } })] })
+    expect(result.finish).toEqual({ kind: 'stop' })
+    expect(result.message.content).toEqual([{ type: 'text', text: 'bonjour' }])
+    expect(result.usage).toMatchObject({ inputTokens: 9, outputTokens: 3, totalTokens: 12 })
+    expect(server.paths[0]).toBe('/responses')
+    expect(server.requests[0]).toMatchObject({ model: 'gpt-5-turbo', stream: true, store: false, input: [{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }] })
+  })
+
+  it('replays a tool call and returns its result over the Responses wire', async () => {
+    const server = await mockServer([
+      {
+        kind: 'raw-sse',
+        frames: [
+          'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"get_weather","arguments":""}}\n\n',
+          'data: {"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\\"city\\": \\"SF\\"}"}\n\n',
+          'data: {"type":"response.output_item.done","output_index":0,"item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"get_weather","arguments":"{\\"city\\": \\"SF\\"}"}}\n\n',
+          'data: {"type":"response.completed","response":{"status":"completed","usage":{"input_tokens":9,"output_tokens":3}}}\n\n',
+        ],
+      },
+    ])
+    const adapter = responsesAdapter(server.url)
+    const chunks: unknown[] = []
+    for await (const chunk of adapter.stream({
+      provider: 'openai-compatible',
+      model: 'gpt-5-turbo',
+      messages: [createUserMessage({ content: [{ type: 'text', text: 'weather?' }], source: { kind: 'plugin', plugin: 'test' } })],
+    })) chunks.push(chunk)
+    expect(chunks).toContainEqual({ type: 'block-start', index: 0, blockType: 'tool-call' })
+    expect(chunks).toContainEqual({
+      type: 'block-end',
+      index: 0,
+      block: { type: 'tool-call', id: 'call_1|fc_1', name: 'get_weather', arguments: '{"city": "SF"}' },
+    })
+    expect(chunks.at(-1)).toMatchObject({ type: 'finish', reason: { kind: 'tool-calls' } })
+  })
+
+  it('feeds a replayed tool result back as a function_call_output', async () => {
+    const server = await mockServer([{ kind: 'raw-sse', frames: textFrames }])
+    const adapter = responsesAdapter(server.url)
+    for await (const chunk of adapter.stream({
+      provider: 'openai-compatible',
+      model: 'gpt-5-turbo',
+      messages: [
+        { role: 'assistant', content: [{ type: 'tool-call', id: 'call_1|fc_1', name: 'get_weather', arguments: '{}' }] } as never,
+        { role: 'user', content: [{ type: 'tool-result', toolCallId: 'call_1|fc_1', content: [{ type: 'text', text: 'sunny' }] }] } as never,
+      ],
+    })) void chunk
+    expect(server.requests[0]).toMatchObject({
+      input: [
+        { type: 'function_call', id: 'fc_1', call_id: 'call_1', name: 'get_weather', arguments: '{}' },
+        { type: 'function_call_output', call_id: 'call_1', output: 'sunny' },
+      ],
+    })
+  })
+
+  it('truncation before a terminal event fails the stream as TRANSPORT', async () => {
+    const server = await mockServer([{
+      kind: 'raw-sse',
+      frames: [
+        'data: {"type":"response.output_item.added","output_index":0,"item":{"type":"message","role":"assistant"}}\n\n',
+        'data: {"type":"response.output_text.delta","output_index":0,"delta":"partial"}\n\n',
+      ],
+    }])
+    const ctx = new Context()
+    await ctx.plugin(LocalCredentialProvider, { watch: false })
+    await ctx.credentials.set(credentialRef('OPENAI_API_KEY'), 'test-key')
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmOpenAi, {
+      providers: { 'openai-compatible': { baseURL: server.url, apiKeyEnv: 'OPENAI_API_KEY', api: 'openai-responses', models: [{ id: 'gpt-5-turbo' }] } },
+    })
+    const result = await assemble(ctx, { model: 'gpt-5-turbo', messages: [] })
+    // A truncation before the terminal event is a distinct diagnosable
+    // condition on this route: STREAM_CLOSED, not a raw transport break.
+    expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'STREAM_CLOSED' } })
+  })
+})
+
+describe('dormant catalog directory', () => {
+  it('offers the openai catalog route while the plugin is dormant', async () => {
+    const ctx = new Context()
+    await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LlmOpenAi, {})
+    const directory = ctx.llm.listConfigurableProviders()
+    expect(directory).toEqual([
+      {
+        provider: 'openai',
+        displayName: 'OpenAI',
+        settingsNs: 'llm-openai',
+        settingsPath: ['providers', 'openai'],
+        declared: false,
+      },
+    ])
+  })
+
+  it('keeps a hand-declared route distinguishable from the catalog route', async () => {
+    const server = await mockServer([])
+    const ctx = await harness(server.url, {
+      providers: {
+        'openai-compatible': { baseURL: server.url, models: [{ id: 'gpt-4o' }] },
+      },
+    })
+    const directory = ctx.llm.listConfigurableProviders()
+    const byRoute = new Map(directory.map(entry => [entry.provider, entry]))
+    expect(byRoute.get('openai')?.declared).toBe(false)
+    expect(byRoute.get('openai-compatible')).toMatchObject({ declared: true, settingsNs: 'llm-openai' })
+  })
+})
+
 describe('resolveAdapterOptions', () => {
   it('defaults to the public API base and the OPENAI_API_KEY reference', () => {
     const options = resolveAdapterOptions({})

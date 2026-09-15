@@ -1,7 +1,7 @@
 /**
- * The card that declares a provider pi-ai does not ship — an OpenAI-compatible
- * gateway, a self-hosted server, or a provider newer than the installed
- * catalog.
+ * The card that declares a provider no adapter ships — an OpenAI-compatible
+ * or Anthropic-compatible gateway, a self-hosted server, or a provider newer
+ * than the installed catalog.
  *
  * This is a create, not an edit, which is why it is its own card rather than
  * the provider editor with extra fields: the route id is being *chosen* here,
@@ -29,13 +29,10 @@ import { EditorFooter } from './EditorFooter.tsx'
 import { validateDeepSeekModels } from './DeepSeekModelsEditor.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
 import type { ModelDraft } from './ModelListEditor.tsx'
-import { deriveKeyRef } from './store.ts'
+import { deriveKeyRef, nsOfProtocol, PROTOCOLS } from './store.ts'
 import type { ModelsOperations } from './operations.ts'
 import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
-
-/** The settings namespace a hand-declared provider is written into. */
-const NS = 'llm-openai'
 
 /** The create card's resolved-modality map: no live route, nothing to inherit. */
 const EMPTY_MODALITIES: ReadonlyMap<string, readonly string[]> = new Map()
@@ -63,14 +60,14 @@ function isHttpUrl(value: string): boolean {
 export interface CustomProviderCardProps {
   /** Route ids already declared, so the card refuses to shadow one. */
   taken: readonly string[]
-  /** Wire protocols the adapter can serve, in the order it reports them. */
+  /** Wire protocols the adapters can serve, in the order the page reports them. */
   protocols: readonly string[]
   /**
-   * Revision of the `llm-pi-ai` user section this card opened at, sent with
-   * the create so a route another tab declared meanwhile is a refusal rather
-   * than a silent overwrite of its whole profile.
+   * Revision of a target namespace's user section as of now, sent with the
+   * create so a route another tab declared meanwhile is a refusal rather than
+   * a silent overwrite of its whole profile.
    */
-  revision: number
+  revisionOf: (ns: string) => number | undefined
   /** The Host operations this card writes and interrogates through. */
   operations: ModelsOperations
   /** Section copy. */
@@ -88,12 +85,21 @@ export interface CustomProviderCardProps {
  */
 export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
   const { taken, protocols, operations, t } = props
-  // The write is checked against the revision on which this draft was opened.
-  const [openedAt] = useState(() => props.revision)
+  // Each write is checked against the revision of ITS target namespace as of
+  // the moment this card opened — the draft may switch protocols, and with
+  // them namespaces, before it commits.
+  const [openedRevisions] = useState(() => new Map(
+    PROTOCOLS.map((protocol) => {
+      const ns = nsOfProtocol(protocol)
+      return [ns, props.revisionOf(ns) ?? 0]
+    }),
+  ))
   const [route, setRoute] = useState('')
   const [displayName, setDisplayName] = useState('')
   const [baseURL, setBaseURL] = useState('')
   const [protocol, setProtocol] = useState(protocols[0] ?? '')
+  /** The settings namespace this draft writes into: the adapter serving the chosen wire protocol. */
+  const ns = (): string => nsOfProtocol(protocol)
   const [keyDraft, setKeyDraft] = useState('')
   const [models, setModels] = useState<readonly ModelDraft[]>([])
   const [busy, setBusy] = useState(false)
@@ -147,14 +153,18 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
     const keyRef = deriveKeyRef(route)
     const storesKey = keyValue.length > 0
     if (!committed) {
+      const target = ns()
       const profile = {
         ...displayName.length === 0 ? {} : { displayName },
         // The profile names the conventional reference only when this card is
         // about to store a key, matching the editor: a route declared with the
-        // key left blank keeps its provider-native auth path (a credential
-        // chain, ADC) instead of resolving a reference nothing ever sets.
+        // key left blank keeps the adapter's default reference instead of one
+        // nothing ever sets.
         ...storesKey ? { apiKeyEnv: keyRef } : {},
-        api: protocol,
+        // The Messages protocol is the llm-anthropic adapter's only wire, so
+        // its profile schema carries no protocol field; the field records the
+        // choice everywhere the adapter actually has more than one.
+        ...target === 'llm-openai' ? { api: protocol } : {},
         baseURL: normalizedBaseURL,
         models: models.map(model => ({ ...model })),
       }
@@ -162,9 +172,9 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
       // declared after this card opened; the revision makes that race a
       // `settings-conflict` instead of a write over the other profile.
       const written = await operations.writeSettings(
-        NS,
+        target,
         [{ op: 'set', path: ['providers', route], value: profile as JsonValue }],
-        openedAt,
+        openedRevisions.get(target),
       )
       if (written.kind !== 'written') {
         return written.kind === 'conflict' ? t('conflict') : written.message
@@ -285,9 +295,9 @@ export function CustomProviderCard(props: CustomProviderCardProps): ReactNode {
         // to inherit from; the rows' own declarations are the only state.
         resolvedModalities={EMPTY_MODALITIES}
         probe={{
-          settingsNs: NS,
+          settingsNs: ns(),
           baseURL: normalizedBaseURL,
-          api: protocol,
+          ...ns() === 'llm-openai' ? { api: protocol } : {},
           ...keyValue.length === 0 ? {} : { apiKey: keyValue },
         }}
         probeBlocked={baseUrlInvalid

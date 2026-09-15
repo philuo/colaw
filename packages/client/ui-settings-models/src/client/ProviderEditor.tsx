@@ -3,12 +3,12 @@
  * field is a single write-only **API key** input (the page never asks for an
  * environment-variable name — a typed key stores through `credentials/set`
  * under the profile's reference, deriving `<ROUTE>_API_KEY` when the profile
- * has none. The pi-ai profile records that derivation as `apiKeyEnv` only when
- * a key is entered; a blank key materializes a reference-free profile for
- * provider-native authentication);
+ * has none. A per-route profile records that derivation as `apiKeyEnv` only
+ * when a key is entered; a blank key leaves the adapter's default reference
+ * in force);
  * the collapsed 自定义设置 area carries the per-family extras (`baseURL` for
  * both families, DeepSeek's id/name/context-window model catalog, and the
- * display name and wire protocol of a pi-ai route the adapter does not ship —
+ * display name and wire protocol of a hand-declared route the adapter does not ship —
  * the two fields the create card asked that route for, editable here for the
  * same reason).
  * Reasoning effort is deliberately absent: it is a per-MODEL capability, and
@@ -40,7 +40,7 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** Per-adapter-family curated field sets (unknown namespaces get the hint alone). */
-type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
+type EditorLayout = 'deepseek' | 'provider' | 'unknown'
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
@@ -133,11 +133,12 @@ export function pathOps(
 
 /** The editor layout the owning namespace selects. */
 function layoutOf(ns: string): EditorLayout {
-  // The dedicated chat-completions/messages adapters share the deepseek
-  // layout: same curated fields (key, baseURL, model catalog), same
-  // schema-driven writes.
-  if (ns === 'llm-deepseek' || ns === 'llm-openai' || ns === 'llm-anthropic') return 'deepseek'
-  if (ns === 'llm-pi-ai') return 'pi-ai'
+  // The per-route families (the two protocol adapters) share one layout: a
+  // profile addressed at `providers.<route>`, a fetch-able model list, and
+  // identity fields for routes the adapter does not ship. The whole-section
+  // deepseek family keeps its own.
+  if (ns === 'llm-deepseek') return 'deepseek'
+  if (ns === 'llm-openai' || ns === 'llm-anthropic') return 'provider'
   return 'unknown'
 }
 
@@ -179,21 +180,19 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const fallback = schema.getPath(namespace.value, settingsPath)
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
-  const family = namespace.ns === 'llm-pi-ai'
-    ? 'pi-ai' as const
-    : namespace.ns === 'llm-openai'
-      ? 'openai' as const
-      : namespace.ns === 'llm-anthropic'
-        ? 'anthropic' as const
-        : 'deepseek' as const
+  const family = namespace.ns === 'llm-openai'
+    ? 'openai' as const
+    : namespace.ns === 'llm-anthropic'
+      ? 'anthropic' as const
+      : 'deepseek' as const
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
-  // Only the pi-ai layout has a per-route protocol for the read to find, and
-  // it rehydrates the whole section schema, so the other layouts skip it.
+  // Only the openai family's schema names a per-route protocol; the anthropic
+  // wire is that adapter's only one and offers no choice to edit.
   const protocols = useMemo(
-    () => layout === 'pi-ai' ? protocolChoices(namespace, schema) : [],
-    [layout, namespace, schema],
+    () => family === 'openai' ? protocolChoices(new Map([[namespace.ns, namespace]]), schema) : [],
+    [family, namespace, schema],
   )
 
   useEffect(() => {
@@ -215,7 +214,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   // fall back to the text floor.
   const [resolvedModalities, setResolvedModalities] = useState<ReadonlyMap<string, readonly string[]>>(() => new Map())
   useEffect(() => {
-    if (layout !== 'deepseek' && layout !== 'pi-ai') return
+    if (layout !== 'deepseek' && layout !== 'provider') return
     let stale = false
     void operations.listModels(props.provider).then((models) => {
       if (stale || models === undefined) return
@@ -274,9 +273,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    */
   const applyOnce = async (): Promise<string | undefined> => {
     const ns = namespace.ns
-    // A pi-ai profile names the conventional reference only when this page is
-    // about to store a key. Otherwise the provider keeps its native auth path.
-    const next = layout === 'pi-ai' && stringAt(draft, 'apiKeyEnv') === undefined
+    // A per-route profile names the conventional reference only when this
+    // page is about to store a key; otherwise the adapter's own default
+    // reference applies. The deepseek family is whole-section and keeps its
+    // native auth path.
+    const next = layout === 'provider' && stringAt(draft, 'apiKeyEnv') === undefined
       && stringAt(fallback, 'apiKeyEnv') === undefined && keyValue.length > 0
       ? schema.setPath(draft, ['apiKeyEnv'], keyRef)
       : draft
@@ -296,7 +297,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       const sectionError = schema.validate(node, next)
       if (sectionError !== undefined) return sectionError
     }
-    const materializesNativeProfile = layout === 'pi-ai'
+    const materializesNativeProfile = layout === 'provider'
       && fallback === undefined
       && committedOriginal === undefined
       && Object.keys(next).length === 0
@@ -360,11 +361,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    * narrowed so the per-family branches below are total: an unknown namespace
    * renders the hint instead and never reaches this body.
    */
-  const curatedFields = (family: 'deepseek' | 'openai' | 'anthropic' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'openai' | 'anthropic'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
-    const ownsIdentity = family === 'pi-ai' && props.declared === true
+    const ownsIdentity = family !== 'deepseek' && props.declared === true
     const customModels = schema.getPath(draft, ['models'])
     const modelsOverridden = schema.hasPath(draft, ['models'])
     const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
@@ -374,7 +375,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       ? t('keyEnvLocked')
       : keyState?.configured === true && props.credentialRequired !== true
         ? t('keyStored')
-        : family === 'pi-ai' ? t('keyPlaceholderNative') : t('keyPlaceholder')
+        : t('keyPlaceholder')
     /** What both family editors take: the rows, whose layer owns them, and the two writes. */
     const catalogProps = {
       models,
@@ -460,8 +461,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               />
             </div>
             {/* The protocol sits beside the endpoint it describes, as it does
-                on the create card. */}
-            {ownsIdentity
+                on the create card. Only the openai family's schema names a
+                choice; the Messages wire is that adapter's only one. */}
+            {ownsIdentity && family === 'openai'
               ? (
                 <div className={styles['field']}>
                   <span className={styles['fieldLabel']}>{t('customApi')}</span>
@@ -484,10 +486,10 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 </div>
               )
               : null}
-            {/* Both families edit the same rows through the same contract; only
-                the extras differ — DeepSeek's inherited capacities, pi-ai's
-                endpoint interrogation. */}
-            {family !== 'pi-ai'
+            {/* Both layouts edit the same rows through the same contract;
+                only the extras differ — DeepSeek's inherited capacities, the
+                protocol families' endpoint interrogation. */}
+            {family === 'deepseek'
               ? (
                 <DeepSeekModelsEditor
                   {...catalogProps}
@@ -500,6 +502,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               : (
                 <ModelListEditor
                   {...catalogProps}
+                  // The protocol wires carry text and image; the wider
+                  // vocabulary stays gated to the DeepSeek family.
+                  allowed={['text', 'image']}
                   probe={probe}
                   probeBlocked={keyFailure}
                   operations={operations}

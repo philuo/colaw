@@ -1,6 +1,7 @@
 /**
- * `OpenAIAdapter`: fetch + SSE against the OpenAI chat-completions endpoint,
- * emitting harness StreamChunks. The adapter is transport-only: connection
+ * `OpenAIAdapter`: fetch + SSE against the OpenAI chat-completions or
+ * Responses endpoint (selected per route by the connection's `api`), emitting
+ * harness StreamChunks. The adapter is transport-only: connection
  * facts arrive through a thunk resolved once per operation and the bearer
  * token through a per-request resolver, so the registering plugin owns
  * validation, layering, and credential policy. Images ride inline base64
@@ -30,9 +31,12 @@ import type {
 } from '@deepseek-ai/dsh-attachment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
+import { sseFrames } from '@deepseek-ai/dsh-llm'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
+import { serializeResponsesRequest, serializeResponsesRequestWithImages } from './responses-serialize.ts'
+import { translateResponses } from './responses-translate.ts'
 import type { ModelWireFacts, RequestDefaults } from './serialize.ts'
 import type { ModelModality } from '@deepseek-ai/dsh-llm'
 import type { WireError } from './types.ts'
@@ -432,29 +436,27 @@ export class OpenAIAdapter extends LlmAdapter {
     const resolveImageAccess = attachments === undefined
       ? undefined
       : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
-    const imageAccessOptions = resolveImageAccess === undefined ? {} : { resolveImageAccess }
-    if (connection.api !== 'openai-completions') {
-      throw new LlmError(
-        `wire protocol "${connection.api}" is not implemented in this build; use the openai-completions protocol for this route`,
-        'PROTOCOL_UNSUPPORTED',
-      )
-    }
     let body
     if (attachments === undefined) {
-      body = serializeRequest(options, connection.defaults, wireFacts)
+      body = connection.api === 'openai-responses'
+        ? serializeResponsesRequest(options, connection.defaults, wireFacts)
+        : serializeRequest(options, connection.defaults, wireFacts)
     } else {
       const requestImages = await prepareRequestImages(options, attachments, model ?? {
         id: options.model,
         inputModalities: ['image'],
       }, signal)
-      body = await serializeRequestWithImages(options, {
+      const images = {
         requestImages,
-        ...imageAccessOptions,
+        ...resolveImageAccess === undefined ? {} : { resolveImageAccess },
         maxRequestImageBytes: connection.maxRequestImageBytes,
         maxImagesPerRequest: connection.maxImagesPerRequest,
         byteQuantum: connection.imageOffloadByteQuantum,
         countQuantum: connection.imageOffloadCountQuantum,
-      }, connection.defaults, wireFacts)
+      }
+      body = connection.api === 'openai-responses'
+        ? await serializeResponsesRequestWithImages(options, images, connection.defaults, wireFacts)
+        : await serializeRequestWithImages(options, images, connection.defaults, wireFacts)
     }
 
     // Prepared outside the try so the TRANSPORT label below covers exactly the
@@ -465,7 +467,9 @@ export class OpenAIAdapter extends LlmAdapter {
     // outweighs its additional runtime dependencies.
     let response: Response
     try {
-      response = await fetch(`${connection.baseURL}/chat/completions`, {
+      response = await fetch(connection.api === 'openai-responses'
+        ? `${connection.baseURL}/responses`
+        : `${connection.baseURL}/chat/completions`, {
         method: 'POST',
         headers,
         body: payload,
@@ -504,6 +508,21 @@ export class OpenAIAdapter extends LlmAdapter {
       throw new LlmError('OpenAI API returned no response body', 'EMPTY_RESPONSE')
     }
 
-    yield* translate(parseSse(response.body, onActivity))
+    // The Responses wire terminates on its completed/incomplete event, not a
+    // [DONE] sentinel, so its payloads come straight off the shared framer;
+    // translateResponses owns the terminal contract.
+    yield* connection.api === 'openai-responses'
+      ? translateResponses(dataPayloads(response.textStream(), onActivity))
+      : translate(parseSse(response.textStream(), onActivity))
+  }
+}
+
+/** Yield every frame's data payload; terminal-event contracts belong to the consumer. */
+async function* dataPayloads(
+  stream: ReadableStream<string>,
+  onActivity: () => void,
+): AsyncGenerator<string> {
+  for await (const frame of sseFrames(stream, onActivity)) {
+    yield frame.data
   }
 }

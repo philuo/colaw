@@ -53,7 +53,7 @@ const NAMESPACES = [
     revision: 0,
   },
   {
-    ns: 'llm-pi-ai',
+    ns: 'llm-openai',
     schema: {},
     value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } },
     user: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } },
@@ -146,7 +146,7 @@ describe('ModelsSettingsStore', () => {
     expect(byProvider.get('anthropic')).toMatchObject({ configured: false, removable: false })
     expect(byProvider.get('anthropic')?.apiKeyEnv).toBeUndefined()
     expect(byProvider.get('ghost')).toMatchObject({ configured: false, removable: false })
-    expect(state.namespaces.get('llm-pi-ai')?.ns).toBe('llm-pi-ai')
+    expect(state.namespaces.get('llm-openai')?.ns).toBe('llm-openai')
   })
 
   it('degrades the credential badge, not the page, when the credential domain fails', async () => {
@@ -217,7 +217,7 @@ describe('edge joins', () => {
         writable: true,
         hasDocument: false,
         namespaces: [{
-          ns: 'llm-pi-ai',
+          ns: 'llm-openai',
           schema: {},
           value: { providers: { weird: 'oops' } },
           applies: 'live' as const,
@@ -243,7 +243,7 @@ describe('edge joins', () => {
       describeSettings: () => Promise.resolve(remoteOk({
         writable: true,
         hasDocument: false,
-        namespaces: [{ ns: 'llm-pi-ai', schema: {}, value: { providers: {} }, applies: 'live' as const, secrets: [], revision: 0 }] as never,
+        namespaces: [{ ns: 'llm-openai', schema: {}, value: { providers: {} }, applies: 'live' as const, secrets: [], revision: 0 }] as never,
       })),
       providers: () => Promise.resolve(ok({
         providers: [

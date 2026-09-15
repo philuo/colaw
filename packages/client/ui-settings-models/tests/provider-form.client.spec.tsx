@@ -23,21 +23,37 @@ const t: ModelsSectionInjected['t'] = key => en[key]
 
 const PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages']
 
-/** The pi-ai profile shape as the host serializes it, including the layer-1 fields. */
-const PiAiConfig = Schema.object({
+/**
+ * The two protocol adapters' profile shapes as the host serializes them: the
+ * openai family's schema names its two protocols, the anthropic family's has
+ * no protocol field (its adapter speaks exactly one wire).
+ */
+const MODALITIES = ['text', 'image', 'video', 'file']
+
+const modelEntry = Schema.object({
+  id: Schema.string().required(),
+  name: Schema.string(),
+  contextWindow: Schema.number(),
+  maxTokens: Schema.number(),
+  inputModalities: Schema.array(Schema.union(MODALITIES)),
+})
+
+const OpenAiConfig = Schema.object({
   providers: Schema.dict(Schema.object({
-    apiKey: Schema.string().role('secret'),
     apiKeyEnv: Schema.string().role('credential-ref'),
     displayName: Schema.string(),
-    api: Schema.union(PROTOCOLS),
+    api: Schema.union(['openai-completions', 'openai-responses']),
     baseURL: Schema.string(),
-    models: Schema.array(Schema.object({
-      id: Schema.string().required(),
-      name: Schema.string(),
-      contextWindow: Schema.number(),
-      maxTokens: Schema.number(),
-    })),
-    reasoning: Schema.union(['off', 'high']),
+    models: Schema.array(modelEntry),
+  })),
+})
+
+const AnthropicConfig = Schema.object({
+  providers: Schema.dict(Schema.object({
+    apiKeyEnv: Schema.string().role('credential-ref'),
+    displayName: Schema.string(),
+    baseURL: Schema.string(),
+    models: Schema.array(modelEntry),
   })),
 })
 
@@ -73,14 +89,18 @@ function remoteFail(message: string, code: RefusalCode = 'credential/rejected') 
   return { ok: false as const, error: REFUSALS[code](message) }
 }
 
-function piAiNamespace(
+/** One protocol family's namespace view, mirroring its adapter's own Config. */
+function familyNamespace(
+  ns: 'llm-openai' | 'llm-anthropic',
+  schema: typeof OpenAiConfig | typeof AnthropicConfig,
   providers: Record<string, JsonValue>,
-  userProviders: Record<string, JsonValue> = providers,
-  baseProviders: Record<string, JsonValue> = {},
+  userProviders: Record<string, JsonValue>,
+  baseProviders: Record<string, JsonValue>,
+  revision: number,
 ): SettingsNamespaceView {
   return {
-    ns: 'llm-openai',
-    schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as JsonValue,
+    ns,
+    schema: JSON.parse(JSON.stringify(schema.toJSON())) as JsonValue,
     // `value` is the effective section; `user` is only the layer this page
     // writes. They differ whenever a composition `base` supplies something.
     value: { providers },
@@ -88,8 +108,26 @@ function piAiNamespace(
     user: { providers: userProviders },
     applies: 'live',
     secrets: [],
-    revision: 3,
+    revision,
   }
+}
+
+/** The llm-openai namespace view, at the revision the suite's writes fence on. */
+function openAiNamespace(
+  providers: Record<string, JsonValue>,
+  userProviders: Record<string, JsonValue> = providers,
+  baseProviders: Record<string, JsonValue> = {},
+  revision = 3,
+): SettingsNamespaceView {
+  return familyNamespace('llm-openai', OpenAiConfig, providers, userProviders, baseProviders, revision)
+}
+
+/** The llm-anthropic namespace view; revision 5 keeps its fence distinct. */
+function anthropicNamespace(
+  providers: Record<string, JsonValue> = {},
+  userProviders: Record<string, JsonValue> = providers,
+): SettingsNamespaceView {
+  return familyNamespace('llm-anthropic', AnthropicConfig, providers, userProviders, {}, 5)
 }
 
 function scriptedFace(options: {
@@ -107,7 +145,10 @@ function scriptedFace(options: {
   const providers = options.providers ?? {
     openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy.example/v1' },
   }
-  const namespace = piAiNamespace(providers, options.userProviders ?? providers, options.baseProviders ?? {})
+  const namespace = openAiNamespace(providers, options.userProviders ?? providers, options.baseProviders ?? {})
+  // Both protocol adapters mount in every composition this page ships in, so
+  // the create card can offer all three protocols and route by choice.
+  const namespaces = [namespace, anthropicNamespace()]
   const discover = options.discover ?? vi.fn(() => Promise.resolve(ok([])))
   const mutate = options.mutate ?? vi.fn(() => Promise.resolve(remoteOk(namespace)))
   const set = options.set ?? vi.fn(() => Promise.resolve(remoteOk(undefined)))
@@ -128,7 +169,7 @@ function scriptedFace(options: {
       discoverModels: discover,
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, namespaces: [namespace] }))),
+      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, namespaces }))),
       mutate,
     },
     credentials: {
@@ -245,12 +286,22 @@ function within_(scope: HTMLElement, label: string): HTMLElement {
 }
 
 describe('protocolChoices', () => {
-  it('reads the protocols out of the namespace schema and nothing else', async () => {
+  it('reads the openai protocols from the schema and offers Messages by namespace presence', async () => {
     const { namespace } = scriptedFace()
-    expect(protocolChoices(namespace, settingsSchema)).toEqual(PROTOCOLS)
-    expect(protocolChoices(undefined, settingsSchema)).toEqual([])
+    const both = new Map<string, SettingsNamespaceView | undefined>([
+      ['llm-openai', namespace],
+      ['llm-anthropic', anthropicNamespace()],
+    ])
+    // The retired pi-ai adapter's order: completions, responses, messages.
+    expect(protocolChoices(both, settingsSchema)).toEqual(PROTOCOLS)
+    // Without the anthropic adapter mounted, its protocol is not offered.
+    expect(protocolChoices(new Map([['llm-openai', namespace]]), settingsSchema))
+      .toEqual(['openai-completions', 'openai-responses'])
+    // Without either namespace there is nothing to declare.
+    expect(protocolChoices(new Map(), settingsSchema)).toEqual([])
+    // A namespace whose schema lost its union contributes nothing by itself.
     const plain = { ...namespace, schema: JSON.parse(JSON.stringify(Schema.object({}).toJSON())) as JsonValue }
-    expect(protocolChoices(plain, settingsSchema)).toEqual([])
+    expect(protocolChoices(new Map([['llm-openai', plain]]), settingsSchema)).toEqual([])
     await Promise.resolve()
   })
 })
@@ -314,7 +365,7 @@ describe('model list editing', () => {
     // What lands in settings is always a plain token count — and the new row
     // carries its modern input default.
     expect(firstMutate(mutate).ops[0]?.value)
-      .toEqual([{ id: 'm', contextWindow: 1_000_000, maxTokens: 1000, input: ['text', 'image'] }])
+      .toEqual([{ id: 'm', contextWindow: 1_000_000, maxTokens: 1000, inputModalities: ['text', 'image'] }])
   })
 
   it('refuses to apply while a capacity is unreadable', async () => {
@@ -601,7 +652,7 @@ describe('endpoint interrogation', () => {
     const scripted = scriptedFace()
     render(
       <CustomProviderCard
-        taken={[]} protocols={PROTOCOLS} revision={7} operations={operationsWith(scripted.face)}
+        taken={[]} protocols={PROTOCOLS} revisionOf={() => 7} operations={operationsWith(scripted.face)}
         t={t} readOnly={false} onClose={vi.fn()}
       />,
     )
@@ -771,7 +822,7 @@ describe('hand-declared providers', () => {
       <CustomProviderCard
         taken={['openai']}
         protocols={PROTOCOLS}
-        revision={7}
+        revisionOf={ns => ns === 'llm-openai' ? 7 : 5}
         operations={operationsWith(scripted.face)}
         t={t}
         readOnly={false}
@@ -806,7 +857,7 @@ describe('hand-declared providers', () => {
           apiKeyEnv: 'ACME_GATEWAY_API_KEY',
           api: 'openai-completions',
           baseURL: 'https://gateway.acme.example/v1',
-          models: [{ id: 'acme-large', contextWindow: 65_536, input: ['text', 'image'] }],
+          models: [{ id: 'acme-large', contextWindow: 65_536, inputModalities: ['text', 'image'] }],
         },
       }],
       // The section this card was drafted over: a route another tab declared
@@ -814,6 +865,32 @@ describe('hand-declared providers', () => {
       expectedRevision: 7,
     })
     expect(set).toHaveBeenCalledWith('ACME_GATEWAY_API_KEY', 'gw-key')
+  })
+
+  it('routes a Messages-protocol route into the llm-anthropic namespace without an api field', async () => {
+    const { mutate } = mountCard()
+
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'claude-relay' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://relay.example' } })
+    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'anthropic-messages' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'claude-sonnet-4-5' } })
+    fireEvent.click(screen.getByText(en.create))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    const written = firstMutate(mutate)
+    expect(written.ns).toBe('llm-anthropic')
+    expect(written.expectedRevision).toBe(5)
+    expect(written.ops).toEqual([{
+      op: 'set',
+      path: ['providers', 'claude-relay'],
+      value: {
+        baseURL: 'https://relay.example',
+        // The Messages protocol is the adapter's only wire: no `api` field to
+        // record, and the key this draft never typed leaves no reference.
+        models: [{ id: 'claude-sonnet-4-5', inputModalities: ['text', 'image'] }],
+      },
+    }])
   })
 
   it('scopes each card to fields a provider can actually own', async () => {
@@ -949,7 +1026,7 @@ describe('hand-declared providers', () => {
 
     const protocol = screen.getByLabelText<HTMLSelectElement>(en.customApi)
     expect(protocol.value).toBe('openai-completions')
-    fireEvent.change(protocol, { target: { value: 'anthropic-messages' } })
+    fireEvent.change(protocol, { target: { value: 'openai-responses' } })
     fireEvent.click(screen.getByText(en.apply))
 
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
@@ -957,7 +1034,7 @@ describe('hand-declared providers', () => {
     // op restates it.
     expect(firstMutate(mutate)).toEqual({
       ns: 'llm-openai',
-      ops: [{ op: 'set', path: ['providers', 'acme-gateway', 'api'], value: 'anthropic-messages' }],
+      ops: [{ op: 'set', path: ['providers', 'acme-gateway', 'api'], value: 'openai-responses' }],
       expectedRevision: 3,
     })
   })
@@ -1320,12 +1397,13 @@ describe('hand-declared providers', () => {
     await waitFor(() => { expect(onClose).toHaveBeenCalledWith(true) })
     // No display name configured means none stored; the route id is the name.
     // No key typed means no reference either, matching the editor: the route
-    // keeps its provider-native auth path instead of resolving a reference
-    // nothing ever sets. The with-key case is covered above.
-    expect(firstMutate(mutate).ops[0]?.value).toEqual({
-      api: 'anthropic-messages',
+    // keeps the adapter's default reference instead of one nothing ever sets.
+    // The with-key case is covered above.
+    const written = firstMutate(mutate)
+    expect(written.ns).toBe('llm-anthropic')
+    expect(written.ops[0]?.value).toEqual({
       baseURL: 'https://acme.test/v1',
-      models: [{ id: 'm', input: ['text', 'image'] }],
+      models: [{ id: 'm', inputModalities: ['text', 'image'] }],
     })
   })
 

@@ -496,6 +496,26 @@ export abstract class SettingsProvider extends Service {
   }
 
   /**
+   * Read one namespace's stored raw user section, whether the namespace is
+   * registered or not. Configuration surfaces only ever see registered
+   * namespaces through {@link describe}, so this is the one read a one-shot
+   * document migration can use to inspect a section whose owning plugin was
+   * unmounted — without reaching around the provider at the storage layer.
+   * The section stays exactly as stored: no schema resolution, no redaction.
+   * @param ns - the namespace key to read.
+   * @returns the detached raw section, or `undefined` when nothing is stored.
+   * @throws {TypeError} when the stored section is not an object of keys.
+   */
+  rawSection(ns: string): Record<string, unknown> | undefined {
+    const section = this.document[ns]
+    if (section === undefined) return undefined
+    if (!isPlainObject(section)) {
+      throw new TypeError(`settings section "${ns}" must be an object of keys`)
+    }
+    return structuredClone(section)
+  }
+
+  /**
    * Describe every registered namespace for configuration surfaces, including
    * the composition `base` and raw user layers so a form can mark which fields
    * the user overrode (presence in `user`) and what a reset returns to.

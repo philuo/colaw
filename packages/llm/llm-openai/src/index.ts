@@ -22,8 +22,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, convertLegacyPiAiProfile, LlmError, migrateLegacyPiAiProfiles, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import type { LlmConfigurableProvider, LegacyPiAiProfile, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -76,6 +76,17 @@ export const PUBLIC_BASE_URL = 'https://api.openai.com/v1'
 /** Environment variable naming a route's endpoint, honored only from trusted layers. */
 const BASE_URL_ENV = 'OPENAI_BASE_URL'
 
+/**
+ * The well-known catalog routes this adapter serves: providers whose endpoint
+ * and protocol are public knowledge, offered by configuration surfaces as
+ * one-key setups before any profile exists. Route ids are global across
+ * adapter families, so these double as the family's identity on the Models
+ * page.
+ */
+const CATALOG_PROVIDERS: readonly { provider: string; displayName: string }[] = [
+  { provider: 'openai', displayName: 'OpenAI' },
+]
+
 // The chat-completions wire carries text and (for vision models) image
 // input; the other harness modalities have no wire form on this route.
 const MODEL_MODALITIES = ['text', 'image', 'video', 'file'] as const satisfies readonly ModelModality[]
@@ -90,9 +101,9 @@ export interface ProviderProfile {
   baseURL?: string
   /**
    * Wire protocol every model on this route speaks. `openai-completions`
-   * (the default, and what every OpenAI-compatible gateway serves) is fully
-   * implemented; `openai-responses` is accepted by the schema and refuses at
-   * request time until its wire lands in this build.
+   * (the default — what every OpenAI-compatible gateway serves) posts to
+   * `/chat/completions`; `openai-responses` posts the stateless Responses
+   * wire to `/responses`.
    */
   api?: 'openai-completions' | 'openai-responses'
   /** Route-level reasoning-effort default; omitted sends no effort field. */
@@ -393,26 +404,34 @@ export function apply(ctx: Context, config: Config): void {
   }
   ensureRegistrationFacts()
 
-  /** The configurable-provider directory: one entry per declared route. */
+  /**
+   * The configurable-provider directory: every well-known catalog route
+   * (offered from the moment the plugin mounts, dormant or not, so
+   * configuration surfaces can adopt it before any route exists), plus every
+   * route the current profiles declare. A hand-declared route has no catalog
+   * entry, so without this union it would have no settings address and
+   * configuration surfaces could neither show nor edit it.
+   */
   let directory: ReturnType<typeof ctx.llm.registerConfigurableProviders> | undefined
   let directoryFacts: unknown
   const ensureDirectory = (): void => {
-    const entries = [...profiles().entries()].map(([provider, profile]) => ({
-      provider,
-      displayName: profile.displayName,
-      settingsNs: NS,
-      settingsPath: ['providers', provider],
-      declared: true,
-    }))
-    if (deepEqualJson(entries, directoryFacts)) return
-    // The registry refuses an empty declaration: a dormant mount (or an
-    // emptied section) withdraws the previous directory instead.
-    if (entries.length === 0) {
-      directory?.()
-      directory = undefined
-      directoryFacts = entries
-      return
+    const entries: LlmConfigurableProvider[] = []
+    const catalogIds = new Set(CATALOG_PROVIDERS.map(entry => entry.provider))
+    const declare = (provider: string, displayName: string): void => {
+      if (entries.some(entry => entry.provider === provider)) return
+      entries.push({
+        provider,
+        displayName,
+        settingsNs: NS,
+        settingsPath: ['providers', provider],
+        // Membership of the catalog, not of the settings document: a stored
+        // profile for a catalog route narrows it without declaring it.
+        declared: !catalogIds.has(provider),
+      })
     }
+    for (const entry of CATALOG_PROVIDERS) declare(entry.provider, entry.displayName)
+    for (const [provider, profile] of profiles()) declare(provider, profile.displayName)
+    if (deepEqualJson(entries, directoryFacts)) return
     if (directory === undefined) directory = ctx.llm.registerConfigurableProviders(entries)
     else directory.replace(entries)
     directoryFacts = entries
@@ -459,6 +478,32 @@ export function apply(ctx: Context, config: Config): void {
           ctx.logger.error(error)
         }
       },
+    })
+    // One-shot upgrade import: fold stored pi-ai profiles that speak this
+    // adapter's protocols into the user layer. Runs after installSection so
+    // the write's namespace is registered; the resulting change notification
+    // drives registration through the onChange hook above.
+    void migrateLegacyPiAiProfiles(
+      settingsCtx.settings,
+      {
+        ns: NS,
+        accepts: (route: string, profile: LegacyPiAiProfile): boolean =>
+          profile.api === 'openai-completions'
+          || profile.api === 'openai-responses'
+          // No stored protocol means a pi-ai catalog route; the ones that
+          // served an OpenAI protocol under their own key land here, and a
+          // hand-declared profile without an endpoint named no wire to serve.
+          || (profile.api === undefined && (route === 'openai' || typeof profile.baseURL === 'string')),
+        convert: (profile: LegacyPiAiProfile) => convertLegacyPiAiProfile(profile, {
+          // An unstored protocol meant the catalog default, which on this
+          // adapter is exactly the chat-completions wire.
+          api: profile.api === 'openai-responses' ? 'openai-responses' : 'openai-completions',
+        }),
+      },
+      (line) => { ctx.logger.info(line) },
+    ).catch((error) => {
+      ctx.logger.warn('llm-openai: migrating the legacy llm-pi-ai section failed; its routes stay there')
+      ctx.logger.warn(error)
     })
   })
 }
