@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { AttachmentId } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, LlmError, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
+import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { GenerateOptions, Message } from '@deepseek-ai/dsh-llm'
 import { serializeResponsesRequest, serializeResponsesRequestWithImages, splitToolCallId } from '../src/responses-serialize.ts'
 
@@ -192,5 +194,41 @@ describe('splitToolCallId', () => {
   it('splits the streamed joint id and leaves bare ids whole', () => {
     expect(splitToolCallId('call_1|fc_77')).toEqual({ callId: 'call_1', itemId: 'fc_77' })
     expect(splitToolCallId('call_1')).toEqual({ callId: 'call_1' })
+  })
+})
+
+describe('native media parts (documents)', () => {
+  const pdf: FileAttachmentRef = {
+    attachmentId: AttachmentId(`sha256:${'f'.repeat(64)}`),
+    name: 'doc.pdf',
+    bytes: 8,
+  }
+  const images = {
+    requestImages: new Map(),
+    maxRequestImageBytes: 1024,
+  } as unknown as Parameters<typeof serializeResponsesRequestWithImages>[1]
+
+  it('sends a document as the Responses input_file part with a base64 Data URL', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-responses-media-'))
+    writeFileSync(join(dir, 'doc.pdf'), '%PDF-1.4')
+    const native = {
+      attachments: { fileHostPath: () => join(dir, 'doc.pdf') },
+      families: ['document'] as const,
+      maxBytes: 20 * 1024 * 1024,
+    }
+    const body = await serializeResponsesRequestWithImages(base({ messages: [createUserMessage({
+      content: [{ type: 'file', attachment: pdf } as never],
+      source: { kind: 'user' },
+    })] }), images as never, {}, undefined, native as never)
+    const first = body.input[0] as { role: string; content: { type: string; file_data?: string; filename?: string }[] }
+    expect(first.content).toHaveLength(1)
+    expect(first.content[0]).toMatchObject({
+      type: 'input_file',
+      filename: 'doc.pdf',
+    })
+    expect(String(first.content[0]!.file_data)).toMatch(/^data:application\/pdf;base64,/)
   })
 })

@@ -45,6 +45,7 @@ import {
 } from './adapter.ts'
 import type { OpenAICatalogModel, OpenAIConnectionOptions } from './adapter.ts'
 import { discoverModels } from './discovery.ts'
+import { DEFAULT_MAX_REQUEST_FILE_BYTES } from './native-media.ts'
 import {
   ANTHROPIC_IMAGE_OFFLOAD_BYTE_QUANTUM,
   ANTHROPIC_IMAGE_OFFLOAD_COUNT_QUANTUM,
@@ -140,6 +141,8 @@ export interface ProviderProfile {
   models?: OpenAICatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs?: number
+  /** Inline byte bound for each native file/video part on this route (default 20 MiB). */
+  maxRequestFileBytes?: number
   /** Maximum accumulated inline base64 image payload per chat request. */
   maxRequestImageBytes?: number
   /** Maximum number of represented images per chat request. */
@@ -188,6 +191,7 @@ const profile: z<ProviderProfile> = z.object({
   defaultContextWindow: z.number().step(1).min(1),
   models: z.array(catalogModel).default([]),
   streamIdleTimeoutMs: z.number().min(Number.MIN_VALUE).max(MAX_TIMER_DELAY_MS).default(DEFAULT_STREAM_IDLE_TIMEOUT_MS),
+  maxRequestFileBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_FILE_BYTES),
   maxRequestImageBytes: z.number().step(1).min(1).default(DEFAULT_MAX_REQUEST_IMAGE_BYTES),
   maxImagesPerRequest: z.number().step(1).min(1).default(DEFAULT_MAX_IMAGES_PER_REQUEST),
   imageOffloadByteQuantum: z.number().step(1).min(1).default(DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM),
@@ -308,6 +312,8 @@ export function resolveProfiles(
         `llm-provider: provider "${provider}" streamIdleTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
       )
     }
+    const maxRequestFileBytes = safeBound(provider, 'maxRequestFileBytes', source.maxRequestFileBytes,
+      DEFAULT_MAX_REQUEST_FILE_BYTES)
     const maxRequestImageBytes = safeBound(provider, 'maxRequestImageBytes', source.maxRequestImageBytes,
       anthropic ? ANTHROPIC_MAX_REQUEST_IMAGE_BYTES : DEFAULT_MAX_REQUEST_IMAGE_BYTES)
     const maxImagesPerRequest = safeBound(provider, 'maxImagesPerRequest', source.maxImagesPerRequest,
@@ -331,6 +337,7 @@ export function resolveProfiles(
         displayName,
         api,
         anthropic: {
+          displayName,
           apiKeyEnv: credentialRef(source.apiKeyEnv ?? DEFAULT_API_KEY_ENV.anthropic),
           baseURL: source.baseURL
             ?? environment?.get(BASE_URL_ENV.anthropic)?.value
@@ -343,6 +350,7 @@ export function resolveProfiles(
           // carries the protocol default when the profile declares none.
           maxTokens: source.maxTokens ?? ANTHROPIC_MAX_TOKENS,
           defaultContextWindow: source.defaultContextWindow,
+          maxRequestFileBytes,
           models: models as unknown as AnthropicCatalogModel[],
           streamIdleTimeoutMs,
           maxRequestImageBytes,
@@ -360,6 +368,7 @@ export function resolveProfiles(
       api,
       openai: {
         api,
+        displayName,
         apiKeyEnv: credentialRef(source.apiKeyEnv ?? DEFAULT_API_KEY_ENV.openai),
         baseURL: source.baseURL
           ?? environment?.get(BASE_URL_ENV.openai)?.value
@@ -371,6 +380,7 @@ export function resolveProfiles(
         maxTokens: source.maxTokens,
         defaultContextWindow: source.defaultContextWindow,
         models,
+        maxRequestFileBytes,
         streamIdleTimeoutMs,
         maxRequestImageBytes,
         maxImagesPerRequest,

@@ -160,20 +160,84 @@ export function fileHandleText(ref: FileAttachmentRef, readonlyPath: string | un
   return `[${identity}: verbatim read-only copy saved at ${quoted(readonlyPath)}. Read that path with your file tools when its contents are needed; copy it to a writable location before modifying it. When delegating file work, include this saved path in the delegation prompt; only subagents sharing this execution environment can read it.]`
 }
 
+/**
+ * The media families a provider wire can carry natively as an attachment.
+ * `video` rides GLM's/Qwen's `video_url` part; `document` rides Anthropic's
+ * `document`, GLM's unified `file`, and OpenAI's `input_file` parts.
+ */
+export type NativeAttachmentFamily = 'video' | 'document'
+
+/**
+ * Extension → media type for the families above. A durable file reference
+ * carries a sanitized filename and no MIME of its own, so the extension is the
+ * one deterministic answer every surface (runtime gate, each wire's
+ * serializer) can share.
+ */
+const NATIVE_MEDIA_TYPES: Readonly<Record<string, string>> = {
+  // Motion pictures — GLM `video_url`, DashScope/OpenAI-compatible `video_url`.
+  mp4: 'video/mp4',
+  m4v: 'video/x-m4v',
+  mov: 'video/quicktime',
+  webm: 'video/webm',
+  avi: 'video/x-msvideo',
+  mkv: 'video/x-matroska',
+  // Documents — Anthropic `document`, GLM `file`, OpenAI `input_file`.
+  pdf: 'application/pdf',
+  txt: 'text/plain',
+  md: 'text/markdown',
+  csv: 'text/csv',
+  json: 'application/json',
+  html: 'text/html',
+  xml: 'application/xml',
+  yaml: 'application/yaml',
+  yml: 'application/yaml',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+}
+
+/**
+ * The media type one reference's filename implies.
+ * @param name - sanitized display filename as stored with the reference.
+ * @returns the media type, or `undefined` when no provider wire carries it.
+ */
+export function inferAttachmentMediaType(name: string): string | undefined {
+  const dot = name.lastIndexOf('.')
+  if (dot < 0) return undefined
+  return NATIVE_MEDIA_TYPES[name.slice(dot + 1).toLowerCase()]
+}
+
+/**
+ * The native family one file reference belongs to.
+ * @param ref - durable verbatim file reference.
+ * @returns `video` or `document` for a family a wire can carry, else `undefined`.
+ */
+export function attachmentFamily(ref: FileAttachmentRef): NativeAttachmentFamily | undefined {
+  const mediaType = inferAttachmentMediaType(ref.name)
+  if (mediaType === undefined) return undefined
+  return mediaType.startsWith('video/') ? 'video' : 'document'
+}
+
 /** Replace every file occurrence, including nested tool results, with handle text. */
 function replaceFilesWithHandles(
   blocks: readonly ContentBlock[],
   resolvePath: (ref: FileAttachmentRef) => string | undefined,
+  keepNative?: (ref: FileAttachmentRef) => boolean,
 ): ContentBlock[] {
   let next: ContentBlock[] | undefined
   for (const [index, block] of blocks.entries()) {
     if (block.type === 'file') {
+      if (keepNative?.(block.attachment) === true) {
+        // Kept native: once an earlier block started the copy, this one joins it.
+        next?.push(block)
+        continue
+      }
       next ??= blocks.slice(0, index)
       next.push({ type: 'text', text: fileHandleText(block.attachment, resolvePath(block.attachment)) })
       continue
     }
     if (block.type === 'tool-result') {
-      const content = replaceFilesWithHandles(block.content, resolvePath)
+      const content = replaceFilesWithHandles(block.content, resolvePath, keepNative)
       if (content !== block.content) {
         next ??= blocks.slice(0, index)
         next.push({ ...block, content })
@@ -187,19 +251,24 @@ function replaceFilesWithHandles(
 
 /**
  * Project durable file history into deterministic handle text for every model
- * route. Unlike images, no provider receives file blocks natively, so this
- * projection is unconditional in request assembly.
+ * route — except where a provider wire carries the media family natively
+ * (GLM's `video_url`/`file`, DashScope's `video_url`, Anthropic's `document`,
+ * OpenAI's `input_file`). Request assembly keeps exactly the occurrences
+ * {@link keepNative} claims; every other file keeps this handle projection.
  * @param messages - complete request history.
  * @param resolvePath - resolve one reference's current execution-world read path.
+ * @param keepNative - per-reference predicate for occurrences a wire carries
+ *   natively; omission projects every file, the harness default.
  * @returns the original list without files, otherwise shallow message copies with handle text.
  */
 export function projectFilesToText(
   messages: readonly Message[],
   resolvePath: (ref: FileAttachmentRef) => string | undefined,
+  keepNative?: (ref: FileAttachmentRef) => boolean,
 ): readonly Message[] {
   if (!messages.some(message => contentHasFile(message.content))) return messages
   return messages.map((message) => {
-    const content = replaceFilesWithHandles(message.content, resolvePath)
+    const content = replaceFilesWithHandles(message.content, resolvePath, keepNative)
     return content === message.content ? message : { ...message, content }
   })
 }

@@ -7,11 +7,14 @@
  * @module dsh-llm-provider/anthropic-serialize
  */
 
-import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
+import { contentHasFile, contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import { readNativeAttachment, ridesNatively } from './native-media.ts'
+import type { NativeAttachmentOptions } from './native-media.ts'
 import type {
   WireAssistantMessage,
+  WireDocumentBlock,
   WireImageBlock,
   WireToolUseBlock,
   WireMessage,
@@ -113,6 +116,15 @@ function assertTextOnly(blocks: readonly ContentBlock[]): void {
   if (contentHasImage(blocks)) {
     throw new LlmError('The Anthropic messages adapter does not support image content.', 'UNSUPPORTED_CONTENT')
   }
+  // A file reaching the text-only path means request assembly kept it without
+  // this route claiming its family; dropping it silently would lose content.
+  if (contentHasFile(blocks)) {
+    throw new LlmError(
+      'The Anthropic messages adapter received an unserialized file attachment;'
+      + " declare the model's file input on the route first",
+      'UNSUPPORTED_CONTENT',
+    )
+  }
 }
 
 /** Reject roles whose history format cannot carry image input. */
@@ -164,21 +176,38 @@ function imageBlocks(
 }
 
 /** Convert user or nested tool-result blocks into ordered wire blocks. */
-function contentBlocks(
+async function contentBlocks(
   blocks: readonly ContentBlock[],
   images: ImageSerializationOptions,
-): WireUserContentBlock[] {
+  native?: NativeAttachmentOptions,
+): Promise<WireUserContentBlock[]> {
   const parts: WireUserContentBlock[] = []
   for (const block of blocks) {
     switch (block.type) {
       case 'text':
         if (block.text.length > 0) parts.push({ type: 'text', text: block.text })
         break
+      case 'file': {
+        if (!ridesNatively(native, block.attachment)) break
+        const attachment = await readNativeAttachment(
+          native as NativeAttachmentOptions, block.attachment, 'The Anthropic messages adapter')
+        if (attachment.family === 'video') {
+          throw new LlmError(
+            'The Anthropic messages protocol has no video input; send the video through an OpenAI-compatible route',
+            'UNSUPPORTED_CONTENT',
+          )
+        }
+        parts.push({
+          type: 'document',
+          source: { type: 'base64', media_type: attachment.mediaType, data: Buffer.from(attachment.bytes).toString('base64') },
+        } satisfies WireDocumentBlock)
+        break
+      }
       case 'image':
         parts.push(...imageBlocks(block, images))
         break
       case 'tool-result':
-        parts.push(...contentBlocks(block.content, images))
+        parts.push(...await contentBlocks(block.content, images, native))
         break
       default:
         break
@@ -286,10 +315,11 @@ export function serializeMessages(messages: Message[]): { systemParts: string[];
  * @param messages - transient request history after request-size offloading.
  * @param images - prepared request versions and the request budget.
  */
-export function serializeMessagesWithImages(
+export async function serializeMessagesWithImages(
   messages: readonly Message[],
   images: ImageSerializationOptions,
-): { systemParts: string[]; messages: WireMessage[] } {
+  native?: NativeAttachmentOptions,
+): Promise<{ systemParts: string[]; messages: WireMessage[] }> {
   assertSupportedImageRoles(messages)
   const systemParts: string[] = []
   const wire: WireMessage[] = []
@@ -320,18 +350,19 @@ export function serializeMessagesWithImages(
     const toolResults = message.content.filter(
       (block): block is Extract<ContentBlock, { type: 'tool-result' }> => block.type === 'tool-result',
     )
-    const parts = contentBlocks(regular, images)
-    const hasImage = parts.some(part => part.type === 'image')
+    const parts = await contentBlocks(regular, images, native)
+    // Any non-text part (image or document) needs the structured content form.
+    const hasMedia = parts.some(part => part.type !== 'text')
     const text = parts.filter((part): part is WireTextBlock => part.type === 'text').map(part => part.text).join('')
     if (parts.length > 0 || toolResults.length === 0) {
       flushToolImages()
       wire.push({
         role: 'user',
-        content: hasImage ? parts : text,
+        content: hasMedia ? parts : text,
       })
     }
     for (const result of toolResults) {
-      const resultParts = contentBlocks(result.content, images)
+      const resultParts = await contentBlocks(result.content, images, native)
       const imageBlocks = resultParts.filter((part): part is WireImageBlock => part.type === 'image')
       const resultText = resultParts.filter((part): part is WireTextBlock => part.type === 'text').map(part => part.text).join('')
       wire.push({
@@ -407,12 +438,13 @@ export function serializeRequest(
  * @param model - wire-relevant facts of the target catalog model.
  * @returns the fully materialized Messages request body.
  */
-export function serializeRequestWithImages(
+export async function serializeRequestWithImages(
   options: GenerateOptions,
   images: ImageSerializationOptions,
   defaults: RequestDefaults = {},
   model?: ModelWireFacts,
-): WireRequest {
+  native?: NativeAttachmentOptions,
+): Promise<WireRequest> {
   assertSupportedImageRoles(options.messages)
   const requestMessages = offloadRequestImagesWithPolicy(options.messages, {
     representation: 'base64',
@@ -429,7 +461,7 @@ export function serializeRequestWithImages(
     ...images.countQuantum === undefined ? {} : { countQuantum: images.countQuantum },
     placeholder: ref => offloadedImageText(ref, images.resolveImageAccess?.(ref)),
   })
-  const { systemParts, messages } = serializeMessagesWithImages(requestMessages, images)
+  const { systemParts, messages } = await serializeMessagesWithImages(requestMessages, images, native)
   const system = joinSystem(options.system, systemParts)
   return requestWithMessages(options, system, messages, defaults, model)
 }

@@ -34,6 +34,8 @@ import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { parseSse } from './anthropic-sse.ts'
 import { translate } from './anthropic-translate.ts'
 import { serializeRequest, serializeRequestWithImages, resolveRequestImagePolicy } from './anthropic-serialize.ts'
+import { ridesNatively } from './native-media.ts'
+import type { NativeAttachmentFamily } from '@deepseek-ai/dsh-llm'
 import type { ModelWireFacts, RequestDefaults } from './anthropic-serialize.ts'
 import type { WireError } from './anthropic-types.ts'
 
@@ -67,6 +69,8 @@ export interface AnthropicCatalogModel {
  * shape; the adapter trusts it and re-reads it per operation.
  */
 export interface AnthropicConnectionOptions {
+  /** Display name of the route these facts belong to (selectors, pickers). */
+  displayName: string
   /** Endpoint base; `/v1/messages` is appended. */
   baseURL: string
   /** Credential reference of this same resolution, resolved per request. */
@@ -81,6 +85,8 @@ export interface AnthropicConnectionOptions {
   models: readonly AnthropicCatalogModel[]
   /** Maximum provider idle time while one stream read is outstanding. */
   streamIdleTimeoutMs: number
+  /** Inline byte bound for each native file part on this route. */
+  maxRequestFileBytes: number
   /** Maximum accumulated inline base64 image payload in one request. */
   maxRequestImageBytes: number
   /** Maximum represented images in one request. */
@@ -236,7 +242,20 @@ export class AnthropicAdapter extends LlmAdapter {
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: 'Anthropic' }
+    try {
+      return { id: provider, name: this.config.options(provider).displayName }
+    } catch {
+      return { id: provider, name: provider }
+    }
+  }
+
+  /**
+   * The Messages protocol carries documents (`document` blocks, base64
+   * sources) and has no video input at all, so motion pictures stay on the
+   * harness's handle-text projection for this route.
+   */
+  override nativeAttachments(_provider: string, _model: string): readonly NativeAttachmentFamily[] {
+    return ['document']
   }
 
   override providerRetryPolicy(provider: string): ResolvedRetryPolicy {
@@ -326,6 +345,10 @@ export class AnthropicAdapter extends LlmAdapter {
     // One resolution per stream call: connection facts and the credential
     // freeze here and hold for this whole request.
     const hasImages = options.messages.some(message => contentHasImage(message.content))
+    const families = this.nativeAttachments(options.provider, options.model)
+    const nativeFiles = options.messages.some(message => message.content.some(block => (
+      block.type === 'file' && ridesNatively({ families }, block.attachment)
+    )))
     let attachments: AttachmentStore | undefined
     if (hasImages) {
       const model = connection.models.find(entry => entry.id === options.model)
@@ -335,10 +358,14 @@ export class AnthropicAdapter extends LlmAdapter {
           'UNSUPPORTED_CONTENT',
         )
       }
+    }
+    if (hasImages || nativeFiles) {
       attachments = this.config.resolveAttachments?.()
       if (attachments === undefined) {
         throw new LlmError(
-          'Anthropic image conversion requires the durable attachment service.',
+          hasImages
+            ? 'Anthropic image conversion requires the durable attachment service.'
+            : 'Anthropic native file conversion requires the durable attachment service.',
           'UNSUPPORTED_CONTENT',
         )
       }
@@ -413,11 +440,18 @@ export class AnthropicAdapter extends LlmAdapter {
       ? undefined
       : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
     let body
-    if (attachments === undefined) {
+    const native = attachments === undefined
+      ? undefined
+      : {
+        attachments,
+        families: this.nativeAttachments(options.provider, options.model),
+        maxBytes: connection.maxRequestFileBytes,
+      }
+    if (attachments === undefined || native === undefined) {
       body = serializeRequest(options, connection.defaults, wireFacts)
     } else {
       const requestImages = await prepareRequestImages(options, attachments, signal)
-      body = serializeRequestWithImages(options, {
+      body = await serializeRequestWithImages(options, {
         requestImages,
         ...(resolveImageAccess === undefined ? {} : { resolveImageAccess }),
         maxRequestImageBytes: connection.maxRequestImageBytes,

@@ -65,8 +65,36 @@ export interface WireImageUrlContentPart {
 /** One image representation on this route (inline base64 only — no Files API). */
 export type WireImageContentPart = WireImageUrlContentPart
 
+/**
+ * Motion-picture part. GLM (Z.AI) documents
+ * `{"type":"video_url","video_url":{"url":"…"}}` and DashScope/Qwen's
+ * OpenAI-compatible mode documents the same part (with an optional sibling
+ * `fps`); a locally-held attachment rides as a base64 Data URL, which is the
+ * form DashScope documents for OpenAI-compatible HTTP.
+ */
+export interface WireVideoContentPart {
+  type: 'video_url'
+  video_url: { url: string }
+}
+
+/**
+ * Document part — GLM's unified `file` content type, whose object carries one
+ * of `file_id`, `file_url`, or the inline `file_data` (base64) plus an
+ * optional `filename`. GLM documents this part for GLM-5.3-Flash, GLM-4.6V,
+ * and GLM-4.5V, and refuses a request that mixes it with `image_url` or
+ * `video_url`.
+ */
+export interface WireFileContentPart {
+  type: 'file'
+  file: { file_data: string; filename?: string }
+}
+
 /** Ordered input part accepted by a multimodal user message. */
-export type WireUserContentPart = WireTextContentPart | WireImageUrlContentPart
+export type WireUserContentPart =
+  | WireTextContentPart
+  | WireImageUrlContentPart
+  | WireVideoContentPart
+  | WireFileContentPart
 
 /** User-role message: text-only string or ordered multimodal input. */
 export interface WireUserMessage {

@@ -46,7 +46,17 @@ export interface WireImageBlock {
 }
 
 /** Ordered input part accepted by a user message. */
-export type WireUserContentBlock = WireTextBlock | WireImageBlock
+/**
+ * Document block — the Messages API's file input, per Anthropic's PDF
+ * support: `{"type":"document","source":{"type":"base64","media_type":…,"data":…}}`.
+ * Video has no Messages block, so a route that speaks this protocol refuses it.
+ */
+export interface WireDocumentBlock {
+  type: 'document'
+  source: { type: 'base64'; media_type: string; data: string }
+}
+
+export type WireUserContentBlock = WireTextBlock | WireImageBlock | WireDocumentBlock
 
 /** User-role message: plain string or ordered blocks. */
 export interface WireUserMessage {

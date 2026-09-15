@@ -144,7 +144,7 @@ describe('serializeRequest', () => {
 describe('serializeRequestWithImages', () => {
   it('serializes user images as inline base64 sources', async () => {
     const ref = imageRef()
-    const body = serializeRequestWithImages(
+    const body = await serializeRequestWithImages(
       request({
         messages: [createUserMessage({
           content: [
@@ -166,7 +166,7 @@ describe('serializeRequestWithImages', () => {
 
   it('displaces tool-result images into a following user message', async () => {
     const ref = imageRef()
-    const body = serializeRequestWithImages(
+    const body = await serializeRequestWithImages(
       request({
         messages: [
           createMessage({
@@ -195,7 +195,7 @@ describe('serializeRequestWithImages', () => {
 
   it('rejects image blocks in non-user roles', async () => {
     const ref = imageRef()
-    expect(() => serializeRequestWithImages(
+    await expect(serializeRequestWithImages(
       request({
         messages: [createMessage({
           role: 'assistant',
@@ -204,6 +204,43 @@ describe('serializeRequestWithImages', () => {
         })],
       }),
       inlineImageOptions([ref]),
-    )).toThrow(/cannot represent image content in an? assistant message/)
+    )).rejects.toThrow(/cannot represent image content in an? assistant message/)
+  })
+})
+
+describe('native media parts (documents)', () => {
+  it('sends a PDF as the Messages document block with a base64 source', async () => {
+    const { mkdtempSync, writeFileSync } = await import('node:fs')
+    const { join } = await import('node:path')
+    const { tmpdir } = await import('node:os')
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-anthropic-media-'))
+    writeFileSync(join(dir, 'doc.pdf'), '%PDF-1.4')
+    const native = {
+      attachments: { fileHostPath: () => join(dir, 'doc.pdf') },
+      families: ['document'] as const,
+      maxBytes: 20 * 1024 * 1024,
+    }
+    const body = await serializeRequestWithImages({
+      provider: 'anthropic-compatible',
+      model: 'claude-fable-5',
+      system: 'be brief',
+      messages: [createUserMessage({
+        content: [{
+          type: 'file',
+          attachment: { attachmentId: `sha256:${'a'.repeat(64)}` as never, name: 'doc.pdf', bytes: 8 },
+        }],
+        source: { kind: 'user' },
+      })],
+    }, { requestImages: new Map(), maxRequestImageBytes: 1024 } as never, {}, undefined, native as never)
+    // The one-shot system prompt rides the request's `system` field, not a part.
+    expect(body.system).toBe('be brief')
+    type Parts = { type: string; source?: { type: string; media_type: string; data: string } }[]
+    const [message] = body.messages as unknown as [{ content: Parts }]
+    expect(message.content).toEqual([
+      {
+        type: 'document',
+        source: { type: 'base64', media_type: 'application/pdf', data: Buffer.from('%PDF-1.4').toString('base64') },
+      },
+    ])
   })
 })

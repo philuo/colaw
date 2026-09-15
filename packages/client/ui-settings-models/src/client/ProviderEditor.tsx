@@ -496,9 +496,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               : (
                 <ModelListEditor
                   {...catalogProps}
-                  // The protocol wires carry text and image; the wider
-                  // vocabulary stays gated to the DeepSeek family.
-                  allowed={['text', 'image']}
                   probe={probe}
                   probeBlocked={keyFailure}
                   operations={operations}

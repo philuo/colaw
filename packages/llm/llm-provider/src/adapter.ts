@@ -32,6 +32,8 @@ import type {
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { sseFrames } from '@deepseek-ai/dsh-llm'
+import { DEFAULT_MAX_REQUEST_FILE_BYTES, ridesNatively } from './native-media.ts'
+import type { NativeAttachmentFamily } from '@deepseek-ai/dsh-llm'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
@@ -80,6 +82,8 @@ export interface OpenAICatalogModel {
  * makes a configuration change reach the next request without re-registration.
  */
 export interface OpenAIConnectionOptions {
+  /** Display name of the route these facts belong to (selectors, pickers). */
+  displayName: string
   /** Endpoint base; `/chat/completions` is appended (completions protocol). */
   baseURL: string
   /** Wire protocol this route speaks. */
@@ -105,6 +109,8 @@ export interface OpenAIConnectionOptions {
   maxRequestImageBytes: number
   /** Maximum represented images in one request. */
   maxImagesPerRequest: number
+  /** Inline byte bound for each native file/video part on this route. */
+  maxRequestFileBytes: number
   /** Base64-byte removal step after the request exceeds its byte bound. */
   imageOffloadByteQuantum: number
   /** Image-count removal step after the request exceeds its count bound. */
@@ -134,6 +140,7 @@ export interface OpenAIAdapterOptions {
 export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
 /** Default bound on accumulated inline base64 image payload in one request. */
 export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
+export { DEFAULT_MAX_REQUEST_FILE_BYTES }
 /** Default maximum represented images in one request. */
 export const DEFAULT_MAX_IMAGES_PER_REQUEST = 600
 /** Deterministic base64-byte removal step after the byte bound is exceeded. */
@@ -267,11 +274,27 @@ export class OpenAIAdapter extends LlmAdapter {
   }
 
   override providerInfo(provider: string): LlmProviderInfo {
-    return { id: provider, name: 'OpenAI' }
+    // One adapter serves every provider family, so the label is the route's
+    // own display name (zai-coding-cn, openai, …) — never a vendor brand.
+    try {
+      return { id: provider, name: this.config.options(provider).displayName }
+    } catch {
+      // A route that vanished from configuration keeps its id as the label.
+      return { id: provider, name: provider }
+    }
   }
 
   override providerRetryPolicy(provider: string): ResolvedRetryPolicy {
     return this.config.options(provider).retryPolicy
+  }
+
+  /**
+   * Both OpenAI wires carry documents; only chat completions carries motion
+   * pictures — GLM's and DashScope's `video_url` parts live on that protocol,
+   * and the Responses API has no video input.
+   */
+  override nativeAttachments(provider: string, _model: string): readonly NativeAttachmentFamily[] {
+    return this.config.options(provider).api === 'openai-responses' ? ['document'] : ['video', 'document']
   }
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
@@ -350,19 +373,30 @@ export class OpenAIAdapter extends LlmAdapter {
     // The key resolves *from this snapshot*, so an endpoint and the secret
     // sent to it can never come from different configuration generations.
     const hasImages = options.messages.some(message => contentHasImage(message.content))
+    const model = connection.models.find(entry => entry.id === options.model)
+    const families = this.nativeAttachments(options.provider, options.model)
+    const mediaOptions = { families }
+    // A file rides natively only where assembly keeps it: this route's wire
+    // carries the family AND the model declares the matching modality.
+    const nativeFiles = options.messages.some(message => message.content.some(block => (
+      block.type === 'file' && ridesNatively(mediaOptions, block.attachment)
+    )))
     let attachments: AttachmentStore | undefined
     if (hasImages) {
-      const model = connection.models.find(entry => entry.id === options.model)
       if (model?.inputModalities?.includes('image') !== true) {
         throw new LlmError(
           `OpenAI model "${options.model}" does not accept image input.`,
           'UNSUPPORTED_CONTENT',
         )
       }
+    }
+    if (hasImages || nativeFiles) {
       attachments = this.config.resolveAttachments?.()
       if (attachments === undefined) {
         throw new LlmError(
-          'OpenAI image conversion requires the durable attachment service.',
+          hasImages
+            ? 'OpenAI image conversion requires the durable attachment service.'
+            : 'OpenAI native file conversion requires the durable attachment service.',
           'UNSUPPORTED_CONTENT',
         )
       }
@@ -436,8 +470,17 @@ export class OpenAIAdapter extends LlmAdapter {
     const resolveImageAccess = attachments === undefined
       ? undefined
       : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
+    // Native media (images, or files the runtime kept) needs the async path;
+    // a request with neither keeps the synchronous text-only conversion.
+    const native = attachments === undefined
+      ? undefined
+      : {
+        attachments,
+        families: this.nativeAttachments(options.provider, options.model),
+        maxBytes: connection.maxRequestFileBytes,
+      }
     let body
-    if (attachments === undefined) {
+    if (attachments === undefined || native === undefined) {
       body = connection.api === 'openai-responses'
         ? serializeResponsesRequest(options, connection.defaults, wireFacts)
         : serializeRequest(options, connection.defaults, wireFacts)
@@ -456,7 +499,7 @@ export class OpenAIAdapter extends LlmAdapter {
       }
       body = connection.api === 'openai-responses'
         ? await serializeResponsesRequestWithImages(options, images, connection.defaults, wireFacts)
-        : await serializeRequestWithImages(options, images, connection.defaults, wireFacts)
+        : await serializeRequestWithImages(options, images, connection.defaults, wireFacts, native)
     }
 
     // Prepared outside the try so the TRANSPORT label below covers exactly the

@@ -34,9 +34,12 @@ import { HarnessError, INVALID_CREDENTIAL_CODE } from './error.ts'
 import { normalizeLlmFailure } from './adapter-failure.ts'
 import { normalizeApiKey } from './api-key.ts'
 import {
-  contentHasFile, contentHasImage, fileHandleText, projectFilesToText, projectImagesForTextModel,
+  attachmentFamily, contentHasFile, contentHasImage, fileHandleText, projectFilesToText, projectImagesForTextModel,
 } from './content.ts'
 import type { FileAttachmentRef } from '@deepseek-ai/dsh-attachment'
+export { attachmentFamily as attachmentMediaFamily, inferAttachmentMediaType } from './content.ts'
+export type { NativeAttachmentFamily } from './content.ts'
+import type { NativeAttachmentFamily } from './content.ts'
 
 export * from './attribution.ts'
 export * from './brand.ts'
@@ -227,6 +230,21 @@ export abstract class LlmAdapter {
    */
   imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined {
     return undefined
+  }
+
+  /**
+   * Media families this route can carry natively on its provider wire, for one
+   * exact model. Request assembly projects every file to handle text unless
+   * this claims the family AND the resolved model declares the matching
+   * modality (`video` for motion pictures, `file` for documents) — so a route
+   * that speaks GLM's `video_url`/`file`, Anthropic's `document`, or OpenAI's
+   * `input_file` keeps those occurrences as parts instead of text handles.
+   * @param _provider - a route passed to `registerAdapter()` for this instance.
+   * @param _model - exact model id passed to {@link GenerateOptions.model}.
+   * @returns the families this route serializes; default none, the harness projection.
+   */
+  nativeAttachments(_provider: string, _model: string): readonly NativeAttachmentFamily[] {
+    return []
   }
 
   /**
@@ -1044,10 +1062,53 @@ export class LlmRuntime extends TypertRemoteService {
         : Object.isFrozen(options)
           ? deepFreeze({ ...options, ...resolvedConfig })
           : { ...options, ...resolvedConfig }
-      // Files are never dispatched natively: every route receives handle text.
+      // Files reach a provider wire natively only where that wire carries the
+      // media family AND the model declares it: the adapter names the families
+      // it serializes (`video_url`/`file`/`document`/`input_file`), the model's
+      // declared modalities gate the route's promise, and every other file
+      // keeps the handle-text projection.
+      const nativeFamilies = new Set(adapter.nativeAttachments(options.provider, options.model))
+      const declaredModalities = modelInfo.inputModalities ?? []
+      const keepNative = (ref: FileAttachmentRef): boolean => {
+        const family = attachmentFamily(ref)
+        if (family === undefined || !nativeFamilies.has(family)) return false
+        return family === 'video' ? declaredModalities.includes('video') : declaredModalities.includes('file')
+      }
+      // A model that declares a media family its own route cannot carry is a
+      // configuration contradiction: failing loud names the fix (move the
+      // model to a route that speaks the family, or clear the declaration),
+      // where a silent handle-text projection would drop the attachment the
+      // user believes the model received.
+      for (const message of resolvedOptions.messages) {
+        for (const block of message.content) {
+          if (block.type !== 'file') continue
+          const family = attachmentFamily(block.attachment)
+          if (family === undefined) {
+            if (declaredModalities.includes('file') || declaredModalities.includes('video')) {
+              throw new LlmError(
+                `Model "${options.model}" declares file/video input, but "${block.attachment.name}" has no`
+                + ' recognizable media type; rename it with a known extension (pdf, txt, mp4, …)',
+                'UNSUPPORTED_CONTENT',
+              )
+            }
+            continue
+          }
+          const declared = family === 'video'
+            ? declaredModalities.includes('video')
+            : declaredModalities.includes('file')
+          if (declared && !nativeFamilies.has(family)) {
+            throw new LlmError(
+              `Model "${options.model}" declares ${family} input, but its route's protocol`
+              + ` (${nativeFamilies.size === 0 ? 'no native media' : [...nativeFamilies].join(' + ')})`
+              + ` cannot carry it; move the model to a route that speaks ${family} or clear the declaration`,
+              'UNSUPPORTED_CONTENT',
+            )
+          }
+        }
+      }
       let projectedMessages: readonly Message[] = resolvedOptions.messages
       if (projectedMessages.some(message => contentHasFile(message.content))) {
-        projectedMessages = projectFilesToText(projectedMessages, ref => this.fileReadPath(ref))
+        projectedMessages = projectFilesToText(projectedMessages, ref => this.fileReadPath(ref), keepNative)
       }
       if (modelInfo.inputModalities !== undefined
         && !modelInfo.inputModalities.includes('image')

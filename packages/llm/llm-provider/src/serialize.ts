@@ -7,16 +7,20 @@
  * @module dsh-llm-provider/serialize
  */
 
-import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
+import { contentHasFile, contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
-import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import { dataUrl, readNativeAttachment, ridesNatively } from './native-media.ts'
+import type { NativeAttachmentOptions } from './native-media.ts'
 import type {
+  WireFileContentPart,
   WireImageContentPart,
   WireMessage,
   WireRequest,
   WireTextContentPart,
   WireTool,
   WireUserContentPart,
+  WireVideoContentPart,
 } from './types.ts'
 
 /** Adapter-level request defaults (from plugin config). */
@@ -114,6 +118,15 @@ function assertTextOnly(blocks: readonly ContentBlock[]): void {
   if (contentHasImage(blocks)) {
     throw new LlmError('The OpenAI chat-completions adapter does not support image content.', 'UNSUPPORTED_CONTENT')
   }
+  // A file reaching the text-only path means request assembly kept it without
+  // this route claiming its family; dropping it silently would lose content.
+  if (contentHasFile(blocks)) {
+    throw new LlmError(
+      'The OpenAI chat-completions adapter received an unserialized file attachment;'
+      + " declare the model's file or video input on the route first",
+      'UNSUPPORTED_CONTENT',
+    )
+  }
 }
 
 /** Reject roles whose chat-completions history format cannot carry image input. */
@@ -166,6 +179,7 @@ async function contentParts(
   blocks: readonly ContentBlock[],
   images: ImageSerializationOptions,
   nextImage: { value: number },
+  native?: NativeAttachmentOptions,
 ): Promise<WireUserContentPart[]> {
   const parts: WireUserContentPart[] = []
   for (const block of blocks) {
@@ -177,8 +191,15 @@ async function contentParts(
         nextImage.value += 1
         parts.push(...await imageParts(block, images, parts.length > 0))
         break
+      case 'file':
+        // Only a reference the runtime kept (route family + declared modality)
+        // reaches this branch; everything else arrived as handle text.
+        if (ridesNatively(native, block.attachment)) {
+          parts.push(await nativeFilePart(native as NativeAttachmentOptions, block.attachment))
+        }
+        break
       case 'tool-result':
-        parts.push(...await contentParts(block.content, images, nextImage))
+        parts.push(...await contentParts(block.content, images, nextImage, native))
         break
       default:
         // Other merge-extensible blocks are not chat-completions user-input vocabulary.
@@ -186,6 +207,22 @@ async function contentParts(
     }
   }
   return parts
+}
+
+/**
+ * One native file occurrence as its wire part. Motion pictures ride
+ * `video_url` (GLM/DashScope); documents ride GLM's unified `file` part with
+ * inline `file_data` and `filename`.
+ */
+async function nativeFilePart(
+  native: NativeAttachmentOptions,
+  ref: FileAttachmentRef,
+): Promise<WireVideoContentPart | WireFileContentPart> {
+  const attachment = await readNativeAttachment(native, ref, 'The OpenAI-compatible adapter')
+  const url = dataUrl(attachment.mediaType, attachment.bytes)
+  return attachment.family === 'video'
+    ? { type: 'video_url', video_url: { url } }
+    : { type: 'file', file: { file_data: url, filename: ref.name } }
 }
 
 /** Keep text-only user messages on the compact string wire form. */
@@ -270,6 +307,7 @@ export function serializeMessages(messages: Message[]): WireMessage[] {
 export async function serializeMessagesWithImages(
   messages: readonly Message[],
   images: ImageSerializationOptions,
+  native?: NativeAttachmentOptions,
 ): Promise<WireMessage[]> {
   assertSupportedImageRoles(messages)
   const wire: WireMessage[] = []
@@ -300,7 +338,7 @@ export async function serializeMessagesWithImages(
     const toolResults = message.content.filter((block): block is Extract<ContentBlock, { type: 'tool-result' }> => (
       block.type === 'tool-result'
     ))
-    const content = userContent(await contentParts(regular, images, nextImage))
+    const content = userContent(await contentParts(regular, images, nextImage, native))
     if (content.length > 0 || toolResults.length === 0) {
       flushToolImages()
       wire.push({
@@ -309,7 +347,7 @@ export async function serializeMessagesWithImages(
       })
     }
     for (const result of toolResults) {
-      const parts = await contentParts(result.content, images, nextImage)
+      const parts = await contentParts(result.content, images, nextImage, native)
       const imageParts = parts.filter((part): part is WireImageContentPart => part.type !== 'text')
       const text = parts.filter(part => part.type === 'text').map(part => part.text).join('')
       wire.push({
@@ -396,6 +434,7 @@ export async function serializeRequestWithImages(
   images: ImageSerializationOptions,
   defaults: RequestDefaults = {},
   model: ModelWireFacts | undefined = undefined,
+  native?: NativeAttachmentOptions,
 ): Promise<WireRequest> {
   assertSupportedImageRoles(options.messages)
   const requestMessages = offloadRequestImagesWithPolicy(options.messages, {
@@ -417,6 +456,6 @@ export async function serializeRequestWithImages(
   if (options.system !== undefined) {
     messages.push({ role: 'system', content: options.system })
   }
-  messages.push(...await serializeMessagesWithImages(requestMessages, images))
+  messages.push(...await serializeMessagesWithImages(requestMessages, images, native))
   return requestWithMessages(options, messages, defaults, model)
 }

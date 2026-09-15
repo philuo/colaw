@@ -1,6 +1,9 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
-import type { ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { FileAttachmentRef, ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, ReasoningEffortId, createMessage, ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
 import { serializeRequest, serializeRequestWithImages } from '../src/serialize.ts'
@@ -168,5 +171,102 @@ describe('serializeRequestWithImages', () => {
       }),
       inlineImageOptions([ref]),
     )).rejects.toThrow(/cannot represent image content in an? assistant message/)
+  })
+})
+
+describe('native media parts (files and motion pictures)', () => {
+  /** A temp file the fake store "hosts"; contents assert the base64 round trip. */
+  const mediaFiles: Record<string, string> = {}
+
+  function fileRef(name: string, bytes: number): FileAttachmentRef {
+    return {
+      attachmentId: AttachmentId(`sha256:${'e'.repeat(64)}`),
+      name,
+      bytes,
+    }
+  }
+
+  function nativeStore(): { store: never; pathFor(name: string): string } {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-native-media-'))
+    for (const [name, content] of Object.entries({ 'clip.mp4': 'MPEG4', 'doc.pdf': '%PDF-1.4' })) {
+      const path = join(dir, name)
+      writeFileSync(path, content)
+      mediaFiles[name] = path
+    }
+    return {
+      pathFor: name => mediaFiles[name]!,
+      store: { fileHostPath: (ref: { name: string }) => mediaFiles[ref.name] } as never,
+    }
+  }
+
+  const media = nativeStore()
+  const native = {
+    attachments: media.store,
+    families: ['video', 'document'] as const,
+    maxBytes: 20 * 1024 * 1024,
+  }
+  const mp4: FileAttachmentRef = { ...fileRef('clip.mp4', 5) }
+  const pdf: FileAttachmentRef = { ...fileRef('doc.pdf', 8) }
+
+  it('sends a motion picture as the GLM/DashScope video_url part with a base64 Data URL', async () => {
+    const body = await serializeRequestWithImages(
+      request({ messages: [createUserMessage({
+        content: [{ type: 'file', attachment: mp4 }, { type: 'text', text: '这段视频的内容是什么?' }],
+        source: { kind: 'user' },
+      })] }),
+      { requestImages: new Map(), maxRequestImageBytes: 1024 },
+      {},
+      undefined,
+      native,
+    )
+    const [message] = body.messages as unknown as [{ content: { type: string; video_url?: { url: string }; text?: string }[] }]
+    expect(message.content[0]).toEqual({
+      type: 'video_url',
+      video_url: { url: `data:video/mp4;base64,${Buffer.from('MPEG4').toString('base64')}` },
+    })
+    expect(message.content[1]).toMatchObject({ type: 'text', text: '这段视频的内容是什么?' })
+  })
+
+  it('sends a document as GLM\'s unified file part with inline file_data and filename', async () => {
+    const body = await serializeRequestWithImages(
+      request({ messages: [createUserMessage({
+        content: [{ type: 'file', attachment: pdf }, { type: 'text', text: '总结这份文档' }],
+        source: { kind: 'user' },
+      })] }),
+      { requestImages: new Map(), maxRequestImageBytes: 1024 },
+      {},
+      undefined,
+      native,
+    )
+    const [message] = body.messages as unknown as [{ content: { type: string; file?: { file_data: string; filename: string } }[] }]
+    expect(message.content[0]).toEqual({
+      type: 'file',
+      file: { file_data: `data:application/pdf;base64,${Buffer.from('%PDF-1.4').toString('base64')}`, filename: 'doc.pdf' },
+    })
+  })
+
+  it('refuses to inline a file above the route bound before reading it', async () => {
+    const tiny: FileAttachmentRef = { ...pdf, bytes: 64 * 1024 * 1024 }
+    await expect(serializeRequestWithImages(
+      request({ messages: [createUserMessage({
+        content: [{ type: 'file', attachment: tiny }],
+        source: { kind: 'user' },
+      })] }),
+      { requestImages: new Map(), maxRequestImageBytes: 1024 },
+      {},
+      undefined,
+      { ...native, maxBytes: 20 * 1024 * 1024 },
+    )).rejects.toThrow(/maxRequestFileBytes/)
+  })
+
+  it('refuses a file the request kept without this route claiming its family', () => {
+    // The runtime projects unclaimed files to handle text; a leftover here is
+    // a caller bug, and dropping it silently would lose content.
+    expect(() => serializeRequest(request({
+      messages: [createUserMessage({
+        content: [{ type: 'file', attachment: mp4 }],
+        source: { kind: 'user' },
+      })],
+    }))).toThrow(/unserialized file attachment/)
   })
 })

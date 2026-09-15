@@ -54,8 +54,21 @@ export interface ResponsesInputImagePart {
   image_url: string
 }
 
+/**
+ * Document part — OpenAI Responses' `input_file`, whose `file_data` carries a
+ * base64 Data URL (or a Files API `file_id`, which this route does not use).
+ */
+export interface ResponsesInputFilePart {
+  type: 'input_file'
+  file_data: string
+  filename?: string
+}
+
 /** Ordered input part accepted by a user message. */
-export type ResponsesUserContentPart = ResponsesInputTextPart | ResponsesInputImagePart
+export type ResponsesUserContentPart =
+  | ResponsesInputTextPart
+  | ResponsesInputImagePart
+  | ResponsesInputFilePart
 
 /** An assistant text turn replayed as a completed output message. */
 export interface ResponsesMessageItem {

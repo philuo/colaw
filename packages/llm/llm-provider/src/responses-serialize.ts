@@ -18,6 +18,8 @@ import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWith
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { ImageSerializationOptions, ModelWireFacts, RequestDefaults } from './serialize.ts'
+import { dataUrl, readNativeAttachment, ridesNatively } from './native-media.ts'
+import type { NativeAttachmentOptions } from './native-media.ts'
 import type {
   ResponsesFunctionCallItem,
   ResponsesInputImagePart,
@@ -116,6 +118,7 @@ async function imageParts(
 async function contentParts(
   blocks: readonly ContentBlock[],
   images: ImageSerializationOptions,
+  native?: NativeAttachmentOptions,
 ): Promise<ResponsesUserContentPart[]> {
   const parts: ResponsesUserContentPart[] = []
   for (const block of blocks) {
@@ -126,8 +129,28 @@ async function contentParts(
       case 'image':
         parts.push(...await imageParts(block, images, parts.length > 0))
         break
+      case 'file': {
+        // Only a reference the runtime kept (route family + declared modality)
+        // reaches this branch; the Responses wire carries documents and has no
+        // video input, so motion pictures never ride this route natively.
+        if (!ridesNatively(native, block.attachment)) break
+        const attachment = await readNativeAttachment(
+          native as NativeAttachmentOptions, block.attachment, 'The OpenAI responses adapter')
+        if (attachment.family === 'video') {
+          throw new LlmError(
+            'The OpenAI responses protocol has no video input; send the video through an openai-completions route',
+            'UNSUPPORTED_CONTENT',
+          )
+        }
+        parts.push({
+          type: 'input_file',
+          file_data: dataUrl(attachment.mediaType, attachment.bytes),
+          filename: block.attachment.name,
+        })
+        break
+      }
       case 'tool-result':
-        parts.push(...await contentParts(block.content, images))
+        parts.push(...await contentParts(block.content, images, native))
         break
       default:
         // Other merge-extensible blocks are not Responses user-input vocabulary.
@@ -213,6 +236,7 @@ export async function serializeResponsesMessages(
   messages: readonly Message[],
   images?: ImageSerializationOptions,
   modelAcceptsImages = false,
+  native?: NativeAttachmentOptions,
 ): Promise<ResponsesInputItem[]> {
   const items: ResponsesInputItem[] = []
   let assistantIndex = 0
@@ -236,7 +260,7 @@ export async function serializeResponsesMessages(
         .filter((block): block is Extract<ContentBlock, { type: 'text' }> => block.type === 'text')
         .map(block => ({ type: 'input_text' as const, text: block.text }))
         .filter(part => part.text.length > 0)
-      : await contentParts(regular, images)
+      : await contentParts(regular, images, native)
     if (textParts.length > 0) items.push({ role: 'user', content: textParts })
     for (const block of message.content) {
       if (block.type !== 'tool-result') continue
@@ -357,6 +381,7 @@ export async function serializeResponsesRequestWithImages(
   images: ImageSerializationOptions,
   defaults: RequestDefaults = {},
   model: ModelWireFacts | undefined = undefined,
+  native?: NativeAttachmentOptions,
 ): Promise<ResponsesRequest> {
   // Images are representable only in user messages on this route.
   for (const message of options.messages) {
@@ -383,6 +408,6 @@ export async function serializeResponsesRequestWithImages(
     ...images.countQuantum === undefined ? {} : { countQuantum: images.countQuantum },
     placeholder: ref => offloadedImageText(ref, images.resolveImageAccess?.(ref)),
   })
-  const input = await serializeResponsesMessages(requestMessages, images, modelAcceptsImages)
+  const input = await serializeResponsesMessages(requestMessages, images, modelAcceptsImages, native)
   return requestWithInput(options, withSystemPrompt(input, options, model), defaults, model)
 }
