@@ -304,17 +304,23 @@ describe('openai-responses wire', () => {
 })
 
 describe('dormant catalog directory', () => {
-  it('offers the openai catalog route while the plugin is dormant', async () => {
+  it('offers both catalog routes while the plugin is dormant', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmOpenAi, {})
-    const directory = ctx.llm.listConfigurableProviders()
-    expect(directory).toEqual([
+    expect(ctx.llm.listConfigurableProviders()).toEqual([
       {
         provider: 'openai',
         displayName: 'OpenAI',
         settingsNs: 'llm-openai',
         settingsPath: ['providers', 'openai'],
+        declared: false,
+      },
+      {
+        provider: 'anthropic',
+        displayName: 'Anthropic',
+        settingsNs: 'llm-openai',
+        settingsPath: ['providers', 'anthropic'],
         declared: false,
       },
     ])

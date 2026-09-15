@@ -300,10 +300,9 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const addRow = addTarget === undefined
     ? undefined
     : state.rows.find(row => row.entry.provider === addTarget.provider)
-  // Hand-declared routes live in the llm-openai / llm-anthropic namespaces,
-  // one per wire protocol; the openai half's schema names its protocols, the
-  // anthropic half offers its single wire by being mounted. Without either
-  // mounted there is nothing to declare and the entry point stays disabled.
+  // Hand-declared routes live in the llm-openai namespace, whose schema
+  // names all three protocols one may speak; without it mounted there is
+  // nothing to declare and the entry point stays disabled.
   const protocols = protocolChoices(state.namespaces, schema)
 
   return (
@@ -493,7 +492,8 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                 <CustomProviderCard
                   taken={state.rows.map(row => row.entry.provider)}
                   protocols={protocols}
-                  revisionOf={ns => state.namespaces.get(ns)?.revision}
+                  /* v8 ignore next -- the card only opens from a button disabled without this namespace */
+                  revision={state.namespaces.get('llm-openai')?.revision ?? 0}
                   operations={operations}
                   t={t}
                   readOnly={!state.writable}
@@ -529,7 +529,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                     {t('add')}
                   </button>
                 )}
-                {(state.namespaces.has('llm-openai') || state.namespaces.has('llm-anthropic')) && (
+                {state.namespaces.has('llm-openai') && (
                   <button
                     type="button"
                     className={styles['addButton']}

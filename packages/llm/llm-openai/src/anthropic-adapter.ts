@@ -6,7 +6,7 @@
  * layering, and credential policy. Images ride inline base64 sources; there
  * is no Files API on this route.
  *
- * @module dsh-llm-anthropic/adapter
+ * @module dsh-llm-openai/anthropic-adapter
  */
 
 import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'
@@ -31,11 +31,11 @@ import type {
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import type { ModelModality } from '@deepseek-ai/dsh-llm'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import { parseSse } from './sse.ts'
-import { translate } from './translate.ts'
-import { serializeRequest, serializeRequestWithImages, resolveRequestImagePolicy } from './serialize.ts'
-import type { ModelWireFacts, RequestDefaults } from './serialize.ts'
-import type { WireError } from './types.ts'
+import { parseSse } from './anthropic-sse.ts'
+import { translate } from './anthropic-translate.ts'
+import { serializeRequest, serializeRequestWithImages, resolveRequestImagePolicy } from './anthropic-serialize.ts'
+import type { ModelWireFacts, RequestDefaults } from './anthropic-serialize.ts'
+import type { WireError } from './anthropic-types.ts'
 
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface AnthropicCatalogModel {
@@ -110,23 +110,23 @@ export interface AnthropicAdapterOptions {
 }
 
 /** Default maximum idle interval while an adapter stream read is outstanding. */
-export const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+export const ANTHROPIC_STREAM_IDLE_TIMEOUT_MS = 300_000
 /** Default output cap (the shipped Anthropic catalog's own per-model cap). */
-export const DEFAULT_MAX_TOKENS = 128_000
+export const ANTHROPIC_MAX_TOKENS = 128_000
 /** Default bound on accumulated inline base64 image payload in one request. */
-export const DEFAULT_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
+export const ANTHROPIC_MAX_REQUEST_IMAGE_BYTES = 20 * 1024 * 1024
 /** Default maximum represented images in one request. */
-export const DEFAULT_MAX_IMAGES_PER_REQUEST = 600
+export const ANTHROPIC_MAX_IMAGES_PER_REQUEST = 600
 /** Deterministic base64-byte removal step after the byte bound is exceeded. */
-export const DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM = 10 * 1024 * 1024
+export const ANTHROPIC_IMAGE_OFFLOAD_BYTE_QUANTUM = 10 * 1024 * 1024
 /** Deterministic image-count removal step after the count bound is exceeded. */
-export const DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM = 20
+export const ANTHROPIC_IMAGE_OFFLOAD_COUNT_QUANTUM = 20
 /** Default total-pixel budget for one deterministic request preview. */
-export const DEFAULT_REQUEST_IMAGE_PIXEL_BUDGET = 640_000
+export const ANTHROPIC_REQUEST_IMAGE_PIXEL_BUDGET = 640_000
 /** The 512-by-512 `low` request-preview pixel preset. */
-export const DEFAULT_LOW_DETAIL_IMAGE_PIXEL_BUDGET = 512 * 512
+export const ANTHROPIC_LOW_DETAIL_IMAGE_PIXEL_BUDGET = 512 * 512
 /** Default encoded-byte target for one deterministic request preview. */
-export const DEFAULT_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
+export const ANTHROPIC_REQUEST_IMAGE_MAX_BYTES = 1024 * 1024
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 const OFF_REASONING_EFFORT = ReasoningEffortId('off')
 const LOW_REASONING_EFFORT = ReasoningEffortId('low')

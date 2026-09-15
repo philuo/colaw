@@ -19,7 +19,7 @@
  * adoption. `settings.yaml` remains the only thing that decides what a route
  * serves.
  *
- * @module dsh-llm-anthropic/discovery
+ * @module dsh-llm-openai/anthropic-discovery
  */
 
 import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai/dsh-llm'

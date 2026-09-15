@@ -117,7 +117,7 @@ export async function migrateLegacyPiAiProfiles(
      */
     accepts(route: string, profile: LegacyPiAiProfile): boolean
     /** Convert one accepted profile into the target's schema shape. */
-    convert(profile: LegacyPiAiProfile): Record<string, unknown> | undefined
+    convert(route: string, profile: LegacyPiAiProfile): Record<string, unknown> | undefined
   },
   log: (line: string) => void,
 ): Promise<void> {
@@ -138,7 +138,7 @@ export async function migrateLegacyPiAiProfiles(
     if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
     const profile = value as LegacyPiAiProfile
     if (!target.accepts(route, profile)) continue
-    const converted = target.convert(profile)
+    const converted = target.convert(route, profile)
     if (converted === undefined) {
       skipped.push(route)
       continue

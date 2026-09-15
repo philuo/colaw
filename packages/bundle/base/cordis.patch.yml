@@ -97,19 +97,16 @@
     - id: credentials
       name: '@deepseek-ai/dsh-credentials-local'
 
-    # The OpenAI chat-completions route, mounted dormant like llm-pi-ai: zero
-    # models in the picker until an `llm-openai:` settings section declares the
-    # endpoint's catalog. Serves the official OpenAI API and any
-    # OpenAI-compatible gateway (custom baseURL + credential reference);
-    # reasoning models are declared per catalog entry via `reasoning: true`.
+    # The multi-protocol provider route, mounted dormant: zero models in the
+    # picker until an `llm-openai:` settings section declares the endpoints'
+    # catalogs. One plugin, one namespace, one `providers` dict whose entries
+    # name their wire through `api` — openai-completions (default; the
+    # official API and every compatible gateway), openai-responses, or
+    # anthropic-messages (the official API and vendor-compatible coding
+    # endpoints); reasoning models are declared per catalog entry via
+    # `reasoning: true`.
     - id: llm-openai
       name: '@deepseek-ai/dsh-llm-openai'
-
-    # The Anthropic messages route, mounted dormant like llm-openai: zero
-    # models in the picker until an `llm-anthropic:` settings section declares
-    # the endpoint's catalog. Route id deliberately avoids pi-ai's `anthropic`.
-    - id: llm-anthropic
-      name: '@deepseek-ai/dsh-llm-anthropic'
 
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'

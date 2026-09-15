@@ -4,14 +4,14 @@
  * and finish are deferred to the `message_stop` sentinel so no chunk follows
  * `finish`. `signature_delta` is dropped — the harness reasoning block has
  * no signature carrier (parity with pi-ai's default unsigned replay).
- * @module dsh-llm-anthropic/translate
+ * @module dsh-llm-openai/anthropic-translate
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { EMPTY_RESPONSE_CODE, LlmError } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, FinishReason, StreamChunk, TokenUsage, ToolCallId } from '@deepseek-ai/dsh-llm'
-import type { SseFrame } from './sse.ts'
-import type { WireEventData, WireUsage } from './types.ts'
+import type { SseFrame } from './anthropic-sse.ts'
+import type { WireEventData, WireUsage } from './anthropic-types.ts'
 
 /** One open block under assembly, keyed by the wire content_block index. */
 interface OpenBlock {

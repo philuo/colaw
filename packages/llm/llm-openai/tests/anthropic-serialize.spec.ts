@@ -3,8 +3,8 @@ import { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-attachment'
 import type { ImageAttachmentRef, ImageMediaType, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { createUserMessage, ReasoningEffortId, ToolCallId, createMessage } from '@deepseek-ai/dsh-llm'
 import type { GenerateOptions } from '@deepseek-ai/dsh-llm'
-import { serializeRequest, serializeRequestWithImages } from '../src/serialize.ts'
-import type { ImageSerializationOptions } from '../src/serialize.ts'
+import { serializeRequest, serializeRequestWithImages } from '../src/anthropic-serialize.ts'
+import type { ImageSerializationOptions } from '../src/anthropic-serialize.ts'
 
 function request(overrides: Partial<GenerateOptions> = {}): GenerateOptions {
   return { provider: 'anthropic-compatible', model: 'claude-fable-5', messages: [], ...overrides }

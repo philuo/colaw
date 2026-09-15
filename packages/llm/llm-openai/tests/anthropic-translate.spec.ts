@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mapStopReason, mapUsage, translate } from '../src/translate.ts'
+import { mapStopReason, mapUsage, translate } from '../src/anthropic-translate.ts'
 
 async function* frames(list: ReadonlyArray<{ event: string; data: string }>): AsyncGenerator<{ event: string; data: string }> {
   for (const frame of list) yield frame

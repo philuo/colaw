@@ -96,7 +96,7 @@ describe('migrateLegacyPiAiProfiles', () => {
       {
         ns: 'llm-openai',
         accepts: (_route, candidate) => candidate.api === 'openai-completions' || candidate.api === 'openai-responses',
-        convert: candidate => convertLegacyPiAiProfile(candidate, { api: 'openai-completions' }),
+        convert: (_route, candidate) => convertLegacyPiAiProfile(candidate, { api: 'openai-completions' }),
       },
       () => {},
     )
@@ -128,7 +128,7 @@ describe('migrateLegacyPiAiProfiles', () => {
         accepts: (route, candidate) => candidate.api === 'openai-completions'
           || candidate.api === 'openai-responses'
           || (candidate.api === undefined && (route === 'openai' || typeof candidate.baseURL === 'string')),
-        convert: candidate => convertLegacyPiAiProfile(candidate, { api: 'openai-completions' }),
+        convert: (_route, candidate) => convertLegacyPiAiProfile(candidate, { api: 'openai-completions' }),
       },
       () => {},
     )
@@ -145,7 +145,7 @@ describe('migrateLegacyPiAiProfiles', () => {
     const lines: string[] = []
     await migrateLegacyPiAiProfiles(
       settings,
-      { ns: 'llm-openai', accepts: () => true, convert: candidate => convertLegacyPiAiProfile(candidate) },
+      { ns: 'llm-openai', accepts: () => true, convert: (_route, candidate) => convertLegacyPiAiProfile(candidate) },
       (line) => { lines.push(line) },
     )
     expect(settings.updates).toEqual([])
@@ -157,7 +157,7 @@ describe('migrateLegacyPiAiProfiles', () => {
       const settings = fakeSettings(doc)
       await migrateLegacyPiAiProfiles(
         settings,
-        { ns: 'llm-openai', accepts: (_route, candidate) => typeof candidate.api === 'string' && candidate.api.startsWith('openai'), convert: candidate => convertLegacyPiAiProfile(candidate) },
+        { ns: 'llm-openai', accepts: (_route, candidate) => typeof candidate.api === 'string' && candidate.api.startsWith('openai'), convert: (_route, candidate) => convertLegacyPiAiProfile(candidate) },
         () => {},
       )
       expect(settings.updates).toEqual([])
@@ -176,7 +176,7 @@ describe('migrateLegacyPiAiProfiles', () => {
     const lines: string[] = []
     await migrateLegacyPiAiProfiles(
       settings,
-      { ns: 'llm-openai', accepts: () => true, convert: candidate => convertLegacyPiAiProfile(candidate, { api: 'openai-completions' }) },
+      { ns: 'llm-openai', accepts: () => true, convert: (_route, candidate) => convertLegacyPiAiProfile(candidate, { api: 'openai-completions' }) },
       (line) => { lines.push(line) },
     )
     expect(settings.updates).toHaveLength(1)

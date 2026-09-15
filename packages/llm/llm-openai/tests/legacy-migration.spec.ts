@@ -75,12 +75,15 @@ describe('legacy llm-pi-ai migration', () => {
     const ctx = await bootOpenAi()
     await vi.waitFor(() => {
       const providers = Object.keys((ctx.settings.rawSection('llm-openai')?.['providers'] ?? {}) as object)
-      expect(providers).toEqual(['zai-coding-cn'])
+      expect(providers).toEqual(['zai-coding-cn', 'claude-gateway'])
     })
-    // The migrated route serves requests without a restart.
-    expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('zai-coding-cn')
+    // Both migrated routes serve requests without a restart — each through
+    // its own wire.
+    expect(ctx.llm.listProviders().map(provider => provider.id)).toEqual(
+      expect.arrayContaining(['zai-coding-cn', 'claude-gateway']),
+    )
     // The stored profile is schema-shaped: pi-ai's `input` list arrived as
-    // `inputModalities`, and the route names the protocol it will speak.
+    // `inputModalities`, and each route names the protocol it will speak.
     const providers = ctx.settings.rawSection('llm-openai')?.['providers'] as Record<string, Record<string, unknown>>
     expect(providers['zai-coding-cn']).toEqual({
       displayName: 'zai-coding-cn',
@@ -88,6 +91,13 @@ describe('legacy llm-pi-ai migration', () => {
       baseURL: 'https://api.z.ai/api/coding/paas/v4',
       apiKeyEnv: 'ZAI_CODING_CN_API_KEY',
       models: [{ id: 'glm-4.6', name: 'GLM-4.6', contextWindow: 200000, maxTokens: 128000, inputModalities: ['text', 'image'] }],
+    })
+    expect(providers['claude-gateway']).toEqual({
+      displayName: 'Claude Gateway',
+      api: 'anthropic-messages',
+      baseURL: 'https://gateway.example',
+      apiKeyEnv: 'CLAUDE_GATEWAY_API_KEY',
+      models: [{ id: 'claude-sonnet-4-5', inputModalities: ['text'] }],
     })
   })
 
@@ -97,9 +107,9 @@ describe('legacy llm-pi-ai migration', () => {
     await vi.waitFor(() => {
       expect(ctx.settings.rawSection('llm-openai')).toBeDefined()
     })
-    // The anthropic-protocol route belongs to the llm-anthropic adapter, and
-    // the dropped google family stays retired: neither lands here.
-    expect(Object.keys(ctx.settings.rawSection('llm-openai')?.['providers'] as object)).toEqual(['zai-coding-cn'])
+    // The dropped google family stays retired: it lands nowhere.
+    expect(Object.keys(ctx.settings.rawSection('llm-openai')?.['providers'] as object))
+      .toEqual(['zai-coding-cn', 'claude-gateway'])
   })
 
   it('does not resurrect routes after the user deletes the migrated provider', async () => {
@@ -108,7 +118,10 @@ describe('legacy llm-pi-ai migration', () => {
     await vi.waitFor(() => {
       expect(first.settings.rawSection('llm-openai')).toBeDefined()
     })
-    await first.settings.mutate('llm-openai', [{ op: 'unset', path: ['providers', 'zai-coding-cn'] }])
+    await first.settings.mutate('llm-openai', [
+      { op: 'unset', path: ['providers', 'zai-coding-cn'] },
+      { op: 'unset', path: ['providers', 'claude-gateway'] },
+    ])
     expect(Object.keys(first.settings.rawSection('llm-openai')?.['providers'] as object)).toEqual([])
 
     // A second boot over the SAME document: the user layer exists, so the
@@ -117,6 +130,60 @@ describe('legacy llm-pi-ai migration', () => {
     await new Promise(resolve => setTimeout(resolve, 50))
     expect(Object.keys(second.settings.rawSection('llm-openai')?.['providers'] as object)).toEqual([])
     expect(second.llm.listProviders().map(provider => provider.id)).not.toContain('zai-coding-cn')
+    expect(second.llm.listProviders().map(provider => provider.id)).not.toContain('claude-gateway')
+  })
+
+  it('folds a stored two-package-era llm-anthropic section into this namespace and empties it', async () => {
+    seed(`llm-anthropic:
+  providers:
+    claude-relay:
+      displayName: Claude Relay
+      baseURL: https://relay.example
+      apiKeyEnv: CLAUDE_RELAY_API_KEY
+      models:
+        - id: claude-sonnet-4-5
+          input:
+            - text
+            - image
+`)
+    const ctx = await bootOpenAi()
+    await vi.waitFor(() => {
+      expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('claude-relay')
+    })
+    const providers = ctx.settings.rawSection('llm-openai')?.['providers'] as Record<string, Record<string, unknown>>
+    expect(providers['claude-relay']).toEqual({
+      displayName: 'Claude Relay',
+      api: 'anthropic-messages',
+      baseURL: 'https://relay.example',
+      apiKeyEnv: 'CLAUDE_RELAY_API_KEY',
+      models: [{ id: 'claude-sonnet-4-5', inputModalities: ['text', 'image'] }],
+    })
+    // The source section is emptied, so deleting the folded route sticks.
+    expect(ctx.settings.rawSection('llm-anthropic')).toEqual({})
+  })
+
+  it('keeps a conflicting route as-is instead of overwriting it from the retired section', async () => {
+    seed(`llm-openai:
+  providers:
+    claude-relay:
+      api: openai-completions
+      baseURL: https://mine.example/v1
+      models:
+        - id: m
+llm-anthropic:
+  providers:
+    claude-relay:
+      api: anthropic-messages
+      baseURL: https://theirs.example
+      models:
+        - id: m
+`)
+    const ctx = await bootOpenAi()
+    await new Promise((resolve) => { setTimeout(resolve, 50) })
+    const providers = ctx.settings.rawSection('llm-openai')?.['providers'] as Record<string, Record<string, unknown>>
+    expect(providers['claude-relay']).toMatchObject({ api: 'openai-completions', baseURL: 'https://mine.example/v1' })
+    // The retired section is left untouched for the conflict to stay visible.
+    expect(ctx.settings.rawSection('llm-anthropic')?.['providers']).toHaveProperty('claude-relay')
   })
 
   it('skips the import for a document a newer build already wrote', async () => {

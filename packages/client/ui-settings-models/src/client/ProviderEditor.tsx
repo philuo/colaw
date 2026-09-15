@@ -133,12 +133,11 @@ export function pathOps(
 
 /** The editor layout the owning namespace selects. */
 function layoutOf(ns: string): EditorLayout {
-  // The per-route families (the two protocol adapters) share one layout: a
-  // profile addressed at `providers.<route>`, a fetch-able model list, and
-  // identity fields for routes the adapter does not ship. The whole-section
-  // deepseek family keeps its own.
+  // The multi-protocol family addresses each profile at `providers.<route>`
+  // with a fetch-able model list and identity fields for routes the adapter
+  // does not ship. The whole-section deepseek family keeps its own.
   if (ns === 'llm-deepseek') return 'deepseek'
-  if (ns === 'llm-openai' || ns === 'llm-anthropic') return 'provider'
+  if (ns === 'llm-openai') return 'provider'
   return 'unknown'
 }
 
@@ -180,19 +179,13 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const fallback = schema.getPath(namespace.value, settingsPath)
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
-  const family = namespace.ns === 'llm-openai'
-    ? 'openai' as const
-    : namespace.ns === 'llm-anthropic'
-      ? 'anthropic' as const
-      : 'deepseek' as const
+  const family = namespace.ns === 'llm-openai' ? 'provider' as const : 'deepseek' as const
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
-  // Only the openai family's schema names a per-route protocol; the anthropic
-  // wire is that adapter's only one and offers no choice to edit.
   const protocols = useMemo(
-    () => family === 'openai' ? protocolChoices(new Map([[namespace.ns, namespace]]), schema) : [],
-    [family, namespace, schema],
+    () => layout === 'provider' ? protocolChoices(new Map([[namespace.ns, namespace]]), schema) : [],
+    [layout, namespace, schema],
   )
 
   useEffect(() => {
@@ -361,11 +354,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    * narrowed so the per-family branches below are total: an unknown namespace
    * renders the hint instead and never reaches this body.
    */
-  const curatedFields = (family: 'deepseek' | 'openai' | 'anthropic'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'provider'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
-    const ownsIdentity = family !== 'deepseek' && props.declared === true
+    const ownsIdentity = family === 'provider' && props.declared === true
     const customModels = schema.getPath(draft, ['models'])
     const modelsOverridden = schema.hasPath(draft, ['models'])
     const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
@@ -448,11 +441,13 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
                   ? DEEPSEEK_PUBLIC_BASE_URL
-                  : family === 'openai'
-                    ? OPENAI_PUBLIC_BASE_URL
-                    : family === 'anthropic'
+                  // The protocol the form names decides which public API
+                  // clearing the field restores to.
+                  : probeApi === 'anthropic-messages'
+                    ? ANTHROPIC_PUBLIC_BASE_URL
+                    : probeApi === undefined && stringAt(fallback, 'api') === 'anthropic-messages'
                       ? ANTHROPIC_PUBLIC_BASE_URL
-                      : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+                      : OPENAI_PUBLIC_BASE_URL}
                 aria-label={t('baseUrl')}
                 disabled={disabled}
                 onChange={(event) => {
@@ -461,9 +456,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               />
             </div>
             {/* The protocol sits beside the endpoint it describes, as it does
-                on the create card. Only the openai family's schema names a
-                choice; the Messages wire is that adapter's only one. */}
-            {ownsIdentity && family === 'openai'
+                on the create card — all three of them, exactly as the
+                adapter's schema declares. */}
+            {ownsIdentity
               ? (
                 <div className={styles['field']}>
                   <span className={styles['fieldLabel']}>{t('customApi')}</span>

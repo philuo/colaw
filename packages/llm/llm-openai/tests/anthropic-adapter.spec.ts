@@ -5,17 +5,17 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import * as LlmAnthropic from '@deepseek-ai/dsh-llm-anthropic'
+import * as LlmOpenAi from '@deepseek-ai/dsh-llm-openai'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { AnthropicAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-anthropic'
-import { assemble } from './assemble.ts'
-import { closeMockServers, mockServer, textFrames } from './mock-server.ts'
+import { AnthropicAdapter, resolveAnthropicAdapterOptions } from '@deepseek-ai/dsh-llm-openai'
+import { assemble } from './anthropic-assemble.ts'
+import { closeMockServers, mockServer, textFrames } from './anthropic-mock-server.ts'
 
 let testHome: string
 
 beforeEach(() => {
-  testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-anthropic-'))
+  testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-openai-anthropic-'))
   vi.stubEnv('DSH_HOME', testHome)
 })
 
@@ -32,17 +32,25 @@ async function harness(baseURL: string, config: object = {}) {
   await ctx.plugin(LocalCredentialProvider, { watch: false })
   await ctx.credentials.set(credentialRef('ANTHROPIC_API_KEY'), 'test-key')
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(LlmAnthropic, {
-    providers: { 'anthropic-compatible': { baseURL, apiKeyEnv: 'ANTHROPIC_API_KEY', models: [{ id: 'claude-fable-5' }], ...(config as Record<string, never>) } },
+  await ctx.plugin(LlmOpenAi, {
+    providers: {
+      'anthropic-compatible': {
+        api: 'anthropic-messages',
+        baseURL,
+        apiKeyEnv: 'ANTHROPIC_API_KEY',
+        models: [{ id: 'claude-fable-5' }],
+        ...(config as Record<string, never>),
+      },
+    },
   })
   return ctx
 }
 
 /** Direct adapter over the plugin's real resolve step, with a static key. */
-function adapterOf(config: Partial<LlmAnthropic.ProviderProfile> & { apiKey?: string } = {}): AnthropicAdapter {
+function adapterOf(config: Partial<LlmOpenAi.ProviderProfile> & { apiKey?: string } = {}): AnthropicAdapter {
   const { apiKey, ...rest } = config
   return new AnthropicAdapter({
-    options: () => resolveAdapterOptions(rest),
+    options: () => resolveAnthropicAdapterOptions(rest),
     resolveApiKey: () => Promise.resolve(apiKey ?? 'k'),
   })
 }
@@ -178,7 +186,7 @@ describe('failures', () => {
     const ctx = new Context()
     await ctx.plugin(LocalCredentialProvider, { watch: false })
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmAnthropic, { providers: { 'anthropic-compatible': { baseURL: server.url } } })
+    await ctx.plugin(LlmOpenAi, { providers: { 'anthropic-compatible': { api: 'anthropic-messages', baseURL: server.url } } })
     const result = await assemble(ctx, { model: 'claude-fable-5', messages: [] })
     expect(result.finish).toMatchObject({
       kind: 'error',
@@ -187,9 +195,9 @@ describe('failures', () => {
   })
 })
 
-describe('resolveAdapterOptions', () => {
+describe('resolveAnthropicAdapterOptions', () => {
   it('defaults to the public API base, the ANTHROPIC_API_KEY reference, and the catalog cap', () => {
-    const options = resolveAdapterOptions({})
+    const options = resolveAnthropicAdapterOptions({})
     expect(options.baseURL).toBe('https://api.anthropic.com')
     expect(options.apiKeyEnv).toBe(credentialRef('ANTHROPIC_API_KEY'))
     expect(options.models).toEqual([])
@@ -197,18 +205,18 @@ describe('resolveAdapterOptions', () => {
   })
 
   it('rejects an offload quantum above its bound and a sub-1024 thinking budget', () => {
-    expect(() => resolveAdapterOptions({
+    expect(() => resolveAnthropicAdapterOptions({
       maxRequestImageBytes: 1000,
       imageOffloadByteQuantum: 2000,
     })).toThrow(/imageOffloadByteQuantum must not exceed maxRequestImageBytes/)
-    expect(() => resolveAdapterOptions({ thinkingBudgetTokens: 512 })).toThrow(/thinkingBudgetTokens/)
+    expect(() => resolveAnthropicAdapterOptions({ thinkingBudgetTokens: 512 })).toThrow(/thinkingBudgetTokens/)
   })
 
   it('rejects duplicate catalog ids and non-image modalities', () => {
-    expect(() => resolveAdapterOptions({ models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate model "x"/)
+    expect(() => resolveAnthropicAdapterOptions({ models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate model "x"/)
   })
 
   it('rejects an out-of-range stream idle timeout', () => {
-    expect(() => resolveAdapterOptions({ streamIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 })).toThrow(/streamIdleTimeoutMs/)
+    expect(() => resolveAnthropicAdapterOptions({ streamIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1 })).toThrow(/streamIdleTimeoutMs/)
   })
 })
