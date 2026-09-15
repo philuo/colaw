@@ -137,7 +137,7 @@ function layoutOf(ns: string): EditorLayout {
   // with a fetch-able model list and identity fields for routes the adapter
   // does not ship. The whole-section deepseek family keeps its own.
   if (ns === 'llm-deepseek') return 'deepseek'
-  if (ns === 'llm-openai') return 'provider'
+  if (ns === 'llm-provider') return 'provider'
   return 'unknown'
 }
 
@@ -179,7 +179,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const fallback = schema.getPath(namespace.value, settingsPath)
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
-  const family = namespace.ns === 'llm-openai' ? 'provider' as const : 'deepseek' as const
+  const family = namespace.ns === 'llm-provider' ? 'provider' as const : 'deepseek' as const
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
@@ -360,8 +360,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
     // per-route identity for its schema to carry, hence the family test.
     const ownsIdentity = family === 'provider' && props.declared === true
     const customModels = schema.getPath(draft, ['models'])
-    const modelsOverridden = schema.hasPath(draft, ['models'])
-    const models = modelDrafts(modelsOverridden ? customModels : inheritedModels())
+    const models = modelDrafts(customModels !== undefined ? customModels : inheritedModels())
     const defaultContextWindow = schema.getPath(fallback, ['defaultContextWindow'])
     const defaultMaxTokens = schema.getPath(fallback, ['maxTokens'])
     const keyPlaceholder = keyLocked
@@ -369,10 +368,9 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       : keyState?.configured === true && props.credentialRequired !== true
         ? t('keyStored')
         : t('keyPlaceholder')
-    /** What both family editors take: the rows, whose layer owns them, and the two writes. */
+    /** What both family editors take: the rows and the one write. */
     const catalogProps = {
       models,
-      overridden: modelsOverridden,
       t,
       disabled,
       resolvedModalities,
@@ -382,7 +380,6 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       onChange: (next: Record<string, unknown>[]) => {
         setDraft(current => schema.setPath(current, ['models'], next))
       },
-      onReset: () => { setDraft(current => schema.deletePath(current, ['models'])) },
     }
     return (
       <>
@@ -488,6 +485,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
               ? (
                 <DeepSeekModelsEditor
                   {...catalogProps}
+                  overridden={schema.hasPath(draft, ['models'])}
+                  onReset={() => { setDraft(current => schema.deletePath(current, ['models'])) }}
                   defaultContextWindow={typeof defaultContextWindow === 'number'
                     ? defaultContextWindow
                     : undefined}

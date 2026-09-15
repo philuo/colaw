@@ -35,7 +35,7 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** The settings namespace every hand-declared provider is written into. */
-const NS = 'llm-openai'
+const NS = 'llm-provider'
 
 /** The create card's resolved-modality map: no live route, nothing to inherit. */
 const EMPTY_MODALITIES: ReadonlyMap<string, readonly string[]> = new Map()
@@ -66,7 +66,7 @@ export interface CustomProviderCardProps {
   /** Wire protocols the adapter can serve, in the order it reports them. */
   protocols: readonly string[]
   /**
-   * Revision of the `llm-openai` user section this card opened at, sent with
+   * Revision of the `llm-provider` user section this card opened at, sent with
    * the create so a route another tab declared meanwhile is a refusal rather
    * than a silent overwrite of its whole profile.
    */

@@ -1,23 +1,27 @@
 /**
  * The model list of one protocol-adapter provider profile, plus the action
- * that asks the provider what it serves.
+ * that asks the provider what it serves and adopts the whole answer.
  *
- * The list is the profile's `models` array as the card holds it: an empty list
- * means "serve this route's built-in catalog", and any entry replaces that
- * catalog, so a row is only ever added deliberately. Fetching asks the endpoint
- * **the form currently shows** — including a key typed but not yet saved — so
- * adding a provider is one pass instead of save-then-return; the reply is
- * candidates the user picks from, never configuration written behind them.
+ * The list is the profile's `models` array as the card holds it. The one
+ * action's label follows the list's state: an empty list offers 获取模型目录
+ * and a non-empty one 恢复默认模型 — both fetch the endpoint's CURRENT
+ * listing (the same one every vendor client reads over the OpenAI-compatible
+ * `GET {baseURL}/models`), so re-clicking tracks the vendor's own catalog
+ * updates — and the fetched rows REPLACE the list outright: the provider's
+ * default catalog is the destination, the picker-free one click is the whole
+ * interaction, and the rows stay re-editable by hand afterwards. Fetching
+ * asks the endpoint **the form currently shows**, including a key typed but
+ * not yet saved, so adding a provider is one pass instead of
+ * save-then-return.
  *
  * A provider that cannot be interrogated (an unreachable endpoint, a protocol
- * with no readable listing) is not a dead end: the failure is shown next to the
- * rows the user can still fill in by hand.
+ * with no readable listing) is not a dead end: the failure is shown next to
+ * the rows the user can still fill in by hand.
  */
 
 import { useState } from 'react'
 import type { ReactNode } from 'react'
 import type { LlmDiscoveredModel } from '@deepseek-ai/dsh-api-remotes/client'
-import { Button, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import { ModelInputTypes } from './ModelInputTypes.tsx'
 import { arrayOf, formatCapacity, parseCapacity } from './DeepSeekModelsEditor.tsx'
 import type { ModelsOperations } from './operations.ts'
@@ -65,12 +69,8 @@ export interface ProbeTarget {
 export interface ModelListEditorProps {
   /** The rows as currently drafted. */
   models: readonly ModelDraft[]
-  /** Whether the user layer currently owns the whole array; absent on a create. */
-  overridden?: boolean
   /** Replace the drafted rows. */
   onChange: (models: ModelDraft[]) => void
-  /** Remove the user-owned array and return to inheritance; absent on a create. */
-  onReset?: () => void
   /** Endpoint facts for the fetch action. */
   probe: ProbeTarget
   /**
@@ -123,10 +123,10 @@ type CapacityField = 'contextWindow' | 'maxTokens'
  * What an empty capacity field is worth, shown as its placeholder so a row left
  * blank does not read as a model with no capacity at all.
  *
- * The magnitudes are the adapters' own route-level fallbacks, spelled the way a person
- * would say them. They are a hint, not a mirror: this page counts `K` as 1000,
- * so typing `256K` stores 256000 while leaving the field blank keeps the
- * adapter's own default. A deployment that overrides those defaults is not
+ * The magnitudes are the adapters' own route-level fallbacks, spelled the way
+ * a person would say them. They are a hint, not a mirror: this page counts `K`
+ * as 1000, so typing `256K` stores 256000 while leaving the field blank keeps
+ * the adapter's own default. A deployment that overrides those defaults is not
  * reflected here — nothing on this page can read them.
  */
 const CAPACITY_HINT: Readonly<Record<CapacityField, string>> = {
@@ -145,7 +145,7 @@ function capacitySpelling(value: number | undefined): string {
   return value === undefined ? '' : formatCapacity(value)
 }
 
-/** Adopt a candidate, keeping whatever capacities the provider disclosed. */
+/** Adopt one disclosed row, keeping whatever capacities the provider reported. */
 function adopt(candidate: LlmDiscoveredModel): ModelDraft {
   return {
     id: candidate.id,
@@ -164,9 +164,6 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
   const { models, onChange, probe, operations, t, disabled } = props
   const [busy, setBusy] = useState(false)
   const [failure, setFailure] = useState<string | undefined>(undefined)
-  const [candidates, setCandidates] = useState<readonly LlmDiscoveredModel[] | undefined>(undefined)
-  const [picked, setPicked] = useState<ReadonlySet<string>>(new Set())
-  const [candidateQuery, setCandidateQuery] = useState('')
   // Rows carry an id and a name; capacities are the exception, so they stay
   // folded until asked for rather than crowding every row with four inputs.
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
@@ -249,65 +246,13 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
         setFailure(t('fetchEmpty'))
         return
       }
-      // Everything already configured starts unchecked, so adopting a
-      // selection never silently rewrites a capacity the user corrected.
-      const known = new Set(models.map(model => textOf(model, 'id')))
-      setCandidateQuery('')
-      setCandidates(found)
-      setPicked(new Set(found.filter(model => !known.has(model.id)).map(model => model.id)))
+      // The provider's own current listing REPLACES the list: an empty one
+      // gains it (获取), a hand-tuned one returns to the vendor's default
+      // (恢复默认) — and clicking again later tracks catalog updates.
+      onChange(found.map(adopt))
     } finally {
       setBusy(false)
     }
-  }
-
-  const closePicker = (): void => {
-    setCandidates(undefined)
-    setPicked(new Set())
-    setCandidateQuery('')
-  }
-
-  const adoptPicked = (): void => {
-    /* v8 ignore next -- the dialog only renders with candidates loaded */
-    if (candidates === undefined) return
-    const byId = new Map(models.map(model => [textOf(model, 'id'), model]))
-    for (const candidate of candidates) {
-      if (!picked.has(candidate.id)) continue
-      // A row the user already tuned wins over the provider's own numbers.
-      // Keyed by id, so a half-typed row whose id is still empty is not a
-      // match and the candidate joins as its own row — correct, since a row
-      // without an id is not yet a model and the create/apply gates refuse it.
-      byId.set(candidate.id, byId.get(candidate.id) ?? adopt(candidate))
-    }
-    onChange([...byId.values()])
-    closePicker()
-  }
-
-  const toggle = (id: string): void => {
-    setPicked((current) => {
-      const next = new Set(current)
-      if (!next.delete(id)) next.add(id)
-      return next
-    })
-  }
-
-  const activeCandidates = candidates ?? []
-  const normalizedCandidateQuery = candidateQuery.trim().toLowerCase()
-  const visibleCandidates = normalizedCandidateQuery.length === 0
-    ? activeCandidates
-    : activeCandidates.filter(candidate => candidate.id.toLowerCase().includes(normalizedCandidateQuery)
-      || candidate.name?.toLowerCase().includes(normalizedCandidateQuery) === true)
-  const allVisibleCandidatesPicked = visibleCandidates.length > 0
-    && visibleCandidates.every(candidate => picked.has(candidate.id))
-
-  const toggleVisibleCandidates = (): void => {
-    setPicked((current) => {
-      if (visibleCandidates.every(candidate => current.has(candidate.id))) {
-        return new Set()
-      }
-      const next = new Set(current)
-      for (const candidate of visibleCandidates) next.add(candidate.id)
-      return next
-    })
   }
 
   // A route the adapter already describes answers without an endpoint; only a
@@ -318,26 +263,10 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       <div className={styles['modelListHead']}>
         <div className={styles['modelCatalogHeading']}>
           <span className={styles['modelCatalogTitle']}>{t('models')}</span>
-          {props.overridden === undefined
+          {models.length === 0
             ? null
-            : (
-              <span className={styles['modelCatalogMeta']}>
-                {props.overridden ? t('modelsCustomized') : t('modelsInherited')}
-              </span>
-            )}
+            : <span className={styles['modelCatalogMeta']}>{t('modelsCustomized')}</span>}
         </div>
-        {props.overridden === true && props.onReset !== undefined
-          ? (
-            <button
-              type="button"
-              className={styles['linkButton']}
-              disabled={disabled}
-              onClick={props.onReset}
-            >
-              {t('resetModels')}
-            </button>
-          )
-          : null}
         <button
           type="button"
           className={styles['linkButton']}
@@ -347,7 +276,9 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
             : askable ? undefined : t('fetchNeedsBaseUrl')}
           onClick={() => { void fetchModels() }}
         >
-          {busy ? t('fetching') : t('fetchModels')}
+          {/* One action, two labels: an empty catalog is fetched, a listed one
+              restored to the vendor's current default. */}
+          {busy ? t('fetching') : models.length === 0 ? t('fetchModels') : t('resetModels')}
         </button>
       </div>
       {models.length === 0 ? <p className={styles['modelEmpty']}>{t('modelsEmpty')}</p> : null}
@@ -466,61 +397,7 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
       >
         {t('addModel')}
       </button>
-      {failure !== undefined ? <p className={styles['error']}>{failure}</p> : null}
-      <Modal
-        open={candidates !== undefined}
-        onClose={closePicker}
-        title={t('fetchTitle')}
-        closeLabel={t('close')}
-        description={t('fetchDescription')}
-        className={styles['fetchDialog'] as string}
-        footer={(
-          <>
-            <Button variant="outline" onClick={closePicker}>{t('cancel')}</Button>
-            <Button variant="outline" onClick={adoptPicked}>{t('fetchAdopt')}</Button>
-          </>
-        )}
-      >
-        <div className={styles['candidateToolbar']}>
-          <input
-            className={`${styles['input']} ${styles['candidateSearch']}`}
-            type="search"
-            value={candidateQuery}
-            placeholder={t('fetchSearch')}
-            aria-label={t('fetchSearch')}
-            onChange={(event) => { setCandidateQuery(event.target.value) }}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={visibleCandidates.length === 0}
-            onClick={toggleVisibleCandidates}
-          >
-            {t(allVisibleCandidatesPicked ? 'fetchDeselectAll' : 'fetchSelectAll')}
-          </Button>
-        </div>
-        {visibleCandidates.length === 0
-          ? <p className={styles['candidateEmpty']} role="status">{t('fetchNoMatches')}</p>
-          : (
-            <ul className={styles['candidateList']}>
-              {visibleCandidates.map(candidate => (
-                <li key={candidate.id} className={styles['candidate']}>
-                  <label className={styles['candidateLabel']}>
-                    <input
-                      type="checkbox"
-                      checked={picked.has(candidate.id)}
-                      onChange={() => { toggle(candidate.id) }}
-                    />
-                    {/* The id alone: it is the string adoption writes, and the
-                        capacities the endpoint reported are adopted with it and
-                        editable in the row that appears. */}
-                    <span className={styles['candidateId']}>{candidate.id}</span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          )}
-      </Modal>
+      {failure === undefined ? null : <p className={styles['error']}>{failure}</p>}
     </section>
   )
 }

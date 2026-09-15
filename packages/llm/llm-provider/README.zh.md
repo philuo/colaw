@@ -3,7 +3,7 @@ description: "面向配置 openai 路由、推理力度与图片输入的用户�
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-llm-openai
+# @deepseek-ai/dsh-llm-provider
 
 [English](README.md) | 中文
 
@@ -22,7 +22,7 @@ kind: "package-reference"
 该路由出厂不带模型目录——请声明端点实际服务的模型。密钥通过凭据存储解析（网页 Models 页负责写入）：
 
 ```yaml
-llm-openai:
+llm-provider:
   baseURL: https://api.openai.com/v1   # or any chat-completions gateway
   apiKeyEnv: OPENAI_API_KEY
   models:

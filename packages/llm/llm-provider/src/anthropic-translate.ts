@@ -4,7 +4,7 @@
  * and finish are deferred to the `message_stop` sentinel so no chunk follows
  * `finish`. `signature_delta` is dropped — the harness reasoning block has
  * no signature carrier (parity with pi-ai's default unsigned replay).
- * @module dsh-llm-openai/anthropic-translate
+ * @module dsh-llm-provider/anthropic-translate
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime from '@deepseek-ai/dsh-llm'
-import * as LlmOpenAi from '@deepseek-ai/dsh-llm-openai'
+import * as LlmProvider from '@deepseek-ai/dsh-llm-provider'
 import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 
 /**
@@ -17,7 +17,7 @@ import { FileSettingsProvider } from '@deepseek-ai/dsh-settings-file'
 let testHome: string
 
 beforeEach(() => {
-  testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-openai-migration-'))
+  testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-provider-migration-'))
   vi.stubEnv('DSH_HOME', testHome)
 })
 
@@ -65,7 +65,7 @@ async function bootOpenAi(): Promise<Context> {
   const ctx = new Context()
   await ctx.plugin(FileSettingsProvider, { watch: false })
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(LlmOpenAi, {})
+  await ctx.plugin(LlmProvider, {})
   return ctx
 }
 
@@ -74,7 +74,7 @@ describe('legacy llm-pi-ai migration', () => {
     seed(LEGACY_DOCUMENT)
     const ctx = await bootOpenAi()
     await vi.waitFor(() => {
-      const providers = Object.keys((ctx.settings.rawSection('llm-openai')?.['providers'] ?? {}) as object)
+      const providers = Object.keys((ctx.settings.rawSection('llm-provider')?.['providers'] ?? {}) as object)
       expect(providers).toEqual(['zai-coding-cn', 'claude-gateway'])
     })
     // Both migrated routes serve requests without a restart — each through
@@ -84,7 +84,7 @@ describe('legacy llm-pi-ai migration', () => {
     )
     // The stored profile is schema-shaped: pi-ai's `input` list arrived as
     // `inputModalities`, and each route names the protocol it will speak.
-    const providers = ctx.settings.rawSection('llm-openai')?.['providers'] as Record<string, Record<string, unknown>>
+    const providers = ctx.settings.rawSection('llm-provider')?.['providers'] as Record<string, Record<string, unknown>>
     expect(providers['zai-coding-cn']).toEqual({
       displayName: 'zai-coding-cn',
       api: 'openai-completions',
@@ -105,10 +105,10 @@ describe('legacy llm-pi-ai migration', () => {
     seed(LEGACY_DOCUMENT)
     const ctx = await bootOpenAi()
     await vi.waitFor(() => {
-      expect(ctx.settings.rawSection('llm-openai')).toBeDefined()
+      expect(ctx.settings.rawSection('llm-provider')).toBeDefined()
     })
     // The dropped google family stays retired: it lands nowhere.
-    expect(Object.keys(ctx.settings.rawSection('llm-openai')?.['providers'] as object))
+    expect(Object.keys(ctx.settings.rawSection('llm-provider')?.['providers'] as object))
       .toEqual(['zai-coding-cn', 'claude-gateway'])
   })
 
@@ -116,19 +116,19 @@ describe('legacy llm-pi-ai migration', () => {
     seed(LEGACY_DOCUMENT)
     const first = await bootOpenAi()
     await vi.waitFor(() => {
-      expect(first.settings.rawSection('llm-openai')).toBeDefined()
+      expect(first.settings.rawSection('llm-provider')).toBeDefined()
     })
-    await first.settings.mutate('llm-openai', [
+    await first.settings.mutate('llm-provider', [
       { op: 'unset', path: ['providers', 'zai-coding-cn'] },
       { op: 'unset', path: ['providers', 'claude-gateway'] },
     ])
-    expect(Object.keys(first.settings.rawSection('llm-openai')?.['providers'] as object)).toEqual([])
+    expect(Object.keys(first.settings.rawSection('llm-provider')?.['providers'] as object)).toEqual([])
 
     // A second boot over the SAME document: the user layer exists, so the
     // migration is a no-op and the deletion sticks.
     const second = await bootOpenAi()
     await new Promise(resolve => setTimeout(resolve, 50))
-    expect(Object.keys(second.settings.rawSection('llm-openai')?.['providers'] as object)).toEqual([])
+    expect(Object.keys(second.settings.rawSection('llm-provider')?.['providers'] as object)).toEqual([])
     expect(second.llm.listProviders().map(provider => provider.id)).not.toContain('zai-coding-cn')
     expect(second.llm.listProviders().map(provider => provider.id)).not.toContain('claude-gateway')
   })
@@ -150,7 +150,7 @@ describe('legacy llm-pi-ai migration', () => {
     await vi.waitFor(() => {
       expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('claude-relay')
     })
-    const providers = ctx.settings.rawSection('llm-openai')?.['providers'] as Record<string, Record<string, unknown>>
+    const providers = ctx.settings.rawSection('llm-provider')?.['providers'] as Record<string, Record<string, unknown>>
     expect(providers['claude-relay']).toEqual({
       displayName: 'Claude Relay',
       api: 'anthropic-messages',
@@ -180,13 +180,13 @@ llm-anthropic:
 `)
     const ctx = await bootOpenAi()
     await new Promise((resolve) => { setTimeout(resolve, 50) })
-    const providers = ctx.settings.rawSection('llm-openai')?.['providers'] as Record<string, Record<string, unknown>>
+    const providers = ctx.settings.rawSection('llm-provider')?.['providers'] as Record<string, Record<string, unknown>>
     expect(providers['claude-relay']).toMatchObject({ api: 'openai-completions', baseURL: 'https://mine.example/v1' })
     // The retired section is left untouched for the conflict to stay visible.
     expect(ctx.settings.rawSection('llm-anthropic')?.['providers']).toHaveProperty('claude-relay')
   })
 
-  it('skips the import for a document a newer build already wrote', async () => {
+  it('folds a pi-ai route and a pre-rename llm-openai route in one boot', async () => {
     seed(`llm-pi-ai:
   providers:
     old-route:
@@ -203,8 +203,13 @@ llm-openai:
 `)
     const ctx = await bootOpenAi()
     await new Promise(resolve => setTimeout(resolve, 50))
-    expect(Object.keys(ctx.settings.rawSection('llm-openai')?.['providers'] as object)).toEqual(['fresh-route'])
-    expect(ctx.llm.listProviders().map(provider => provider.id)).toContain('fresh-route')
-    expect(ctx.llm.listProviders().map(provider => provider.id)).not.toContain('old-route')
+    // The chain: the pi-ai import lands old-route first (the target starts
+    // empty), then the llm-openai fold moves fresh-route beside it.
+    expect(Object.keys(ctx.settings.rawSection('llm-provider')?.['providers'] as object))
+      .toEqual(['old-route', 'fresh-route'])
+    expect(ctx.llm.listProviders().map(provider => provider.id))
+      .toEqual(expect.arrayContaining(['fresh-route', 'old-route']))
+    // The retired llm-openai section was emptied by its fold.
+    expect(ctx.settings.rawSection('llm-openai')).toEqual({})
   })
 })

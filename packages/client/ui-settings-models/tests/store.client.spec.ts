@@ -8,10 +8,10 @@ import { joinProviderDirectory, ModelsSettingsStore } from '../src/client/store.
 
 it.each([false, true])('retains configuration diagnostics when the route is active: %s', (active) => {
   expect(joinProviderDirectory(active ? [{ id: 'openai', name: 'openai' }] : [], [{
-    provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'],
+    provider: 'openai', displayName: 'openai', settingsNs: 'llm-provider', settingsPath: ['providers', 'openai'],
     error: 'catalog unavailable',
   }])).toEqual([{
-    provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'],
+    provider: 'openai', displayName: 'openai', settingsNs: 'llm-provider', settingsPath: ['providers', 'openai'],
     active, error: 'catalog unavailable',
   }])
 })
@@ -37,8 +37,8 @@ function remoteFail<T>(message: string): RemoteAnswer<T> {
 
 const DIRECTORY = [
   { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
-  { provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'], active: true },
-  { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-openai', settingsPath: ['providers', 'anthropic'], active: false },
+  { provider: 'openai', displayName: 'openai', settingsNs: 'llm-provider', settingsPath: ['providers', 'openai'], active: true },
+  { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-provider', settingsPath: ['providers', 'anthropic'], active: false },
   { provider: 'ghost', displayName: 'Ghost', settingsNs: '', settingsPath: [], active: true },
 ]
 
@@ -53,7 +53,7 @@ const NAMESPACES = [
     revision: 0,
   },
   {
-    ns: 'llm-openai',
+    ns: 'llm-provider',
     schema: {},
     value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } },
     user: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY' } } },
@@ -146,7 +146,7 @@ describe('ModelsSettingsStore', () => {
     expect(byProvider.get('anthropic')).toMatchObject({ configured: false, removable: false })
     expect(byProvider.get('anthropic')?.apiKeyEnv).toBeUndefined()
     expect(byProvider.get('ghost')).toMatchObject({ configured: false, removable: false })
-    expect(state.namespaces.get('llm-openai')?.ns).toBe('llm-openai')
+    expect(state.namespaces.get('llm-provider')?.ns).toBe('llm-provider')
   })
 
   it('degrades the credential badge, not the page, when the credential domain fails', async () => {
@@ -217,7 +217,7 @@ describe('edge joins', () => {
         writable: true,
         hasDocument: false,
         namespaces: [{
-          ns: 'llm-openai',
+          ns: 'llm-provider',
           schema: {},
           value: { providers: { weird: 'oops' } },
           applies: 'live' as const,
@@ -227,7 +227,7 @@ describe('edge joins', () => {
       })),
       providers: () => Promise.resolve(ok({
         providers: [
-          { provider: 'weird', displayName: 'weird', settingsNs: 'llm-openai', settingsPath: ['providers', 'weird'], active: false },
+          { provider: 'weird', displayName: 'weird', settingsNs: 'llm-provider', settingsPath: ['providers', 'weird'], active: false },
         ] as never,
       })),
     })
@@ -243,11 +243,11 @@ describe('edge joins', () => {
       describeSettings: () => Promise.resolve(remoteOk({
         writable: true,
         hasDocument: false,
-        namespaces: [{ ns: 'llm-openai', schema: {}, value: { providers: {} }, applies: 'live' as const, secrets: [], revision: 0 }] as never,
+        namespaces: [{ ns: 'llm-provider', schema: {}, value: { providers: {} }, applies: 'live' as const, secrets: [], revision: 0 }] as never,
       })),
       providers: () => Promise.resolve(ok({
         providers: [
-          { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-openai', settingsPath: ['providers', 'anthropic'], active: false },
+          { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-provider', settingsPath: ['providers', 'anthropic'], active: false },
         ] as never,
       })),
       describeCredentials: refs => Promise.resolve(remoteOk(

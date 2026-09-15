@@ -9,7 +9,7 @@
  * `reasoning_effort` accepts only `low`/`high`, and the output-cap field name
  * is selectable (`max_tokens` vs `max_completion_tokens`).
  *
- * @module dsh-llm-openai/types
+ * @module dsh-llm-provider/types
  */
 
 /** Request body for `POST {baseURL}/chat/completions`. */

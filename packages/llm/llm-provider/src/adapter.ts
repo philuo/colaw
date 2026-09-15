@@ -7,7 +7,7 @@
  * validation, layering, and credential policy. Images ride inline base64
  * data URLs; there is no Files API on this route.
  *
- * @module dsh-llm-openai/adapter
+ * @module dsh-llm-provider/adapter
  */
 
 import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'

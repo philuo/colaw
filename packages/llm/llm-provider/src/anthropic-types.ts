@@ -10,7 +10,7 @@
  * thinking to plain text on replay, and so does this adapter), fallback
  * blocks, and managed providers.
  *
- * @module dsh-llm-openai/anthropic-types
+ * @module dsh-llm-provider/anthropic-types
  */
 
 /** Request body for `POST {baseURL}/v1/messages`. */

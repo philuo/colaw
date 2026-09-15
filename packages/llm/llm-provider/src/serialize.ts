@@ -4,7 +4,7 @@
  * attachments into ordered inline base64 data-URL parts (OpenAI's only
  * inline image form — there is no Files API here). Tool-result images
  * follow their string-only tool messages in a separate user message.
- * @module dsh-llm-openai/serialize
+ * @module dsh-llm-provider/serialize
  */
 
 import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'

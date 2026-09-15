@@ -5,7 +5,7 @@
  * literal `[DONE]` is yielded so the caller owns final flushing, and EOF
  * before it raises {@link LlmError}.
  *
- * @module dsh-llm-openai/sse
+ * @module dsh-llm-provider/sse
  */
 
 import { LlmError, sseFrames } from '@deepseek-ai/dsh-llm'

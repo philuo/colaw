@@ -1,7 +1,7 @@
 /**
  * The single pi-ai replacement: one plugin owning every wire protocol a
  * hand-configurable provider speaks. Provider routes live in the
- * `llm-openai` settings section's `providers` dict (the dict key IS the
+ * `llm-provider` settings section's `providers` dict (the dict key IS the
  * route), each naming its protocol through `api` — `openai-completions`
  * (the default, and what every OpenAI-compatible gateway serves),
  * `openai-responses` (OpenAI's stateless Responses wire), or
@@ -19,7 +19,7 @@
  * Route ids are globally unique across adapter families: a profile keyed
  * `deepseek-official` is refused by the registry and keeps the previous
  * routes serving.
- * @module @deepseek-ai/dsh-llm-openai
+ * @module @deepseek-ai/dsh-llm-provider
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -85,10 +85,10 @@ export type { RequestDefaults as AnthropicRequestDefaults, ModelWireFacts as Ant
 export { httpErrorCode as anthropicHttpErrorCode } from './anthropic-adapter.ts'
 export { MESSAGE_STOP } from './anthropic-sse.ts'
 
-export const name = 'llm-openai'
+export const name = 'llm-provider'
 export const inject = ['llm']
 
-const NS = 'llm-openai'
+const NS = 'llm-provider'
 /**
  * The credentials-store reference a new route defaults to, per protocol. It
  * is a store name, not an environment read: the Models page writes the key
@@ -102,18 +102,6 @@ export const ANTHROPIC_PUBLIC_BASE_URL = 'https://api.anthropic.com'
 
 /** Environment variables naming a route's endpoint, honored only from trusted layers. */
 const BASE_URL_ENV = { openai: 'OPENAI_BASE_URL', anthropic: 'ANTHROPIC_BASE_URL' } as const
-
-/**
- * The well-known catalog routes this plugin serves: providers whose endpoint
- * and protocol are public knowledge, offered by configuration surfaces as
- * one-key setups before any profile exists. Route ids are global across
- * adapter families, so these double as the family's identity on the Models
- * page.
- */
-const CATALOG_PROVIDERS: readonly { provider: string; displayName: string }[] = [
-  { provider: 'openai', displayName: 'OpenAI' },
-  { provider: 'anthropic', displayName: 'Anthropic' },
-]
 
 // The wires carry text and (for vision models) image input; the other
 // harness modalities have no wire form on these routes.
@@ -231,26 +219,26 @@ export type ResolvedProfile =
 function resolveModels(provider: string, models: readonly OpenAICatalogModel[] | undefined): OpenAICatalogModel[] {
   const seen = new Set<string>()
   return (models ?? []).map((model) => {
-    if (model.id.length === 0) throw new Error(`llm-openai: model ids in provider "${provider}" must be non-empty`)
+    if (model.id.length === 0) throw new Error(`llm-provider: model ids in provider "${provider}" must be non-empty`)
     if (model.contextWindow !== undefined
       && (!Number.isInteger(model.contextWindow) || model.contextWindow <= 0)) {
-      throw new Error(`llm-openai: model "${model.id}" contextWindow must be a positive integer`)
+      throw new Error(`llm-provider: model "${model.id}" contextWindow must be a positive integer`)
     }
     if (model.maxTokens !== undefined
       && (!Number.isInteger(model.maxTokens) || model.maxTokens <= 0)) {
-      throw new Error(`llm-openai: model "${model.id}" maxTokens must be a positive integer`)
+      throw new Error(`llm-provider: model "${model.id}" maxTokens must be a positive integer`)
     }
     const inputModalities = model.inputModalities ?? ['text']
     if (model.imagePixelBudget !== undefined
       && model.imagePixelBudget !== 'low'
       && (!Number.isSafeInteger(model.imagePixelBudget) || model.imagePixelBudget <= 0)) {
-      throw new Error(`llm-openai: model "${model.id}" imagePixelBudget must be "low" or a positive safe integer`)
+      throw new Error(`llm-provider: model "${model.id}" imagePixelBudget must be "low" or a positive safe integer`)
     }
-    if (seen.has(model.id)) throw new Error(`llm-openai: duplicate model "${model.id}" in provider "${provider}"`)
+    if (seen.has(model.id)) throw new Error(`llm-provider: duplicate model "${model.id}" in provider "${provider}"`)
     seen.add(model.id)
     const hasImage = inputModalities.includes('image')
     if (!hasImage && (model.imagePixelBudget !== undefined || model.imageMaxBytes !== undefined)) {
-      throw new Error(`llm-openai: text-only model "${model.id}" in provider "${provider}" cannot declare image request limits`)
+      throw new Error(`llm-provider: text-only model "${model.id}" in provider "${provider}" cannot declare image request limits`)
     }
     return {
       id: model.id,
@@ -279,7 +267,7 @@ function resolveModels(provider: string, models: readonly OpenAICatalogModel[] |
 function safeBound(provider: string, field: string, value: number | undefined, fallback: number): number {
   const bound = value ?? fallback
   if (!Number.isSafeInteger(bound) || bound <= 0) {
-    throw new Error(`llm-openai: provider "${provider}" ${field} must be a positive safe integer`)
+    throw new Error(`llm-provider: provider "${provider}" ${field} must be a positive safe integer`)
   }
   return bound
 }
@@ -298,18 +286,18 @@ export function resolveProfiles(
 ): Map<string, ResolvedProfile> {
   const resolved = new Map<string, ResolvedProfile>()
   for (const [provider, source] of Object.entries(providers ?? {})) {
-    if (provider.length === 0) throw new Error('llm-openai: provider route names must be non-empty')
+    if (provider.length === 0) throw new Error('llm-provider: provider route names must be non-empty')
     if (source.baseURL !== undefined && source.baseURL.length === 0) {
-      throw new Error(`llm-openai: provider "${provider}" has an empty baseURL`)
+      throw new Error(`llm-provider: provider "${provider}" has an empty baseURL`)
     }
     if (source.displayName !== undefined && source.displayName.length === 0) {
-      throw new Error(`llm-openai: provider "${provider}" has an empty displayName`)
+      throw new Error(`llm-provider: provider "${provider}" has an empty displayName`)
     }
     const api = source.api ?? 'openai-completions'
     const anthropic = api === 'anthropic-messages'
     if (source.thinkingBudgetTokens !== undefined
       && (!Number.isSafeInteger(source.thinkingBudgetTokens) || source.thinkingBudgetTokens < 1024)) {
-      throw new Error(`llm-openai: provider "${provider}" thinkingBudgetTokens must be a safe integer of at least 1024`)
+      throw new Error(`llm-provider: provider "${provider}" thinkingBudgetTokens must be a safe integer of at least 1024`)
     }
     const streamIdleTimeoutMs = source.streamIdleTimeoutMs
       ?? (anthropic ? ANTHROPIC_STREAM_IDLE_TIMEOUT_MS : DEFAULT_STREAM_IDLE_TIMEOUT_MS)
@@ -317,7 +305,7 @@ export function resolveProfiles(
       || streamIdleTimeoutMs <= 0
       || streamIdleTimeoutMs > MAX_TIMER_DELAY_MS) {
       throw new Error(
-        `llm-openai: provider "${provider}" streamIdleTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
+        `llm-provider: provider "${provider}" streamIdleTimeoutMs must be a positive finite number no greater than ${MAX_TIMER_DELAY_MS}`,
       )
     }
     const maxRequestImageBytes = safeBound(provider, 'maxRequestImageBytes', source.maxRequestImageBytes,
@@ -327,16 +315,16 @@ export function resolveProfiles(
     const imageOffloadByteQuantum = safeBound(provider, 'imageOffloadByteQuantum', source.imageOffloadByteQuantum,
       anthropic ? ANTHROPIC_IMAGE_OFFLOAD_BYTE_QUANTUM : DEFAULT_IMAGE_OFFLOAD_BYTE_QUANTUM)
     if (imageOffloadByteQuantum > maxRequestImageBytes) {
-      throw new Error(`llm-openai: provider "${provider}" imageOffloadByteQuantum must not exceed maxRequestImageBytes`)
+      throw new Error(`llm-provider: provider "${provider}" imageOffloadByteQuantum must not exceed maxRequestImageBytes`)
     }
     const imageOffloadCountQuantum = safeBound(provider, 'imageOffloadCountQuantum', source.imageOffloadCountQuantum,
       anthropic ? ANTHROPIC_IMAGE_OFFLOAD_COUNT_QUANTUM : DEFAULT_IMAGE_OFFLOAD_COUNT_QUANTUM)
     if (imageOffloadCountQuantum > maxImagesPerRequest) {
-      throw new Error(`llm-openai: provider "${provider}" imageOffloadCountQuantum must not exceed maxImagesPerRequest`)
+      throw new Error(`llm-provider: provider "${provider}" imageOffloadCountQuantum must not exceed maxImagesPerRequest`)
     }
     const models = resolveModels(provider, source.models)
     const displayName = source.displayName ?? provider
-    const retryPolicy = resolveRetryPolicy(source.retryPolicy, `llm-openai: provider "${provider}" retryPolicy`)
+    const retryPolicy = resolveRetryPolicy(source.retryPolicy, `llm-provider: provider "${provider}" retryPolicy`)
     if (anthropic) {
       resolved.set(provider, {
         provider,
@@ -426,25 +414,27 @@ export function resolveAnthropicAdapterOptions(
 }
 
 /**
- * One-shot absorption of a stored `llm-anthropic` section — the two-package
- * era's second namespace — into this namespace. Routes the target does not
- * already hold move across stamped with their protocol; the source section
- * is then emptied through a transient registration, so a route the user
- * later deletes stays deleted.
+ * One-shot absorption of a retired settings section — the two-package era's
+ * `llm-anthropic`, or the pre-rename `llm-openai` — into this namespace.
+ * Routes the target does not already hold move across (a Messages-only era
+ * section stamped with its protocol); the source section is then emptied
+ * through a transient registration, so a route the user later deletes stays
+ * deleted.
  * @param settings - the settings service, with this plugin's section installed.
  * @param log - line function for the one diagnostic per outcome.
  */
-export async function foldLegacyAnthropicSection(
+export async function foldLegacySection(
+  legacy: 'llm-anthropic' | 'llm-openai',
   settings: LegacyMigrationSettings & {
     register(ns: string, schema: z<unknown>, options: { base: object }): { replace(section: object): Promise<void> }
   },
   log: (line: string) => void,
 ): Promise<void> {
-  const source = settings.rawSection('llm-anthropic')
+  const source = settings.rawSection(legacy)
   if (source === undefined) return
   const stored = source['providers']
   if (typeof stored !== 'object' || stored === null) return
-  const target = settings.rawSection('llm-openai')?.['providers']
+  const target = settings.rawSection('llm-provider')?.['providers']
   const held = typeof target === 'object' && target !== null ? Object.keys(target) : []
   const picked: Record<string, Record<string, unknown>> = {}
   let conflicts = 0
@@ -454,31 +444,31 @@ export async function foldLegacyAnthropicSection(
       continue
     }
     if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
-    // The source section was the Messages adapter's: its routes arrive
-    // stamped with the protocol that served them. Model rows written in the
-    // old spelling (`input`) map onto this schema's `inputModalities`, the
-    // same conversion the pi-ai import performs; rows already in this
-    // schema's spelling pass through it unchanged.
+    // A Messages-only era section arrives stamped with the protocol that
+    // served it. Model rows written in the old spelling (`input`) map onto
+    // this schema's `inputModalities`, the same conversion the pi-ai import
+    // performs; rows already in this schema's spelling pass through it
+    // unchanged.
     const models = convertLegacyPiAiModels((value as { models?: unknown }).models)
     picked[route] = {
       ...value,
-      api: 'anthropic-messages',
+      ...(legacy === 'llm-anthropic' ? { api: 'anthropic-messages' } : {}),
       ...models === undefined ? {} : { models },
     }
   }
   if (Object.keys(picked).length === 0) {
     if (conflicts > 0) {
-      log(`llm-openai: ${conflicts} stored llm-anthropic route(s) already exist here; leaving the retired section untouched`)
+      log(`llm-provider: ${conflicts} stored llm-anthropic route(s) already exist here; leaving the retired section untouched`)
     }
     return
   }
-  await settings.update('llm-openai', { providers: picked })
+  await settings.update('llm-provider', { providers: picked })
   // Emptying the source needs its namespace registered for one write; the
   // registration is transient boot state and the stored section is what the
   // next boot reads.
-  const scope = settings.register('llm-anthropic', z.object({ providers: z.dict(z.object({})).default({}) }) as unknown as z<unknown>, { base: {} })
+  const scope = settings.register(legacy, z.object({ providers: z.dict(z.object({})).default({}) }) as unknown as z<unknown>, { base: {} })
   await scope.replace({})
-  log(`llm-openai: folded ${Object.keys(picked).length} provider route(s) from the retired llm-anthropic section`
+  log(`llm-provider: folded ${Object.keys(picked).length} provider route(s) from the retired ${legacy} section`
     + (conflicts > 0 ? ` (${conflicts} conflicting route(s) kept as-is)` : ''))
 }
 
@@ -502,10 +492,10 @@ export function apply(ctx: Context, config: Config): void {
     const credentials = ctx.get('credentials')
     if (credentials !== undefined) {
       const hit = await credentials.resolve(ref)
-      if (hit !== undefined) return assertUsableApiKey(hit.value, 'llm-openai', ref)
+      if (hit !== undefined) return assertUsableApiKey(hit.value, 'llm-provider', ref)
     }
     throw new LlmError(
-      `llm-openai: no API key for provider route "${provider}"; store ${ref} through the credentials`
+      `llm-provider: no API key for provider route "${provider}"; store ${ref} through the credentials`
       + ' service (the web Models page writes it)',
       'MISSING_CREDENTIAL',
     )
@@ -515,14 +505,14 @@ export function apply(ctx: Context, config: Config): void {
     options: (provider) => {
       const profile = profiles().get(provider)
       if (profile === undefined || profile.api === 'anthropic-messages') {
-        throw new LlmError(`llm-openai: route "${provider}" vanished from configuration`, 'NO_ADAPTER')
+        throw new LlmError(`llm-provider: route "${provider}" vanished from configuration`, 'NO_ADAPTER')
       }
       return profile.openai
     },
     resolveApiKey: (provider) => {
       const profile = profiles().get(provider)
       if (profile === undefined || profile.api === 'anthropic-messages') {
-        return Promise.reject(new LlmError(`llm-openai: route "${provider}" vanished from configuration`, 'NO_ADAPTER'))
+        return Promise.reject(new LlmError(`llm-provider: route "${provider}" vanished from configuration`, 'NO_ADAPTER'))
       }
       return resolveApiKey(provider, profile)
     },
@@ -537,14 +527,14 @@ export function apply(ctx: Context, config: Config): void {
     options: (provider) => {
       const profile = profiles().get(provider)
       if (profile === undefined || profile.api !== 'anthropic-messages') {
-        throw new LlmError(`llm-openai: route "${provider}" vanished from configuration`, 'NO_ADAPTER')
+        throw new LlmError(`llm-provider: route "${provider}" vanished from configuration`, 'NO_ADAPTER')
       }
       return profile.anthropic
     },
     resolveApiKey: (provider) => {
       const profile = profiles().get(provider)
       if (profile === undefined || profile.api !== 'anthropic-messages') {
-        return Promise.reject(new LlmError(`llm-openai: route "${provider}" vanished from configuration`, 'NO_ADAPTER'))
+        return Promise.reject(new LlmError(`llm-provider: route "${provider}" vanished from configuration`, 'NO_ADAPTER'))
       }
       return resolveApiKey(provider, profile)
     },
@@ -611,35 +601,30 @@ export function apply(ctx: Context, config: Config): void {
   ensureRegistrationFacts()
 
   /**
-   * The configurable-provider directory: every well-known catalog route
-   * (offered from the moment the plugin mounts, dormant or not, so
-   * configuration surfaces can adopt it before any route exists), plus every
-   * route the current profiles declare. A hand-declared route has no catalog
-   * entry, so without this union it would have no settings address and
-   * configuration surfaces could neither show nor edit it.
+   * The configurable-provider directory: exactly the routes the current
+   * profiles declare — any number of providers, each named by the user. An
+   * emptied section withdraws the directory (the registry refuses an empty
+   * declaration), and a dormant mount registers none.
    */
   let directory: ReturnType<typeof ctx.llm.registerConfigurableProviders> | undefined
   let directoryFacts: unknown
   const ensureDirectory = (): void => {
-    const entries: LlmConfigurableProvider[] = []
-    const catalogIds = new Set(CATALOG_PROVIDERS.map(entry => entry.provider))
-    const declare = (provider: string, displayName: string): void => {
-      if (entries.some(entry => entry.provider === provider)) return
-      entries.push({
-        provider,
-        displayName,
-        settingsNs: NS,
-        settingsPath: ['providers', provider],
-        // Membership of the catalog, not of the settings document: a stored
-        // profile for a catalog route narrows it without declaring it.
-        declared: !catalogIds.has(provider),
-      })
-    }
-    for (const entry of CATALOG_PROVIDERS) declare(entry.provider, entry.displayName)
-    for (const [provider, profile] of profiles()) declare(provider, profile.displayName)
+    const entries: LlmConfigurableProvider[] = [...profiles().entries()].map(([provider, profile]) => ({
+      provider,
+      displayName: profile.displayName,
+      settingsNs: NS,
+      settingsPath: ['providers', provider],
+      declared: true,
+    }))
     if (deepEqualJson(entries, directoryFacts)) return
-    if (directory === undefined) directory = ctx.llm.registerConfigurableProviders(entries)
-    else directory.replace(entries)
+    if (entries.length === 0) {
+      directory?.()
+      directory = undefined
+    } else if (directory === undefined) {
+      directory = ctx.llm.registerConfigurableProviders(entries)
+    } else {
+      directory.replace(entries)
+    }
     directoryFacts = entries
   }
   ensureDirectory()
@@ -677,13 +662,13 @@ export function apply(ctx: Context, config: Config): void {
         try {
           ensureRegistrationFacts()
         } catch (error) {
-          ctx.logger.error('llm-openai: keeping the previously registered routes after a refused update')
+          ctx.logger.error('llm-provider: keeping the previously registered routes after a refused update')
           ctx.logger.error(error)
         }
         try {
           ensureDirectory()
         } catch (error) {
-          ctx.logger.error('llm-openai: keeping the previous configurable-provider directory after a refused update')
+          ctx.logger.error('llm-provider: keeping the previous configurable-provider directory after a refused update')
           ctx.logger.error(error)
         }
       },
@@ -693,7 +678,7 @@ export function apply(ctx: Context, config: Config): void {
     // through the onChange hook above. First the retired pi-ai section, then
     // the two-package era's llm-anthropic section.
     const settings = settingsCtx.settings as unknown as Parameters<typeof migrateLegacyPiAiProfiles>[0]
-      & Parameters<typeof foldLegacyAnthropicSection>[0]
+      & Parameters<typeof foldLegacySection>[1]
     void migrateLegacyPiAiProfiles(
       settings,
       {
@@ -717,9 +702,10 @@ export function apply(ctx: Context, config: Config): void {
       },
       (line) => { ctx.logger.info(line) },
     )
-      .then(() => foldLegacyAnthropicSection(settings, (line) => { ctx.logger.info(line) }))
+      .then(() => foldLegacySection('llm-openai', settings, (line) => { ctx.logger.info(line) }))
+      .then(() => foldLegacySection('llm-anthropic', settings, (line) => { ctx.logger.info(line) }))
       .catch((error) => {
-        ctx.logger.warn('llm-openai: migrating the retired settings sections failed; their routes stay there')
+        ctx.logger.warn('llm-provider: migrating the retired settings sections failed; their routes stay there')
         ctx.logger.warn(error)
       })
   })

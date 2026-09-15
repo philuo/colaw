@@ -130,7 +130,7 @@ export function protocolChoices(
   namespaces: ReadonlyMap<string, SettingsNamespaceView | undefined>,
   schema: SettingsSchemaOperations,
 ): string[] {
-  const namespace = namespaces.get('llm-openai')
+  const namespace = namespaces.get('llm-provider')
   if (namespace === undefined) return []
   const node = schema.nodeAtPath(schema.rehydrate(namespace.schema), ['providers', PROBE_ROUTE, 'api'])
   const list = (node as { type?: string; list?: readonly { value?: unknown }[] } | undefined)

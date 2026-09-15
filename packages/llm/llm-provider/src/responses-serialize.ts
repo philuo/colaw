@@ -11,7 +11,7 @@
  * came from another protocol and replays with the item id omitted, which
  * makes the API skip pairing validation instead of failing it.
  *
- * @module dsh-llm-openai/responses-serialize
+ * @module dsh-llm-provider/responses-serialize
  */
 
 import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'

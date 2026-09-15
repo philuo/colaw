@@ -6,7 +6,7 @@
  * layering, and credential policy. Images ride inline base64 sources; there
  * is no Files API on this route.
  *
- * @module dsh-llm-openai/anthropic-adapter
+ * @module dsh-llm-provider/anthropic-adapter
  */
 
 import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE, ReasoningEffortId } from '@deepseek-ai/dsh-llm'

@@ -6,8 +6,11 @@
  *
  * A draft naming this route without a baseURL is answered from the
  * user-configured catalog with no network call. Anything else is
- * interrogated over the wire at `GET {baseURL}/models` with bearer auth —
- * the listing OpenAI and compatible gateways publish. The parser accepts the
+ * interrogated over the wire at `GET {root}/v1/models?limit=1000` with
+ * `x-api-key` plus the pinned `anthropic-version` — the listing the official
+ * endpoint and Anthropic-protocol gateways publish. The root is the base
+ * without trailing slashes and without one trailing `/v1` segment: gateway
+ * documentation publishes both spellings of the same root. The parser accepts the
  * standard `data` array and the enriched `models` map some gateways expose;
  * entries without a usable id are skipped rather than failing the rest.
  *
@@ -16,7 +19,7 @@
  * adoption. `settings.yaml` remains the only thing that decides what a route
  * serves.
  *
- * @module dsh-llm-openai/discovery
+ * @module dsh-llm-provider/anthropic-discovery
  */
 
 import { INVALID_CREDENTIAL_CODE, LlmError, normalizeApiKey } from '@deepseek-ai/dsh-llm'
@@ -75,10 +78,13 @@ function label(...candidates: readonly unknown[]): string | undefined {
 /**
  * Join the endpoint base with the listing path. The base is treated as a
  * prefix rather than a URL to resolve against, so a deployment path such as
- * `https://gateway.example/openai/v1` keeps its segments.
+ * `https://gateway.example/anthropic` keeps its segments; one trailing
+ * `/v1` is normalized away because the listing path appends its own.
  */
 function listingUrl(baseURL: string): string {
-  return `${baseURL.replace(/\/+$/, '')}/models`
+  const base = baseURL.replace(/\/+$/, '')
+  const root = base.endsWith('/v1') ? base.slice(0, -3) : base
+  return `${root}/v1/models?limit=1000`
 }
 
 /**
@@ -224,7 +230,8 @@ export async function discoverModels(
   let response: Response
   try {
     const headers = new Headers({ accept: 'application/json' })
-    if (apiKey !== undefined) headers.set('authorization', `Bearer ${apiKey}`)
+    headers.set('anthropic-version', '2023-06-01')
+    if (apiKey !== undefined) headers.set('x-api-key', apiKey)
     for (const [name, value] of Object.entries(attributionHeaders())) headers.set(name, value)
     response = await fetch(url, {
       method: 'GET',

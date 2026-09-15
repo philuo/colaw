@@ -5,8 +5,10 @@
  * solid configured or missing dots. A whole-section provider without a
  * configured key renders as its open setup card instead of a row, but only in
  * the first-run posture — no provider on the page can serve requests yet — and
- * only until the user closes that card; the add flow is a card carrying the
- * dormant-provider select. Each card kind owns its own open state, so closing
+ * only until the user closes that card. Adding a provider is always creating
+ * an arbitrary one: any number may exist, each naming its own key, protocol,
+ * endpoint, and model catalog, the catalog one click away from the provider's
+ * own listing. Each card kind owns its own open state, so closing
  * one never discards a draft in another. Every mutation writes through the
  * wire, while a provider removal first requires confirmation; the page
  * re-renders from pushed invalidations or the post-apply reload.
@@ -205,7 +207,6 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   const { controller, operations, schema, t } = injected
   const state = injected.useSnapshot(snapshot => snapshot)
   const [editing, setEditing] = useState<EditorTarget | undefined>(undefined)
-  const [adding, setAdding] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<EditorTarget | undefined>(undefined)
   const [deleting, setDeleting] = useState(false)
   const [deleteFailure, setDeleteFailure] = useState<string | undefined>(undefined)
@@ -222,7 +223,6 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
 
   const closeEditor = (changed: boolean, target: ProviderIdentity): void => {
     setEditing(undefined)
-    setAdding(false)
     setDeclaring(false)
     if (changed) announceSaved(target)
   }
@@ -290,17 +290,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
   // step: whether the user already has a provider to talk to.
   const anyUsable = state.rows.some(providerUsable)
   const configured = state.rows.filter(row => row.configured)
-  const configurable = state.rows.filter(row => state.namespaces.has(row.entry.settingsNs))
-  const addable = configurable.filter(row => !row.configured)
-  const addTarget = adding ? editing : undefined
-  const addNamespace = addTarget === undefined ? undefined : state.namespaces.get(addTarget.settingsNs)
-  // The draft's directory row, for the card extension seat. A refresh can drop
-  // the row mid-draft (the route was adopted or withdrawn elsewhere); the
-  // draft card stays while the seat simply has no row to dispatch.
-  const addRow = addTarget === undefined
-    ? undefined
-    : state.rows.find(row => row.entry.provider === addTarget.provider)
-  // Hand-declared routes live in the llm-openai namespace, whose schema
+  // Hand-declared routes live in the llm-provider namespace, whose schema
   // names all three protocols one may speak; without it mounted there is
   // nothing to declare and the entry point stays disabled.
   const protocols = protocolChoices(state.namespaces, schema)
@@ -349,7 +339,7 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
               </li>
             )
           }
-          const open = !adding && editing?.provider === row.entry.provider
+          const open = editing?.provider === row.entry.provider
           const credentialConfigured = row.credential?.configured === true
           const credentialMissing = !credentialConfigured
             && row.apiKeyEnv !== undefined
@@ -396,7 +386,6 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
                       // the create card beside this editor, and closing either
                       // one discards the other's draft.
                       setDeclaring(false)
-                      setAdding(false)
                       setEditing(open ? undefined : target)
                     }}
                   >
@@ -443,110 +432,40 @@ function Loaded({ injected, renderSlot }: { injected: ModelsSectionFace; renderS
         })}
       </ul>
       <div className={styles['addBlock']}>
-        {addTarget !== undefined && addNamespace !== undefined
+        {declaring ? null : (
+          <button
+            type="button"
+            className={styles['addButton']}
+            disabled={protocols.length === 0 || !state.writable}
+            onClick={() => {
+              setSavedTarget(undefined)
+              setEditing(undefined)
+              setDeclaring(true)
+            }}
+          >
+            <IconPlusOutline16 size={14} />
+            {t('add')}
+          </button>
+        )}
+        {declaring
           ? (
             <div className={styles['addCard']}>
-              <div className={styles['field']}>
-                <span className={styles['fieldLabel']}>{t('provider')}</span>
-                <select
-                  className={`${styles['input']} ${styles['selectInput']}`}
-                  value={addTarget.provider}
-                  aria-label={t('provider')}
-                  onChange={(event) => {
-                    const row = addable.find(candidate => candidate.entry.provider === event.target.value)
-                    /* v8 ignore next -- the select only lists addable rows */
-                    if (row === undefined) return
-                    setEditing(targetOf(row))
-                  }}
-                >
-                  {addable.map(row => (
-                    <option key={row.entry.provider} value={row.entry.provider}>{row.entry.displayName}</option>
-                  ))}
-                </select>
-              </div>
-              <ProviderEditor
-                key={addTarget.provider}
-                provider={addTarget.provider}
-                displayName={addTarget.displayName}
-                hideTitle
-                namespace={addNamespace}
-                schema={schema}
-                settingsPath={addTarget.settingsPath}
+              <CustomProviderCard
+                taken={state.rows.map(row => row.entry.provider)}
+                protocols={protocols}
+                /* v8 ignore next -- the card only opens from a button disabled without this namespace */
+                revision={state.namespaces.get('llm-provider')?.revision ?? 0}
                 operations={operations}
                 t={t}
                 readOnly={!state.writable}
-                onClose={(changed) => { closeEditor(changed, addTarget) }}
+                onClose={(changed) => {
+                  setDeclaring(false)
+                  if (changed) void controller.load()
+                }}
               />
-              {addRow === undefined
-                ? null
-                : renderSlot(
-                  'settings.models.provider-card',
-                  { provider: addRow.entry, configured: addRow.configured, keyConfigured: keyConfiguredOf(addRow) },
-                  { entryKey: addRow.entry.settingsNs },
-                )}
             </div>
           )
-          : declaring
-            ? (
-              <div className={styles['addCard']}>
-                <CustomProviderCard
-                  taken={state.rows.map(row => row.entry.provider)}
-                  protocols={protocols}
-                  /* v8 ignore next -- the card only opens from a button disabled without this namespace */
-                  revision={state.namespaces.get('llm-openai')?.revision ?? 0}
-                  operations={operations}
-                  t={t}
-                  readOnly={!state.writable}
-                  onClose={(changed) => {
-                    setDeclaring(false)
-                    if (changed) void controller.load()
-                  }}
-                />
-              </div>
-            )
-            : (
-              // One row for the two ways to gain a provider: adopt one the
-              // adapter already knows, or declare one it does not. Side by side
-              // and equal-width so they read as siblings and line up with the
-              // rows above, rather than two pills of different lengths.
-              <div className={styles['addActions']}>
-                {configurable.length > 0 && (
-                  <button
-                    type="button"
-                    className={styles['addButton']}
-                    disabled={addable.length === 0 || !state.writable}
-                    onClick={() => {
-                      const first = addable[0]
-                      /* v8 ignore next -- the button is disabled while nothing is addable */
-                      if (first === undefined) return
-                      setSavedTarget(undefined)
-                      setDeclaring(false)
-                      setAdding(true)
-                      setEditing(targetOf(first))
-                    }}
-                  >
-                    <IconPlusOutline16 size={14} />
-                    {t('add')}
-                  </button>
-                )}
-                {state.namespaces.has('llm-openai') && (
-                  <button
-                    type="button"
-                    className={styles['addButton']}
-                    disabled={protocols.length === 0 || !state.writable}
-                    onClick={() => {
-                      setSavedTarget(undefined)
-                      setAdding(false)
-                      setEditing(undefined)
-                      setDeclaring(true)
-                    }}
-                  >
-                    <IconPlusOutline16 size={14} />
-                    {t('customAdd')}
-                  </button>
-                )}
-              </div>
-            )}
+          : null}
       </div>
       {renderSlot('settings.models.footer', {})}
       <Modal

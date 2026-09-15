@@ -98,15 +98,15 @@
       name: '@deepseek-ai/dsh-credentials-local'
 
     # The multi-protocol provider route, mounted dormant: zero models in the
-    # picker until an `llm-openai:` settings section declares the endpoints'
+    # picker until an `llm-provider:` settings section declares the endpoints'
     # catalogs. One plugin, one namespace, one `providers` dict whose entries
     # name their wire through `api` — openai-completions (default; the
     # official API and every compatible gateway), openai-responses, or
     # anthropic-messages (the official API and vendor-compatible coding
     # endpoints); reasoning models are declared per catalog entry via
     # `reasoning: true`.
-    - id: llm-openai
-      name: '@deepseek-ai/dsh-llm-openai'
+    - id: llm-provider
+      name: '@deepseek-ai/dsh-llm-provider'
 
     - id: session-persistence-jsonl
       name: '@deepseek-ai/dsh-session-persistence-jsonl'

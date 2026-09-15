@@ -13,7 +13,7 @@
  * message-`phase` tracking is deliberately absent — the terminal response
  * status always overwrites the stop reason it could have set.
  *
- * @module dsh-llm-openai/responses-translate
+ * @module dsh-llm-provider/responses-translate
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'

@@ -5,7 +5,7 @@
  * error); the JSON `data` arrives as one line. EOF before `message_stop`
  * raises {@link LlmError}: a truncated response cannot be trusted.
  *
- * @module dsh-llm-openai/anthropic-sse
+ * @module dsh-llm-provider/anthropic-sse
  */
 
 import { LlmError, sseFrames } from '@deepseek-ai/dsh-llm'

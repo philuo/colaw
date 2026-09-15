@@ -5,17 +5,17 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { createUserMessage } from '@deepseek-ai/dsh-llm'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import * as LlmOpenAi from '@deepseek-ai/dsh-llm-openai'
+import * as LlmOpenAi from '@deepseek-ai/dsh-llm-provider'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { AnthropicAdapter, resolveAnthropicAdapterOptions } from '@deepseek-ai/dsh-llm-openai'
+import { AnthropicAdapter, resolveAnthropicAdapterOptions } from '@deepseek-ai/dsh-llm-provider'
 import { assemble } from './anthropic-assemble.ts'
 import { closeMockServers, mockServer, textFrames } from './anthropic-mock-server.ts'
 
 let testHome: string
 
 beforeEach(() => {
-  testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-openai-anthropic-'))
+  testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-provider-anthropic-'))
   vi.stubEnv('DSH_HOME', testHome)
 })
 

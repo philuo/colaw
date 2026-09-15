@@ -4,7 +4,7 @@
  * one message, mirroring pi-ai); unsigned harness reasoning folds into plain
  * assistant text (pi-ai's default for missing thinking signatures). Images
  * ride inline base64 sources; there is no Files API on this route.
- * @module dsh-llm-openai/anthropic-serialize
+ * @module dsh-llm-provider/anthropic-serialize
  */
 
 import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'

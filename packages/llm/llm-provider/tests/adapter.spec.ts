@@ -5,17 +5,17 @@ import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import LlmRuntime, { ProviderRequestId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
-import * as LlmOpenAi from '@deepseek-ai/dsh-llm-openai'
+import * as LlmOpenAi from '@deepseek-ai/dsh-llm-provider'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { OpenAIAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-openai'
+import { OpenAIAdapter, resolveAdapterOptions } from '@deepseek-ai/dsh-llm-provider'
 import { assemble } from './assemble.ts'
 import { closeMockServers, mockServer, textEvents } from './mock-server.ts'
 
 let testHome: string
 
 beforeEach(() => {
-  testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-openai-'))
+  testHome = mkdtempSync(join(tmpdir(), 'dsh-llm-provider-'))
   vi.stubEnv('DSH_HOME', testHome)
 })
 
@@ -303,40 +303,30 @@ describe('openai-responses wire', () => {
   })
 })
 
-describe('dormant catalog directory', () => {
-  it('offers both catalog routes while the plugin is dormant', async () => {
+describe('configurable-provider directory', () => {
+  it('declares nothing while the plugin is dormant', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmOpenAi, {})
-    expect(ctx.llm.listConfigurableProviders()).toEqual([
-      {
-        provider: 'openai',
-        displayName: 'OpenAI',
-        settingsNs: 'llm-openai',
-        settingsPath: ['providers', 'openai'],
-        declared: false,
-      },
-      {
-        provider: 'anthropic',
-        displayName: 'Anthropic',
-        settingsNs: 'llm-openai',
-        settingsPath: ['providers', 'anthropic'],
-        declared: false,
-      },
-    ])
+    expect(ctx.llm.listConfigurableProviders()).toEqual([])
   })
 
-  it('keeps a hand-declared route distinguishable from the catalog route', async () => {
+  it('lists exactly the configured routes, each one hand-declared', async () => {
     const server = await mockServer([])
     const ctx = await harness(server.url, {
       providers: {
         'openai-compatible': { baseURL: server.url, models: [{ id: 'gpt-4o' }] },
       },
     })
-    const directory = ctx.llm.listConfigurableProviders()
-    const byRoute = new Map(directory.map(entry => [entry.provider, entry]))
-    expect(byRoute.get('openai')?.declared).toBe(false)
-    expect(byRoute.get('openai-compatible')).toMatchObject({ declared: true, settingsNs: 'llm-openai' })
+    expect(ctx.llm.listConfigurableProviders()).toEqual([
+      {
+        provider: 'openai-compatible',
+        displayName: 'openai-compatible',
+        settingsNs: 'llm-provider',
+        settingsPath: ['providers', 'openai-compatible'],
+        declared: true,
+      },
+    ])
   })
 })
 

@@ -4,7 +4,7 @@
  * reasoning delta does not open a block. Finish reason and the latest usage
  * are deferred until `[DONE]`, covering both finish-attached and trailing
  * usage-only shapes while ensuring no chunk follows `finish`.
- * @module dsh-llm-openai/translate
+ * @module dsh-llm-provider/translate
  */
 
 import { brandString } from '@deepseek-ai/dsh-brand'

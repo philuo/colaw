@@ -6,7 +6,7 @@
  * replaces). Every streamed event is a JSON object whose `type` field names
  * it; the SSE `event:` field is redundant and ignored.
  *
- * @module dsh-llm-openai/responses-types
+ * @module dsh-llm-provider/responses-types
  */
 
 /** Request body for `POST {baseURL}/responses` (always `stream: true`). */

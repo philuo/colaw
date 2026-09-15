@@ -3,7 +3,7 @@ description: "The OpenAI chat-completions adapter for users and maintainers conf
 kind: "package-reference"
 ---
 
-# @deepseek-ai/dsh-llm-openai
+# @deepseek-ai/dsh-llm-provider
 
 English | [中文](README.zh.md)
 
@@ -22,7 +22,7 @@ Choose this adapter for the official OpenAI API or an OpenAI-compatible gateway 
 The route ships with no model catalog — declare what your endpoint actually serves. The key resolves through the credentials store (the web Models page writes it):
 
 ```yaml
-llm-openai:
+llm-provider:
   baseURL: https://api.openai.com/v1   # or any chat-completions gateway
   apiKeyEnv: OPENAI_API_KEY
   models:

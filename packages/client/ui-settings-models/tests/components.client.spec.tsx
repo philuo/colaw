@@ -47,9 +47,17 @@ function capacityInputs(label: string): HTMLInputElement[] {
 const PiAiConfig = Schema.object({
   providers: Schema.dict(Schema.object({
     apiKeyEnv: Schema.string().role('credential-ref'),
+    api: Schema.union(['openai-completions', 'openai-responses', 'anthropic-messages']),
     baseURL: Schema.string(),
     reasoning: Schema.union(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']),
     headers: Schema.dict(Schema.string()),
+    models: Schema.array(Schema.object({
+      id: Schema.string().required(),
+      name: Schema.string(),
+      contextWindow: Schema.number(),
+      maxTokens: Schema.number(),
+      inputModalities: Schema.array(Schema.union(['text', 'image', 'video', 'file'])),
+    })).default([]),
   })),
 })
 
@@ -120,7 +128,7 @@ function wireNamespaces(): SettingsNamespaceView[] {
       revision: 0,
     },
     {
-      ns: 'llm-openai',
+      ns: 'llm-provider',
       schema: JSON.parse(JSON.stringify(PiAiConfig.toJSON())) as JsonValue,
       value: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
       user: { providers: { openai: { apiKeyEnv: 'OPENAI_API_KEY', baseURL: 'https://proxy', headers: { 'X-Team': 'a' } }, zombie: {} } },
@@ -151,8 +159,8 @@ const REFUSALS: { [Code in RefusalCode]: (message: string) => RemoteError<Code> 
   'credential/rejected': message => new RemoteError('credential/rejected', message, { ref: 'DEEPSEEK_API_KEY' }),
   'gateway/internal': message => new RemoteError('gateway/internal', message, {}),
   'settings/conflict': message =>
-    new RemoteError('settings/conflict', message, { ns: 'llm-openai', expected: 4, actual: 5 }),
-  'settings/rejected': message => new RemoteError('settings/rejected', message, { ns: 'llm-openai' }),
+    new RemoteError('settings/conflict', message, { ns: 'llm-provider', expected: 4, actual: 5 }),
+  'settings/rejected': message => new RemoteError('settings/rejected', message, { ns: 'llm-provider' }),
 }
 function remoteFail(message: string, code: RefusalCode = 'credential/rejected') {
   return { ok: false as const, error: REFUSALS[code](message) }
@@ -163,8 +171,18 @@ function scriptedFace(overrides: {
   mutate?: ReturnType<typeof vi.fn>
   set?: ReturnType<typeof vi.fn>
   unset?: ReturnType<typeof vi.fn>
+  /** Effective-and-user providers of the llm-provider namespace, when a case needs a different route set. */
+  providers?: Record<string, JsonValue>
 } = {}) {
-  const providerNamespace = wireNamespaces().find(view => view.ns === 'llm-openai')!
+  const base = wireNamespaces().find(view => view.ns === 'llm-provider')!
+  const providerNamespace = overrides.providers === undefined
+    ? base
+    : { ...base, value: { providers: overrides.providers }, user: { providers: overrides.providers } }
+  // The describe answer serves the same view the write mocks answer with, so
+  // an overridden route set is what the page actually reads.
+  const namespaces = overrides.providers === undefined
+    ? wireNamespaces()
+    : wireNamespaces().map(view => view.ns === 'llm-provider' ? providerNamespace : view)
   const update = overrides.update ?? vi.fn(() => Promise.resolve(remoteOk(providerNamespace)))
   const mutate = overrides.mutate ?? vi.fn(() => Promise.resolve(remoteOk(providerNamespace)))
   const set = overrides.set ?? vi.fn(() => Promise.resolve(remoteOk(undefined)))
@@ -177,10 +195,10 @@ function scriptedFace(overrides: {
       ]))),
       listConfigurableProviders: vi.fn(() => Promise.resolve(remoteOk([
         { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
-        { provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'], active: true },
-        { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-openai', settingsPath: ['providers', 'anthropic'], active: false },
-        { provider: 'zombie', displayName: 'zombie', settingsNs: 'llm-openai', settingsPath: ['providers', 'zombie'], active: false },
-        { provider: 'broken', displayName: 'broken', settingsNs: 'llm-openai', settingsPath: ['nope', 'x'], active: false },
+        { provider: 'openai', displayName: 'openai', settingsNs: 'llm-provider', settingsPath: ['providers', 'openai'], active: true },
+        { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-provider', settingsPath: ['providers', 'anthropic'], active: false },
+        { provider: 'zombie', displayName: 'zombie', settingsNs: 'llm-provider', settingsPath: ['providers', 'zombie'], active: false },
+        { provider: 'broken', displayName: 'broken', settingsNs: 'llm-provider', settingsPath: ['nope', 'x'], active: false },
         { provider: 'plain', displayName: 'plain', settingsNs: 'llm-plain', settingsPath: ['profiles', 'plain'], active: false },
       ].map(({ active: _active, ...entry }) => entry)))),
       discoverModels: vi.fn(() => Promise.resolve(remoteOk([]))),
@@ -192,7 +210,7 @@ function scriptedFace(overrides: {
       ]))),
     },
     settings: {
-      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, hasDocument: false, namespaces: wireNamespaces() }))),
+      describe: vi.fn(() => Promise.resolve(remoteOk({ writable: true, hasDocument: false, namespaces }))),
       update,
       mutate,
     },
@@ -314,39 +332,34 @@ async function mountDeepSeekCard(overrides: Parameters<typeof scriptedFace>[0] =
 }
 
 describe('ModelsSection', () => {
-  it('hides both add actions when their settings namespaces are absent', async () => {
+  it('disables the add action when its settings namespace is absent', async () => {
     const scripted = scriptedFace()
     scripted.face.settings.describe.mockResolvedValue(remoteOk({ writable: true, hasDocument: false, namespaces: [] }))
     await mountFace(scripted)
-    expect(screen.queryByRole('button', { name: en.add })).toBeNull()
-    expect(screen.queryByRole('button', { name: en.customAdd })).toBeNull()
+    expect((screen.getByRole('button', { name: en.add }) as HTMLButtonElement).disabled).toBe(true)
   })
 
-  it('offers only providers whose settings namespace can open an editor', async () => {
+  it('keeps the add action disabled when its settings namespace is absent', async () => {
     const scripted = scriptedFace()
     scripted.face.settings.describe.mockResolvedValue(remoteOk({
       writable: true, hasDocument: false,
-      namespaces: wireNamespaces().filter(view => view.ns !== 'llm-openai'),
+      namespaces: wireNamespaces().filter(view => view.ns !== 'llm-provider'),
     }))
     await mountFace(scripted)
-    expect(screen.queryByRole('button', { name: en.customAdd })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    expect(screen.queryByRole('option', { name: 'anthropic' })).toBeNull()
-    expect(screen.getByRole('option', { name: 'plain' })).toBeTruthy()
+    expect((screen.getByRole('button', { name: en.add }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('shows a catalog diagnostic while keeping the provider editable', async () => {
     const scripted = scriptedFace()
-    const failure = 'llm-openai: provider "openai" model "111" needs an api'
+    const failure = 'llm-provider: provider "openai" model "111" needs an api'
     scripted.face.llm.listConfigurableProviders.mockResolvedValue(remoteOk([
-      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'], error: failure },
+      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-provider', settingsPath: ['providers', 'openai'], error: failure },
     ]))
     await mountFace(scripted)
     expect(screen.getByRole('alert').textContent).toBe(failure)
     fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
     expect(await screen.findByLabelText(en.keyInput)).toBeTruthy()
     expect(screen.getByRole('button', { name: en.add })).toBeTruthy()
-    expect(screen.getByRole('button', { name: en.customAdd })).toBeTruthy()
   })
 
   it('renders nothing before the slot injects its dependencies', () => {
@@ -378,7 +391,7 @@ describe('ModelsSection', () => {
   it('dispatches the provider-card seat per rendered row, keyed by the owning namespace', async () => {
     const { renderSlot } = await mountSection()
     const cards = cardSeatCalls(renderSlot)
-    expect(cards).toContainEqual(['openai', true, true, 'llm-openai'])
+    expect(cards).toContainEqual(['openai', true, true, 'llm-provider'])
     expect(cards).toContainEqual(['deepseek-official', true, false, 'llm-deepseek'])
     // The footer seat renders once below the rows and the add controls.
     expect(renderSlot.mock.calls.filter(call => call[0] === 'settings.models.footer')).toEqual([
@@ -391,43 +404,8 @@ describe('ModelsSection', () => {
     expect(cardSeatCalls(renderSlot)).toContainEqual(['deepseek-official', true, false, 'llm-deepseek'])
   })
 
-  it('dispatches the provider-card seat on the add-provider draft with its dormant row', async () => {
-    const { renderSlot } = await mountSection()
-    renderSlot.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    expect(cardSeatCalls(renderSlot)).toContainEqual(['anthropic', false, false, 'llm-openai'])
-  })
 
-  it('derives the draft seat\'s key fact from the page\'s conventional reference', async () => {
-    const scripted = scriptedFace()
-    scripted.face.credentials.describe.mockImplementation((refs: string[]) => Promise.resolve(remoteOk(
-      Object.fromEntries(refs.map(ref => [ref, {
-        configured: ref === 'OPENAI_API_KEY' || ref === 'ANTHROPIC_API_KEY',
-        writable: true,
-      }])),
-    )))
-    const { renderSlot } = await mountFace(scripted)
-    renderSlot.mockClear()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    // The dormant row names no reference yet; the seat still reports the
-    // derived ANTHROPIC_API_KEY the editor itself displays as configured.
-    expect(cardSeatCalls(renderSlot)).toContainEqual(['anthropic', false, true, 'llm-openai'])
-  })
 
-  it('skips the draft seat when a refresh drops the dormant row', async () => {
-    const { renderSlot, face, controller } = await mountSection()
-    fireEvent.click(screen.getByRole('button', { name: en.add }))
-    const directory = [
-      { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
-      { provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'], active: true },
-    ].map(({ active: _active, ...entry }) => entry)
-    face.llm.listConfigurableProviders.mockImplementation(() => Promise.resolve(remoteOk(directory)))
-    renderSlot.mockClear()
-    await act(async () => { await controller.load() })
-    // The draft card is still open while its row is gone from the directory.
-    expect(screen.getByLabelText(en.keyInput)).toBeTruthy()
-    expect(cardSeatCalls(renderSlot).some(([provider]) => provider === 'anthropic')).toBe(false)
-  })
   it('renders the unkeyed whole-section provider as an open setup card in the first-run posture', async () => {
     await mountFirstRun()
     // Nothing is reachable yet, and DeepSeek has no configured credential and
@@ -1059,7 +1037,7 @@ describe('ModelsSection', () => {
     render(<ModelListEditor
       models={[]}
       onChange={piAi}
-      probe={{ settingsNs: 'llm-openai' }}
+      probe={{ settingsNs: 'llm-provider' }}
       operations={{} as ModelsOperations}
       t={t}
       disabled={false}
@@ -1195,47 +1173,39 @@ describe('ModelsSection', () => {
     // Only the edited field travels: apiKeyEnv and headers were already stored
     // with these values, so no op restates them.
     expect(mutate.mock.calls[0]).toEqual([
-      'llm-openai',
+      'llm-provider',
       [{ op: 'set', path: ['providers', 'openai', 'baseURL'], value: 'https://proxy/v2' }],
       0,
     ])
   })
 
-  it('adds a dormant provider with a derived reference and stores its key', async () => {
+  it('creates an arbitrary provider from the add action, key stored under the derived reference', async () => {
     const { mutate, set } = await mountSection()
     fireEvent.click(screen.getByText(en.add))
-    const pick = await screen.findByLabelText<HTMLSelectElement>(en.provider)
-    expect([...pick.options].map(option => option.value)).toEqual(['anthropic', 'broken', 'plain'])
-    expect(pick.value).toBe('anthropic')
-    // A dormant profile has no endpoint stored; the family's own public API
-    // base is what clearing the field would restore to.
-    fireEvent.click(screen.getByText(en.customized))
-    expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder).toBe('https://api.openai.com/v1')
-    const addKey = screen.getByLabelText<HTMLInputElement>(en.keyInput)
-    expect(addKey.placeholder).toBe(en.keyPlaceholder)
-    fireEvent.change(addKey, { target: { value: 'sk-ant' } })
-    fireEvent.click(screen.getByText(en.apply))
+    // The create card asks for exactly the five facts a provider needs, and
+    // any number of providers may be created this way.
+    fireEvent.change(screen.getByLabelText(en.customRoute), { target: { value: 'kimi-relay' } })
+    fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://api.moonshot.example/v1' } })
+    fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-ant' } })
+    fireEvent.click(screen.getByRole('button', { name: en.addModel }))
+    fireEvent.change(screen.getByLabelText(`${en.modelId} 1`), { target: { value: 'kimi-k2' } })
+    fireEvent.click(screen.getByText(en.create))
     await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
     expect(mutate.mock.calls[0]).toEqual([
-      'llm-openai',
-      [{ op: 'set', path: ['providers', 'anthropic', 'apiKeyEnv'], value: 'ANTHROPIC_API_KEY' }],
+      'llm-provider',
+      [{
+        op: 'set',
+        path: ['providers', 'kimi-relay'],
+        value: {
+          apiKeyEnv: 'KIMI_RELAY_API_KEY',
+          api: 'openai-completions',
+          baseURL: 'https://api.moonshot.example/v1',
+          models: [{ id: 'kimi-k2', inputModalities: ['text', 'image'] }],
+        },
+      }],
       0,
     ])
-    await waitFor(() => { expect(set).toHaveBeenCalledWith('ANTHROPIC_API_KEY', 'sk-ant') })
-  })
-
-  it('materializes an empty profile when no key is entered', async () => {
-    const { mutate, set } = await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
-    fireEvent.click(screen.getByText(en.apply))
-    await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
-    expect(mutate.mock.calls[0]).toEqual([
-      'llm-openai',
-      [{ op: 'set', path: ['providers', 'anthropic'], value: {} }],
-      0,
-    ])
-    expect(set).not.toHaveBeenCalled()
+    await waitFor(() => { expect(set).toHaveBeenCalledWith('KIMI_RELAY_API_KEY', 'sk-ant') })
   })
 
   it('retries only the credential after refreshed settings already committed', async () => {
@@ -1244,11 +1214,13 @@ describe('ModelsSection', () => {
       ...committed,
       value: { providers: {
         ...(committed.value as { providers: object }).providers,
-        anthropic: { apiKeyEnv: 'ANTHROPIC_API_KEY' },
+        // The committed view of this scenario's route: what the first apply
+        // wrote (the derived reference) over the profile it edited.
+        openai: { baseURL: 'https://proxy.example/v1', apiKeyEnv: 'OPENAI_API_KEY' },
       } },
       user: { providers: {
         ...(committed.user as { providers: object }).providers,
-        anthropic: { apiKeyEnv: 'ANTHROPIC_API_KEY' },
+        openai: { baseURL: 'https://proxy.example/v1', apiKeyEnv: 'OPENAI_API_KEY' },
       } },
       revision: 1,
     }
@@ -1256,17 +1228,23 @@ describe('ModelsSection', () => {
     const set = vi.fn()
       .mockResolvedValueOnce(remoteFail('credential store unavailable'))
       .mockResolvedValueOnce(remoteOk(undefined))
-    const { face, controller, mirror } = await mountSection({ mutate, set })
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
-    fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'sk-ant' } })
+    const { face, controller, mirror } = await mountSection({
+      mutate,
+      set,
+      // A profile naming no reference: the editor records the derived one
+      // when a key is typed, which is the write this scenario retries.
+      providers: { openai: { baseURL: 'https://proxy.example/v1' } },
+    })
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
+    const editorKey = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
+    fireEvent.change(editorKey, { target: { value: 'sk-ant' } })
     fireEvent.click(screen.getByText(en.apply))
     await screen.findByText('credential store unavailable')
     expect(mutate).toHaveBeenCalledOnce()
     face.settings.describe.mockResolvedValue(remoteOk({
       writable: true,
       hasDocument: false,
-      namespaces: wireNamespaces().map(namespace => namespace.ns === 'llm-openai' ? afterSettings : namespace),
+      namespaces: wireNamespaces().map(namespace => namespace.ns === 'llm-provider' ? afterSettings : namespace),
     }))
     // The refreshed settings answer reaches the page through the mirror's own
     // refresh (the document commit's invalidation in production).
@@ -1274,37 +1252,24 @@ describe('ModelsSection', () => {
       await mirror.load()
       await controller.load()
     })
-    expect(controller.store.getSnapshot().namespaces.get('llm-openai')?.revision).toBe(1)
+    expect(controller.store.getSnapshot().namespaces.get('llm-provider')?.revision).toBe(1)
     fireEvent.click(screen.getByText(en.apply))
     await waitFor(() => { expect(set).toHaveBeenCalledTimes(2) })
     expect(mutate).toHaveBeenCalledOnce()
-    expect(set).toHaveBeenLastCalledWith('ANTHROPIC_API_KEY', 'sk-ant')
+    expect(set).toHaveBeenLastCalledWith('OPENAI_API_KEY', 'sk-ant')
   })
 
-  it('switches the add card target and degrades unknown or broken targets loudly', async () => {
-    await mountSection()
-    fireEvent.click(screen.getByText(en.add))
-    const pick = await screen.findByLabelText<HTMLSelectElement>(en.provider)
-    fireEvent.change(pick, { target: { value: 'broken' } })
-    await screen.findByText(/unresolvable settings path/)
-    fireEvent.change(pick, { target: { value: 'plain' } })
-    await waitFor(() => {
-      expect(screen.getAllByText(content => content.includes(en.advancedHint)).length).toBeGreaterThan(0)
-    })
-    // The hint-only card cannot apply anything, and offers no key field.
-    expect(screen.getByText<HTMLButtonElement>(en.apply).disabled).toBe(true)
-    expect(screen.queryAllByLabelText(en.keyInput)).toHaveLength(0)
-  })
 
   it('surfaces a rejected settings write and never stores the key after it', async () => {
     const { set } = await mountSection({
-      mutate: vi.fn(() => Promise.resolve(remoteFail('llm-openai: unknown pi-ai provider "bogus"', 'settings/rejected'))),
+      mutate: vi.fn(() => Promise.resolve(remoteFail('llm-provider: unknown provider "bogus"', 'settings/rejected'))),
+      providers: { openai: { baseURL: 'https://proxy.example/v1' } },
     })
-    fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
-    fireEvent.change(screen.getByLabelText<HTMLInputElement>(en.keyInput), { target: { value: 'sk-x' } })
+    fireEvent.click(screen.getByRole('button', { name: openaiCopy(en.editProvider) }))
+    const editorKey = await screen.findByLabelText<HTMLInputElement>(en.keyInput)
+    fireEvent.change(editorKey, { target: { value: 'sk-x' } })
     fireEvent.click(screen.getByText(en.apply))
-    await screen.findByText(/unknown pi-ai provider/)
+    await screen.findByText(/unknown provider/)
     expect(set).not.toHaveBeenCalled()
   })
 
@@ -1411,7 +1376,7 @@ describe('ModelsSection', () => {
     expect(unset.mock.invocationCallOrder[0]).toBeLessThan(mutate.mock.invocationCallOrder[0] as number)
     expect(screen.queryByRole('dialog', { name: openaiCopy(en.deleteTitle) })).toBeNull()
     expect(mutate.mock.calls[0]).toEqual([
-      'llm-openai',
+      'llm-provider',
       [{ op: 'unset', path: ['providers', 'openai'] }],
       undefined,
     ])
@@ -1497,13 +1462,13 @@ describe('ModelsSection', () => {
     expect(mutate).not.toHaveBeenCalled()
   })
 
-  it('cancels the add card back to the add button', async () => {
+  it('cancels the create card back to the add button', async () => {
     await mountSection()
     fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await screen.findByLabelText(en.customRoute)
     fireEvent.click(screen.getByText(en.cancel))
     await screen.findByText(en.add)
-    expect(screen.queryByLabelText(en.provider)).toBeNull()
+    expect(screen.queryByLabelText(en.customRoute)).toBeNull()
   })
 
   it('collapses the setup card on cancel without disturbing another open card', async () => {
@@ -1512,21 +1477,21 @@ describe('ModelsSection', () => {
     await mountFirstRun()
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
     fireEvent.click(screen.getByText(en.add))
-    await screen.findByLabelText(en.provider)
+    await screen.findByLabelText(en.customRoute)
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(2)
 
     // The setup card is the first one on the page, above the add block.
     fireEvent.click(screen.getAllByText(en.cancel)[0] as HTMLElement)
-    // The add card kept its draft…
-    expect(screen.getByLabelText(en.provider)).toBeTruthy()
+    // The create card kept its draft…
+    expect(screen.getByLabelText(en.customRoute)).toBeTruthy()
     // …and DeepSeek collapsed to an ordinary row carrying the missing-key dot.
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
     expect(screen.getAllByRole('img', { name: en.credentialMissing })
       .some(dot => dot.closest('li')?.textContent?.includes('DeepSeek') === true)).toBe(true)
-    // Its card reopens through Edit, which closes the add card as any row does.
+    // Its card reopens through Edit, which closes the create card as any row does.
     fireEvent.click(screen.getByRole('button', { name: deepSeekCopy(en.editProvider) }))
     expect(screen.getAllByLabelText(en.keyInput)).toHaveLength(1)
-    expect(screen.queryByLabelText(en.provider)).toBeNull()
+    expect(screen.queryByLabelText(en.customRoute)).toBeNull()
   })
 
   it('loads on first render of an idle controller', async () => {
@@ -1567,7 +1532,7 @@ describe('ModelsSection', () => {
     const failure = await removeProviderProfile(
       operationsWith(face),
       controller,
-      { settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'] },
+      { settingsNs: 'llm-provider', settingsPath: ['providers', 'openai'] },
     )
     expect(failure).toBe('read-only')
     expect(controller.store.getSnapshot().rows).toBe(before)
@@ -1605,7 +1570,7 @@ describe('ModelsSection', () => {
     await waitFor(() => { expect(mutate).toHaveBeenCalledOnce() })
     expect(unset).not.toHaveBeenCalled()
     expect(mutate.mock.calls[0]).toEqual([
-      'llm-openai',
+      'llm-provider',
       [{ op: 'unset', path: ['providers', 'zombie'] }],
       undefined,
     ])
@@ -1619,7 +1584,7 @@ describe('ModelsSection', () => {
       operationsWith(face),
       controller,
       {
-        settingsNs: 'llm-openai',
+        settingsNs: 'llm-provider',
         settingsPath: ['providers', 'openai'],
         credentialRef: 'OPENAI_API_KEY',
       },
