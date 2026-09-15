@@ -39,6 +39,7 @@
 import {
   chmodSync, closeSync, copyFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, openSync, readSync,
   readdirSync, readFileSync, readlinkSync, realpathSync, renameSync, rmSync, statSync, symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs'
 import { createHash } from 'node:crypto'
@@ -1465,6 +1466,65 @@ function auditMountedPolicy(entryNames: readonly string[]): void {
   process.exit(1)
 }
 
+/**
+ * Last-mile stable stabilization, over the emitted payload:
+ *
+ * 1. Dev-only composition rows go off. The electrobun overlay mounts
+ *    `client-hmr` for the dev app's hot reload; the stable app's base
+ *    composition has the HOST half (`hmr`) disabled, so the browser half's
+ *    `/plugins/events` channel has no server and the WKWebView console fills
+ *    with requests to a dead endpoint. Disable the row in the payload's own
+ *    overlay copy — the dev app (same source overlay, unpacked) is untouched.
+ * 2. Source-map references go away. The client build emits
+ *    `//# sourceMappingURL=` comments while the audit (rightly) ships no
+ *    `.map` files, so an open inspector 404s on every chunk; node_modules
+ *    vendor files reference maps the same way. Strip the comments and drop
+ *    any stray `.map`, so the shipped plane makes no map requests at all.
+ * @throws when the payload config lost the row this pass rewrites — the
+ *   packer must not silently ship a half-stabilized artifact.
+ */
+function stabilizePayload(): void {
+  const configPath = join(appResourcesApp, 'config', 'electrobun.cordis.patch.yml')
+  const config = readFileSync(configPath, 'utf8')
+  const hmrRow = /- id: client-hmr\n  config:\n    pollIntervalMs: \d+\n/
+  if (!hmrRow.test(config)) {
+    throw new Error(
+      'pack-stable-app: the payload config has no client-hmr poll row to stabilize;'
+      + ' update stabilizePayload() when the overlay changes',
+    )
+  }
+  writeFileSync(configPath, config.replace(hmrRow, '- id: client-hmr\n  disabled: true\n'))
+
+  let stripped = 0
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(path)
+        continue
+      }
+      if (entry.name.endsWith('.map')) {
+        unlinkSync(path)
+        stripped += 1
+        continue
+      }
+      if (entry.name.endsWith('.js') || entry.name.endsWith('.mjs') || entry.name.endsWith('.cjs')) {
+        const source = readFileSync(path, 'utf8')
+        // Only a comment that ENDS its line goes: code can embed the literal
+        // (client-modules strips these very comments), and a minified
+        // single-line file must keep everything before the comment.
+        const stripped_source = source.replace(/\/\/# sourceMappingURL=\S+\.map[ \t]*$/gm, '')
+        if (stripped_source !== source) {
+          writeFileSync(path, stripped_source)
+          stripped += 1
+        }
+      }
+    }
+  }
+  walk(appResourcesApp)
+  console.log(`pack-stable-app: stabilized payload — client-hmr disabled, ${String(stripped)} source-map reference(s) removed`)
+}
+
 async function main(): Promise<void> {
   ensureBuilds()
   run(
@@ -1525,6 +1585,7 @@ async function main(): Promise<void> {
 
   emitHostBundle(closure)
   auditApp(closure)
+  stabilizePayload()
   // The runnable form lives inside the checkout when a developer runs it from
   // build/, and Bun resolves tsconfig `paths` by walking up from each importing
   // file: without a nearer tsconfig the repo's own path aliases capture the
