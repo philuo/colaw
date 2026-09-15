@@ -48,6 +48,7 @@ import { basename, dirname, extname, join, relative, resolve, sep } from 'node:p
 import { fileURLToPath } from 'node:url'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
 import { composeEntries, initProfile, loadOverlayPatches, loadProfileDirectory } from '../packages/boot/app-boot/src/index.ts'
+import { applyWebviewUnlockSync } from './colaw-webview-unlock.ts'
 
 /**
  * The Bun APIs this bun-only script uses, typed structurally: the repository
@@ -291,7 +292,7 @@ function entryOfManifest(packageDir: string, manifest: Record<string, unknown>, 
     const conditionShorthand = key === '.'
       && Object.keys(exports).every(pattern => !pattern.startsWith('.'))
     const direct = pickRuntimeTarget((exports as Record<string, unknown>)[key])
-      ?? (conditionShorthand ? pickRuntimeTarget(exports as Record<string, unknown>) : undefined)
+      ?? (conditionShorthand ? pickRuntimeTarget(exports) : undefined)
     if (direct !== undefined) {
       const entry = resolve(packageDir, direct)
       if (isFile(entry)) return { entry, wildcard: false }
@@ -1264,6 +1265,9 @@ function publishStableApp(): void {
       }
     }
   })(builtApp, stableApp)
+  // WKWebView 60fps unlock must land BEFORE rewriteDevMarkers() hashes the
+  // tree, so version.json covers the patched shell (see colaw-webview-unlock.ts).
+  applyWebviewUnlockSync(stableApp)
   rewriteDevMarkers()
   rewriteIconLayout()
 }
