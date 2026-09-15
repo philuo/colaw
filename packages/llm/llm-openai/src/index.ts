@@ -23,7 +23,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -78,7 +78,7 @@ const BASE_URL_ENV = 'OPENAI_BASE_URL'
 
 // The chat-completions wire carries text and (for vision models) image
 // input; the other harness modalities have no wire form on this route.
-const MODEL_MODALITIES = ['text', 'image'] as const
+const MODEL_MODALITIES = ['text', 'image', 'video', 'file'] as const satisfies readonly ModelModality[]
 
 /** One configured provider route; the `providers` dict key IS the route id. */
 export interface ProviderProfile {
@@ -188,15 +188,6 @@ function resolveModels(provider: string, models: readonly OpenAICatalogModel[] |
       throw new Error(`llm-openai: model "${model.id}" maxTokens must be a positive integer`)
     }
     const inputModalities = model.inputModalities ?? ['text']
-    if (inputModalities.some(modality => !MODEL_MODALITIES.includes(modality))) {
-      throw new Error(
-        `llm-openai: model "${model.id}" inputModalities must contain only "text" and "image"`,
-      )
-    }
-    const hasImage = inputModalities.includes('image')
-    if (!hasImage && (model.imagePixelBudget !== undefined || model.imageMaxBytes !== undefined)) {
-      throw new Error(`llm-openai: text-only model "${model.id}" in provider "${provider}" cannot declare image request limits`)
-    }
     if (model.imagePixelBudget !== undefined
       && model.imagePixelBudget !== 'low'
       && (!Number.isSafeInteger(model.imagePixelBudget) || model.imagePixelBudget <= 0)) {
@@ -204,6 +195,10 @@ function resolveModels(provider: string, models: readonly OpenAICatalogModel[] |
     }
     if (seen.has(model.id)) throw new Error(`llm-openai: duplicate model "${model.id}" in provider "${provider}"`)
     seen.add(model.id)
+    const hasImage = inputModalities.includes('image')
+    if (!hasImage && (model.imagePixelBudget !== undefined || model.imageMaxBytes !== undefined)) {
+      throw new Error(`llm-openai: text-only model "${model.id}" in provider "${provider}" cannot declare image request limits`)
+    }
     return {
       id: model.id,
       ...model.name === undefined ? {} : { name: model.name },

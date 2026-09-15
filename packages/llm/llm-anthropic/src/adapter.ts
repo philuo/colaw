@@ -29,6 +29,7 @@ import type {
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
+import type { ModelModality } from '@deepseek-ai/dsh-llm'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
@@ -51,7 +52,7 @@ export interface AnthropicCatalogModel {
   /** The model accepts extended thinking (`thinking` on the wire). */
   reasoning?: boolean
   /** Accepted request modalities; omission is text-only. */
-  inputModalities?: ('text' | 'image')[]
+  inputModalities?: ModelModality[]
   /**
    * `'in-history'` declares that the endpoint reads the latest `system`
    * message at any position of the conversation as the complete effective

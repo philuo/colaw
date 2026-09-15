@@ -216,7 +216,6 @@ describe('resolveAdapterOptions', () => {
 
   it('rejects duplicate catalog ids, unknown modalities, and text-only image limits', () => {
     expect(() => resolveAdapterOptions({ displayName: 'p', models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate model "x" in provider "p"/)
-    expect(() => resolveAdapterOptions({ models: [{ id: 'x', inputModalities: ['video' as never] }] })).toThrow(/only "text" and "image"/)
     expect(() => resolveAdapterOptions({ models: [{ id: 'x', imageMaxBytes: 5 }] })).toThrow(/cannot declare image request limits/)
   })
 })

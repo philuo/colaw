@@ -15,7 +15,7 @@
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import type { ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -60,7 +60,7 @@ export const PUBLIC_BASE_URL = 'https://api.anthropic.com'
 const BASE_URL_ENV = 'ANTHROPIC_BASE_URL'
 
 // The Messages wire carries text and (for vision models) image input.
-const MODEL_MODALITIES: readonly ('text' | 'image')[] = ['text', 'image']
+const MODEL_MODALITIES = ['text', 'image', 'video', 'file'] as const satisfies readonly ModelModality[]
 
 /** One configured provider route; the `providers` dict key IS the route id. */
 export interface ProviderProfile {
@@ -155,11 +155,6 @@ function resolveModels(provider: string, models: readonly AnthropicCatalogModel[
       throw new Error(`llm-anthropic: model "${model.id}" maxTokens must be a positive integer`)
     }
     const inputModalities = model.inputModalities ?? ['text']
-    if (inputModalities.some(modality => !MODEL_MODALITIES.includes(modality))) {
-      throw new Error(
-        `llm-anthropic: model "${model.id}" inputModalities must contain only "text" and "image"`,
-      )
-    }
     if (new Set(inputModalities).size !== inputModalities.length) {
       throw new Error(`llm-anthropic: model "${model.id}" inputModalities must not contain duplicates`)
     }

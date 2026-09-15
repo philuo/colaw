@@ -34,11 +34,10 @@ import { parseSse } from './sse.ts'
 import { translate } from './translate.ts'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import type { ModelWireFacts, RequestDefaults } from './serialize.ts'
+import type { ModelModality } from '@deepseek-ai/dsh-llm'
 import type { WireError } from './types.ts'
 
 /** The request modalities chat completions can represent. */
-export type OpenAIModelModality = 'text' | 'image'
-
 /** One optional model entry advertised by the direct-fetch adapter. */
 export interface OpenAICatalogModel {
   /** Wire model id accepted by the configured endpoint. */
@@ -57,7 +56,7 @@ export interface OpenAICatalogModel {
   thinkingFormat?: 'zai'
   zaiToolStream?: boolean
   /** Accepted request modalities; omission is text-only. Chat completions carries only text and image. */
-  inputModalities?: OpenAIModelModality[]
+  inputModalities?: ModelModality[]
   /** Total-pixel budget for one deterministic request preview, or the 512-by-512 `low` preset. */
   imagePixelBudget?: number | 'low'
   /** Encoded-byte target for one deterministic request preview; the smallest quality-ladder output is used when no quality fits. */

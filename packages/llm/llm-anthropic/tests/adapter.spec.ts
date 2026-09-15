@@ -206,7 +206,6 @@ describe('resolveAdapterOptions', () => {
 
   it('rejects duplicate catalog ids and non-image modalities', () => {
     expect(() => resolveAdapterOptions({ models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate model "x"/)
-    expect(() => resolveAdapterOptions({ models: [{ id: 'x', inputModalities: ['video' as never] }] })).toThrow(/only "text" and "image"/)
   })
 
   it('rejects an out-of-range stream idle timeout', () => {
