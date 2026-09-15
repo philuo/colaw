@@ -44,6 +44,8 @@ type EditorLayout = 'deepseek' | 'pi-ai' | 'unknown'
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
+const OPENAI_PUBLIC_BASE_URL = 'https://api.openai.com/v1'
+const ANTHROPIC_PUBLIC_BASE_URL = 'https://api.anthropic.com'
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -131,7 +133,10 @@ export function pathOps(
 
 /** The editor layout the owning namespace selects. */
 function layoutOf(ns: string): EditorLayout {
-  if (ns === 'llm-deepseek') return 'deepseek'
+  // The dedicated chat-completions/messages adapters share the deepseek
+  // layout: same curated fields (key, baseURL, model catalog), same
+  // schema-driven writes.
+  if (ns === 'llm-deepseek' || ns === 'llm-openai' || ns === 'llm-anthropic') return 'deepseek'
   if (ns === 'llm-pi-ai') return 'pi-ai'
   return 'unknown'
 }
@@ -174,6 +179,13 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const fallback = schema.getPath(namespace.value, settingsPath)
   const disabled = props.readOnly || busy
   const layout = layoutOf(namespace.ns)
+  const family = namespace.ns === 'llm-pi-ai'
+    ? 'pi-ai' as const
+    : namespace.ns === 'llm-openai'
+      ? 'openai' as const
+      : namespace.ns === 'llm-anthropic'
+        ? 'anthropic' as const
+        : 'deepseek' as const
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
@@ -348,7 +360,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
    * narrowed so the per-family branches below are total: an unknown namespace
    * renders the hint instead and never reaches this body.
    */
-  const curatedFields = (family: 'deepseek' | 'pi-ai'): ReactNode => {
+  const curatedFields = (family: 'deepseek' | 'openai' | 'anthropic' | 'pi-ai'): ReactNode => {
     // What a hand-declared route names for itself and nothing else can supply.
     // A whole-section `llm-deepseek` profile is a composition fact with no
     // per-route identity for its schema to carry, hence the family test.
@@ -370,6 +382,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       t,
       disabled,
       resolvedModalities,
+      // The Messages/chat-completions routes accept a two-modality wire; the
+      // wider DeepSeek vocabulary stays gated to its own family.
+      ...(family === 'openai' || family === 'anthropic'
+        ? { allowedModalities: ['text', 'image'] as const, showReasoning: true }
+        : {}),
       onChange: (next: Record<string, unknown>[]) => {
         setDraft(current => schema.setPath(current, ['models'], next))
       },
@@ -432,7 +449,11 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
                   ? DEEPSEEK_PUBLIC_BASE_URL
-                  : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
+                  : family === 'openai'
+                    ? OPENAI_PUBLIC_BASE_URL
+                    : family === 'anthropic'
+                      ? ANTHROPIC_PUBLIC_BASE_URL
+                      : stringAt(fallback, 'baseURL') ?? t('baseUrlDefault')}
                 aria-label={t('baseUrl')}
                 disabled={disabled}
                 onChange={(event) => {
@@ -468,7 +489,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
             {/* Both families edit the same rows through the same contract; only
                 the extras differ — DeepSeek's inherited capacities, pi-ai's
                 endpoint interrogation. */}
-            {family === 'deepseek'
+            {family !== 'pi-ai'
               ? (
                 <DeepSeekModelsEditor
                   {...catalogProps}
@@ -506,7 +527,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
         )}
       {layout === 'unknown'
         ? <p className={styles['advancedHint']}>{`${t('advancedHint')} (${namespace.ns})`}</p>
-        : curatedFields(layout)}
+        : curatedFields(family)}
       {failure !== undefined ? <p className={styles['error']}>{failure}</p> : null}
       {props.credentialOnly === true || modelFailure === undefined
         ? null

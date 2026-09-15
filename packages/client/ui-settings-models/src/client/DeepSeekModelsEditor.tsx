@@ -146,6 +146,10 @@ export interface DeepSeekModelsEditorProps {
   disabled: boolean
   /** Effective per-model modalities the Host resolved, by model id. */
   resolvedModalities: ReadonlyMap<string, readonly string[]>
+  /** Modalities this adapter's wire can represent; omission means the full vocabulary. */
+  allowedModalities?: readonly string[]
+  /** Show a per-row extended-thinking/reasoning flag (adapters with a binary thinking wire). */
+  showReasoning?: boolean
   /** Replace the user-owned array after one visible edit. */
   onChange: (models: DeepSeekModelDraft[]) => void
   /** Remove the user-owned array and return to inheritance. */
@@ -173,7 +177,7 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
   const [editing, setEditing] = useState<ReadonlyMap<string, string>>(() => new Map())
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set())
 
-  const update = (index: number, key: CatalogField, value: unknown): void => {
+  const update = (index: number, key: CatalogField | 'reasoning', value: unknown): void => {
     const next = props.models.map((model, at) => {
       const copy = { ...model }
       if (at !== index) return copy
@@ -356,10 +360,26 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                       <ModelInputTypes
                         declared={arrayOf(model['inputModalities'])}
                         resolved={props.resolvedModalities.get(typeof model['id'] === 'string' ? model['id'] : '')}
+                        {...props.allowedModalities === undefined ? {} : { allowed: props.allowedModalities }}
                         t={props.t}
                         disabled={props.disabled}
                         onChange={(next) => { update(index, 'inputModalities', next) }}
                       />
+                      {props.showReasoning === true
+                        ? (
+                          <label className={styles['field']}>
+                            <input
+                              type="checkbox"
+                              checked={model['reasoning'] === true}
+                              disabled={props.disabled}
+                              onChange={(event) => {
+                                update(index, 'reasoning', event.target.checked ? true : undefined)
+                              }}
+                            />
+                            <span>{props.t('inputReasoning')}</span>
+                          </label>
+                        )
+                        : null}
                     </div>
                   )
                   : null}

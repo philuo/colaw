@@ -39,6 +39,8 @@ export interface ModelInputTypesProps {
   t: (key: keyof typeof en) => string
   /** Disable every control. */
   disabled: boolean
+  /** Modalities this adapter's wire can represent; omission means the full vocabulary. */
+  allowed?: readonly string[]
   /** Replace the row's declaration; always a full array including text. */
   onChange: (next: readonly string[]) => void
 }
@@ -58,7 +60,7 @@ export function ModelInputTypes(props: ModelInputTypesProps): ReactNode {
     <div className={styles['inputTypes']} role="group" aria-label={props.t('inputTypes')}>
       <span className={styles['modelFieldLabel']}>{props.t('inputTypes')}</span>
       <div className={styles['inputTypeChecks']}>
-        {MODALITIES.map((modality) => {
+        {MODALITIES.filter(modality => props.allowed === undefined || props.allowed.includes(modality)).map((modality) => {
           const pinned = modality === 'text'
           return (
             <label key={modality} className={styles['inputTypeCheck']}>
