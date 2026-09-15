@@ -30,6 +30,12 @@ export interface RequestDefaults {
 export interface ModelWireFacts {
   /** The model accepts a `reasoning_effort` field (OpenAI reasoning models). */
   reasoning: boolean
+  /** The model's own output cap, used when the request declares none. */
+  maxTokens?: number | undefined
+  /** zai-dialect thinking: explicit `thinking` toggle plus `tool_stream`. */
+  thinkingFormat?: 'zai' | undefined
+  /** Send `tool_stream: true` alongside tools (zai gateways). */
+  zaiToolStream?: boolean | undefined
 }
 
 /** Provider representation for every retained image in one request. */
@@ -62,25 +68,37 @@ function reasoningEffort(effort: NonNullable<GenerateOptions['reasoningEffort']>
 }
 
 /**
- * Resolve the wire `reasoning_effort` value. OpenAI's vocabulary has no
- * `off` (the field is omitted — the provider default applies) and no `max`
- * (harness `max` maps to `high`, the strongest OpenAI level). Auxiliary
- * one-shot purposes carry no effort, mirroring the DeepSeek adapter's
- * session-title policy.
- * @returns the wire effort, or `undefined` to omit the field entirely.
+ * Resolve the wire reasoning controls for one request.
+ *
+ * - zai dialect (evidence: pi-ai's openai-completions zai thinkingFormat):
+ *   a reasoning model ALWAYS carries an explicit `thinking` toggle —
+ *   `{type: 'enabled', clear_thinking: false}` when an effort is requested,
+ *   `{type: 'disabled'}` otherwise — and `reasoning_effort` is sent only
+ *   when the route declares support for it (GLM catalog models do not).
+ * - Non-reasoning models carry neither field.
+ * - Auxiliary one-shot purposes (session titles) suppress thinking,
+ *   mirroring the DeepSeek adapter's session-title policy.
  */
-function resolveReasoningEffort(
+function resolveReasoning(
   options: GenerateOptions,
   defaults: RequestDefaults,
   model: ModelWireFacts | undefined,
-): 'low' | 'high' | undefined {
-  if (model?.reasoning !== true) return undefined
-  if (options.purpose === 'session-title') return undefined
+): { effort?: 'low' | 'high' | undefined; zaiThinking?: 'enabled' | 'disabled' | undefined } {
+  if (model?.reasoning !== true) return {}
+  if (options.purpose === 'session-title') return model.thinkingFormat === 'zai' ? { zaiThinking: 'disabled' } : {}
   const effort = options.reasoningEffort === undefined
     ? defaults.reasoningEffort
     : reasoningEffort(options.reasoningEffort)
-  if (effort === undefined || effort === 'off') return undefined
-  return effort === 'max' ? 'high' : effort
+  if (model.thinkingFormat === 'zai') {
+    // Bug-compatible with pi-ai: harness `max` maps to `high`, and an absent
+    // or `off` effort still sends the explicit disabled toggle.
+    const wireEffort: 'low' | 'high' | undefined = effort === undefined || effort === 'off'
+      ? undefined
+      : effort === 'max' ? 'high' : effort
+    return { zaiThinking: wireEffort === undefined ? 'disabled' : 'enabled', effort: wireEffort }
+  }
+  if (effort === undefined || effort === 'off') return {}
+  return { effort: effort === 'max' ? 'high' : effort }
 }
 
 /** Join the text blocks of a message (used for user/tool-result content). */
@@ -321,17 +339,20 @@ function requestWithMessages(
       parameters: tool.parameters,
     },
   }))
-  const effort = resolveReasoningEffort(options, defaults, model)
+  const { effort, zaiThinking } = resolveReasoning(options, defaults, model)
   const maxTokensField = defaults.maxTokensField ?? 'max_tokens'
+  const cap = options.maxTokens ?? model?.maxTokens
   return {
     model: options.model,
     messages,
     stream: true,
     stream_options: { include_usage: true },
+    ...zaiThinking !== undefined ? { thinking: { type: zaiThinking, clear_thinking: false } } : {},
     ...effort !== undefined ? { reasoning_effort: effort } : {},
     ...tools !== undefined && tools.length > 0 ? { tools } : {},
+    ...tools !== undefined && tools.length > 0 && model?.zaiToolStream === true ? { tool_stream: true } : {},
     ...options.temperature !== undefined ? { temperature: options.temperature } : {},
-    ...(options.maxTokens === undefined ? {} : { [maxTokensField]: options.maxTokens }) as Partial<WireRequest>,
+    ...(cap === undefined ? {} : { [maxTokensField]: cap }) as Partial<WireRequest>,
     ...options.stop !== undefined ? { stop: options.stop } : {},
   }
 }

@@ -32,12 +32,14 @@ async function harness(baseURL: string, config: object = {}) {
   await ctx.plugin(LocalCredentialProvider, { watch: false })
   await ctx.credentials.set(credentialRef('ANTHROPIC_API_KEY'), 'test-key')
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(LlmAnthropic, { baseURL, apiKeyEnv: 'ANTHROPIC_API_KEY', ...config })
+  await ctx.plugin(LlmAnthropic, {
+    providers: { 'anthropic-compatible': { baseURL, apiKeyEnv: 'ANTHROPIC_API_KEY', models: [{ id: 'claude-fable-5' }], ...(config as Record<string, never>) } },
+  })
   return ctx
 }
 
 /** Direct adapter over the plugin's real resolve step, with a static key. */
-function adapterOf(config: Partial<LlmAnthropic.Config> & { apiKey?: string } = {}): AnthropicAdapter {
+function adapterOf(config: Partial<LlmAnthropic.ProviderProfile> & { apiKey?: string } = {}): AnthropicAdapter {
   const { apiKey, ...rest } = config
   return new AnthropicAdapter({
     options: () => resolveAdapterOptions(rest),
@@ -176,7 +178,7 @@ describe('failures', () => {
     const ctx = new Context()
     await ctx.plugin(LocalCredentialProvider, { watch: false })
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmAnthropic, { baseURL: server.url })
+    await ctx.plugin(LlmAnthropic, { providers: { 'anthropic-compatible': { baseURL: server.url } } })
     const result = await assemble(ctx, { model: 'claude-fable-5', messages: [] })
     expect(result.finish).toMatchObject({
       kind: 'error',
@@ -203,7 +205,7 @@ describe('resolveAdapterOptions', () => {
   })
 
   it('rejects duplicate catalog ids and non-image modalities', () => {
-    expect(() => resolveAdapterOptions({ models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate catalog model/)
+    expect(() => resolveAdapterOptions({ models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate model "x"/)
     expect(() => resolveAdapterOptions({ models: [{ id: 'x', inputModalities: ['video' as never] }] })).toThrow(/only "text" and "image"/)
   })
 

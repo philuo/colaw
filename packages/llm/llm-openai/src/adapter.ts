@@ -53,6 +53,9 @@ export interface OpenAICatalogModel {
   maxTokens?: number
   /** The endpoint accepts a `reasoning_effort` field for this model (OpenAI reasoning models). */
   reasoning?: boolean
+  /** zai-dialect thinking toggle + `tool_stream` side channel (zai gateways). */
+  thinkingFormat?: 'zai'
+  zaiToolStream?: boolean
   /** Accepted request modalities; omission is text-only. Chat completions carries only text and image. */
   inputModalities?: OpenAIModelModality[]
   /** Total-pixel budget for one deterministic request preview, or the 512-by-512 `low` preset. */
@@ -74,8 +77,10 @@ export interface OpenAICatalogModel {
  * makes a configuration change reach the next request without re-registration.
  */
 export interface OpenAIConnectionOptions {
-  /** Endpoint base; `/chat/completions` is appended. */
+  /** Endpoint base; `/chat/completions` is appended (completions protocol). */
   baseURL: string
+  /** Wire protocol this route speaks. */
+  api: 'openai-completions' | 'openai-responses'
   /**
    * Credential reference of this same resolution, resolved per request.
    * Travelling with the endpoint is the point: a request can never pair one
@@ -107,15 +112,15 @@ export interface OpenAIConnectionOptions {
 
 /** Constructor options for {@link OpenAIAdapter}: the operation-local resolution hooks the plugin owns. */
 export interface OpenAIAdapterOptions {
-  /** Current validated connection facts; called once per operation. */
-  options: () => OpenAIConnectionOptions
+  /** Validated connection facts for one provider route; called once per operation with the route name. */
+  options: (provider: string) => OpenAIConnectionOptions
   /**
    * Resolve the bearer token for the connection facts of one request. The
-   * snapshot is passed in — never re-read — so the key can only ever come
-   * from the same resolution as the endpoint it is sent to. Throws `LlmError`
-   * `MISSING_CREDENTIAL` when no key is available anywhere.
+   * route name and snapshot are passed in — never re-read — so the key can
+   * only ever come from the same resolution as the endpoint it is sent to.
+   * Throws `LlmError` `MISSING_CREDENTIAL` when no key is available anywhere.
    */
-  resolveApiKey: (connection: OpenAIConnectionOptions) => Promise<string>
+  resolveApiKey: (provider: string, connection: OpenAIConnectionOptions) => Promise<string>
   /** Resolve the current durable attachment service; absence rejects image input. */
   resolveAttachments?: () => AttachmentStore | undefined
   /** Bridge one attachment reference into the current model-tool execution world. */
@@ -262,12 +267,12 @@ export class OpenAIAdapter extends LlmAdapter {
     return { id: provider, name: 'OpenAI' }
   }
 
-  override providerRetryPolicy(_provider: string): ResolvedRetryPolicy {
-    return this.config.options().retryPolicy
+  override providerRetryPolicy(provider: string): ResolvedRetryPolicy {
+    return this.config.options(provider).retryPolicy
   }
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return Promise.resolve(this.config.options().models.map(model => modelInfo(provider, model)))
+    return Promise.resolve(this.config.options(provider).models.map(model => modelInfo(provider, model)))
   }
 
   override resolveModel(
@@ -275,7 +280,7 @@ export class OpenAIAdapter extends LlmAdapter {
     model: string,
     _signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
-    return Promise.resolve(this.modelInfoFor(this.config.options(), provider, model))
+    return Promise.resolve(this.modelInfoFor(this.config.options(provider), provider, model))
   }
 
   private modelInfoFor(
@@ -321,15 +326,15 @@ export class OpenAIAdapter extends LlmAdapter {
   }
 
   override prepareCall(provider: string, model: string, _signal?: AbortSignal): Promise<PreparedAdapterCall> {
-    const connection = this.config.options()
+    const connection = this.config.options(provider)
     return Promise.resolve({
       model: this.modelInfoFor(connection, provider, model),
-      stream: options => this.streamWithConnection(options, connection),
+      stream: streamOptions => this.streamWithConnection(streamOptions, connection),
     })
   }
 
   stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    return this.streamWithConnection(options, this.config.options())
+    return this.streamWithConnection(options, this.config.options(options.provider))
   }
 
   private async * streamWithConnection(
@@ -359,7 +364,7 @@ export class OpenAIAdapter extends LlmAdapter {
         )
       }
     }
-    const apiKey = await this.config.resolveApiKey(connection)
+    const apiKey = await this.config.resolveApiKey(options.provider, connection)
     const consumer = new AbortController()
     const upstream = options.signal === undefined
       ? consumer.signal
@@ -429,6 +434,12 @@ export class OpenAIAdapter extends LlmAdapter {
       ? undefined
       : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
     const imageAccessOptions = resolveImageAccess === undefined ? {} : { resolveImageAccess }
+    if (connection.api !== 'openai-completions') {
+      throw new LlmError(
+        `wire protocol "${connection.api}" is not implemented in this build; use the openai-completions protocol for this route`,
+        'PROTOCOL_UNSUPPORTED',
+      )
+    }
     let body
     if (attachments === undefined) {
       body = serializeRequest(options, connection.defaults, wireFacts)

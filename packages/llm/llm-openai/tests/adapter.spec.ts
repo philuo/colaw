@@ -32,12 +32,12 @@ async function harness(baseURL: string, config: object = {}) {
   await ctx.plugin(LocalCredentialProvider, { watch: false })
   await ctx.credentials.set(credentialRef('OPENAI_API_KEY'), 'test-key')
   await ctx.plugin(LlmRuntime)
-  await ctx.plugin(LlmOpenAi, { baseURL, apiKeyEnv: 'OPENAI_API_KEY', ...config })
+  await ctx.plugin(LlmOpenAi, { providers: { 'openai-compatible': { baseURL, apiKeyEnv: 'OPENAI_API_KEY', models: [{ id: 'gpt-4o' }] } }, ...(config as Record<string, never>) })
   return ctx
 }
 
 /** Direct adapter over the plugin's real resolve step, with a static key. */
-function adapterOf(config: Partial<LlmOpenAi.Config> & { apiKey?: string } = {}): OpenAIAdapter {
+function adapterOf(config: Partial<LlmOpenAi.ProviderProfile> & { apiKey?: string } = {}): OpenAIAdapter {
   const { apiKey, ...rest } = config
   return new OpenAIAdapter({
     options: () => resolveAdapterOptions(rest),
@@ -185,7 +185,7 @@ describe('failures', () => {
     const ctx = new Context()
     await ctx.plugin(LocalCredentialProvider, { watch: false })
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmOpenAi, { baseURL: server.url })
+    await ctx.plugin(LlmOpenAi, { providers: { 'openai-compatible': { baseURL: server.url } } })
     const result = await assemble(ctx, { model: 'gpt-4o', messages: [] })
     expect(result.finish).toMatchObject({
       kind: 'error',
@@ -215,7 +215,7 @@ describe('resolveAdapterOptions', () => {
   })
 
   it('rejects duplicate catalog ids, unknown modalities, and text-only image limits', () => {
-    expect(() => resolveAdapterOptions({ models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate catalog model/)
+    expect(() => resolveAdapterOptions({ displayName: 'p', models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate model "x" in provider "p"/)
     expect(() => resolveAdapterOptions({ models: [{ id: 'x', inputModalities: ['video' as never] }] })).toThrow(/only "text" and "image"/)
     expect(() => resolveAdapterOptions({ models: [{ id: 'x', imageMaxBytes: 5 }] })).toThrow(/cannot declare image request limits/)
   })

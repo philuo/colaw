@@ -94,14 +94,14 @@ export interface AnthropicConnectionOptions {
 
 /** Constructor options for {@link AnthropicAdapter}: the operation-local resolution hooks the plugin owns. */
 export interface AnthropicAdapterOptions {
-  /** Current validated connection facts; called once per operation. */
-  options: () => AnthropicConnectionOptions
+  /** Validated connection facts for one provider route; called once per operation with the route name. */
+  options: (provider: string) => AnthropicConnectionOptions
   /**
-   * Resolve the API key for the connection facts of one request. The snapshot
-   * is passed in — never re-read. Throws `LlmError` `MISSING_CREDENTIAL`
-   * when no key is available anywhere.
+   * Resolve the API key for the connection facts of one request. The route
+   * name and snapshot are passed in — never re-read. Throws `LlmError`
+   * `MISSING_CREDENTIAL` when no key is available anywhere.
    */
-  resolveApiKey: (connection: AnthropicConnectionOptions) => Promise<string>
+  resolveApiKey: (provider: string, connection: AnthropicConnectionOptions) => Promise<string>
   /** Resolve the current durable attachment service; absence rejects image input. */
   resolveAttachments?: () => AttachmentStore | undefined
   /** Bridge one attachment reference into the current model-tool execution world. */
@@ -238,12 +238,12 @@ export class AnthropicAdapter extends LlmAdapter {
     return { id: provider, name: 'Anthropic' }
   }
 
-  override providerRetryPolicy(_provider: string): ResolvedRetryPolicy {
-    return this.config.options().retryPolicy
+  override providerRetryPolicy(provider: string): ResolvedRetryPolicy {
+    return this.config.options(provider).retryPolicy
   }
 
   override listModels(provider: string): Promise<readonly LlmModelInfo[]> {
-    return Promise.resolve(this.config.options().models.map(model => modelInfo(provider, model)))
+    return Promise.resolve(this.config.options(provider).models.map(model => modelInfo(provider, model)))
   }
 
   override resolveModel(
@@ -251,7 +251,7 @@ export class AnthropicAdapter extends LlmAdapter {
     model: string,
     _signal?: AbortSignal,
   ): Promise<LlmResolvedModelInfo> {
-    return Promise.resolve(this.modelInfoFor(this.config.options(), provider, model))
+    return Promise.resolve(this.modelInfoFor(this.config.options(provider), provider, model))
   }
 
   private modelInfoFor(
@@ -307,7 +307,7 @@ export class AnthropicAdapter extends LlmAdapter {
   }
 
   override prepareCall(provider: string, model: string, _signal?: AbortSignal): Promise<PreparedAdapterCall> {
-    const connection = this.config.options()
+    const connection = this.config.options(provider)
     return Promise.resolve({
       model: this.modelInfoFor(connection, provider, model),
       stream: options => this.streamWithConnection(options, connection),
@@ -315,7 +315,7 @@ export class AnthropicAdapter extends LlmAdapter {
   }
 
   stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
-    return this.streamWithConnection(options, this.config.options())
+    return this.streamWithConnection(options, this.config.options(options.provider))
   }
 
   private async * streamWithConnection(
@@ -342,7 +342,7 @@ export class AnthropicAdapter extends LlmAdapter {
         )
       }
     }
-    const apiKey = await this.config.resolveApiKey(connection)
+    const apiKey = await this.config.resolveApiKey(options.provider, connection)
     const consumer = new AbortController()
     const upstream = options.signal === undefined
       ? consumer.signal

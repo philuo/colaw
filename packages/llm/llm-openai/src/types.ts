@@ -24,6 +24,14 @@ export interface WireRequest {
    * (harness `max` maps to `high`).
    */
   reasoning_effort?: 'low' | 'high'
+  /**
+   * zai-dialect thinking toggle (evidence: pi-ai's zai thinkingFormat) — an
+   * explicit on/off with `clear_thinking: false`, sent even when the effort
+   * is off, unlike `reasoning_effort`.
+   */
+  thinking?: { type: 'enabled' | 'disabled'; clear_thinking?: boolean }
+  /** zai gateways stream tool-call arguments through a side channel when set. */
+  tool_stream?: boolean
   tools?: WireTool[]
   temperature?: number
   /** Output cap; the field name is profile-selected (`maxTokensField`). */
