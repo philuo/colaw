@@ -292,3 +292,33 @@ describe('text-like files inline as text (GLM 1210 compat)', () => {
     expect(message.content).toBe('你好，世界。问候语是什么?')
   })
 })
+
+describe('resolveProfiles model capacity defaults', () => {
+  it('defaults an undeclared row to 1M context and 128K output', async () => {
+    const { resolveProfiles } = await import('../src/index.ts')
+    const resolved = resolveProfiles({ p: { models: [{ id: 'm' }] } })
+    const profile = resolved.get('p') as unknown as { openai: { models: { id: string; contextWindow: number; maxTokens: number }[] } }
+    expect(profile.openai.models[0]).toMatchObject({ id: 'm', contextWindow: 1_000_000, maxTokens: 131_072 })
+  })
+
+  it('keeps explicit capacities over the defaults', async () => {
+    const { resolveProfiles } = await import('../src/index.ts')
+    const resolved = resolveProfiles({ p: { models: [{ id: 'm', contextWindow: 65_536, maxTokens: 4_096 }] } })
+    const profile = resolved.get('p') as unknown as { openai: { models: { contextWindow: number; maxTokens: number }[] } }
+    expect(profile.openai.models[0]).toMatchObject({ contextWindow: 65_536, maxTokens: 4_096 })
+  })
+})
+
+describe('capacity defaults reach the wire', () => {
+  it('auto-applies the defaulted 128K output cap when the request sets none', async () => {
+    // resolveCallWithInfo applies info.defaultMaxTokens when the request omits
+    // a cap — so the 128K row default is a real wire cap, not just metadata.
+    const body = await serializeRequestWithImages(
+      request({ messages: [createUserMessage({ content: [{ type: 'text', text: 'hi' }], source: { kind: 'user' } })] }),
+      { requestImages: new Map(), maxRequestImageBytes: 1024 },
+      {},
+      { reasoning: false, maxTokens: 131_072 },
+    )
+    expect(body.max_tokens).toBe(131_072)
+  })
+})

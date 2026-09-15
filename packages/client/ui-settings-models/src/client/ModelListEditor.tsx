@@ -123,15 +123,15 @@ type CapacityField = 'contextWindow' | 'maxTokens'
  * What an empty capacity field is worth, shown as its placeholder so a row left
  * blank does not read as a model with no capacity at all.
  *
- * The magnitudes are the adapters' own route-level fallbacks, spelled the way
- * a person would say them. They are a hint, not a mirror: this page counts `K`
- * as 1000, so typing `256K` stores 256000 while leaving the field blank keeps
- * the adapter's own default. A deployment that overrides those defaults is not
- * reflected here — nothing on this page can read them.
+ * The magnitudes are the adapters' own defaults for a row that declares none
+ * (one million context, 128K output), spelled the way a person would say
+ * them. They are a hint, not a mirror: this page counts `K` as 1000, so
+ * typing `1M` stores 1000000. The adapter resolves the stored row's own
+ * values first and falls back to these magnitudes.
  */
 const CAPACITY_HINT: Readonly<Record<CapacityField, string>> = {
-  contextWindow: '256K',
-  maxTokens: '32K',
+  contextWindow: '1M',
+  maxTokens: '128K',
 }
 
 /**

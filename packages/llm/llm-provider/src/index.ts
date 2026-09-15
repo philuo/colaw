@@ -104,6 +104,19 @@ export const ANTHROPIC_PUBLIC_BASE_URL = 'https://api.anthropic.com'
 /** Environment variables naming a route's endpoint, honored only from trusted layers. */
 const BASE_URL_ENV = { openai: 'OPENAI_BASE_URL', anthropic: 'ANTHROPIC_BASE_URL' } as const
 
+/**
+ * Default model capacities for catalog rows that declare none: one million
+ * tokens of context and 128K of output. Context is request-assembly metadata
+ * (context meter, compaction thresholds) and never touches the wire. The
+ * output capacity feeds `defaultMaxTokens`, which request assembly DOES
+ * auto-apply when a request sets no cap — so the value must sit inside every
+ * supported vendor's range: GLM's documented output range is [1, 131072]
+ * (verified against all three endpoints), which is exactly what this default
+ * is. A model that truly supports more declares its own `maxTokens`.
+ */
+export const DEFAULT_MODEL_CONTEXT_WINDOW = 1_000_000
+export const DEFAULT_MODEL_MAX_TOKENS = 131_072
+
 // The wires carry text and (for vision models) image input; the other
 // harness modalities have no wire form on these routes.
 const MODEL_MODALITIES = ['text', 'image', 'video', 'file'] as const satisfies readonly ModelModality[]
@@ -248,8 +261,8 @@ function resolveModels(provider: string, models: readonly OpenAICatalogModel[] |
       id: model.id,
       ...model.name === undefined ? {} : { name: model.name },
       ...model.description === undefined ? {} : { description: model.description },
-      ...model.contextWindow === undefined ? {} : { contextWindow: model.contextWindow },
-      ...model.maxTokens === undefined ? {} : { maxTokens: model.maxTokens },
+      contextWindow: model.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW,
+      maxTokens: model.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
       ...model.reasoning === undefined ? {} : { reasoning: model.reasoning },
       ...model.thinkingFormat === undefined ? {} : { thinkingFormat: model.thinkingFormat },
       ...model.zaiToolStream === undefined ? {} : { zaiToolStream: model.zaiToolStream },

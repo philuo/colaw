@@ -77,7 +77,7 @@ describe('request shape', () => {
     })) void chunk
     expect(server.requests[0]).toMatchObject({
       model: 'claude-fable-5',
-      max_tokens: 128_000,
+      max_tokens: 131_072,
       stream: true,
       messages: [{ role: 'user', content: 'hi' }],
     })
