@@ -10,7 +10,7 @@
 import { contentHasFile, contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { readNativeAttachment, ridesNatively } from './native-media.ts'
+import { isTextMediaType, readNativeAttachment, ridesNatively } from './native-media.ts'
 import type { NativeAttachmentOptions } from './native-media.ts'
 import type {
   WireAssistantMessage,
@@ -196,6 +196,10 @@ async function contentBlocks(
             'The Anthropic messages protocol has no video input; send the video through an OpenAI-compatible route',
             'UNSUPPORTED_CONTENT',
           )
+        }
+        if (isTextMediaType(attachment.mediaType)) {
+          parts.push({ type: 'text', text: Buffer.from(attachment.bytes).toString('utf8') })
+          break
         }
         parts.push({
           type: 'document',

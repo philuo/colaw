@@ -109,6 +109,22 @@ export async function readNativeAttachment(
 }
 
 /**
+ * Whether a media type is text-decodable, so the file's content can ride the
+ * wire as a plain text part. GLM's server-side parser refuses plain-text
+ * uploads through its `file` part (error 1210, verified against the coding
+ * endpoint), and a text file inlined as text is lossless for the model — so
+ * the compat layer prefers this form over a native part.
+ * @param mediaType - media type inferred from the filename.
+ * @returns whether the bytes decode to inline text.
+ */
+export function isTextMediaType(mediaType: string): boolean {
+  return mediaType.startsWith('text/')
+    || mediaType === 'application/json'
+    || mediaType === 'application/xml'
+    || mediaType === 'application/yaml'
+}
+
+/**
  * The inline base64 Data URL every one of these wires accepts for a
  * locally-held attachment.
  * @param mediaType - media type inferred from the filename.

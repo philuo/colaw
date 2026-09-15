@@ -10,7 +10,7 @@
 import { contentHasFile, contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
 import type { FileAttachmentRef, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
-import { dataUrl, readNativeAttachment, ridesNatively } from './native-media.ts'
+import { dataUrl, isTextMediaType, readNativeAttachment, ridesNatively } from './native-media.ts'
 import type { NativeAttachmentOptions } from './native-media.ts'
 import type {
   WireFileContentPart,
@@ -217,8 +217,14 @@ async function contentParts(
 async function nativeFilePart(
   native: NativeAttachmentOptions,
   ref: FileAttachmentRef,
-): Promise<WireVideoContentPart | WireFileContentPart> {
+): Promise<WireTextContentPart | WireVideoContentPart | WireFileContentPart> {
   const attachment = await readNativeAttachment(native, ref, 'The OpenAI-compatible adapter')
+  // GLM's server-side parser refuses plain-text uploads through its `file`
+  // part (error 1210, verified end to end), and inlining text is lossless for
+  // the model — so text-like files ride as text parts.
+  if (isTextMediaType(attachment.mediaType)) {
+    return { type: 'text', text: Buffer.from(attachment.bytes).toString('utf8') }
+  }
   const url = dataUrl(attachment.mediaType, attachment.bytes)
   return attachment.family === 'video'
     ? { type: 'video_url', video_url: { url } }

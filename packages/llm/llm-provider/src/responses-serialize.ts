@@ -18,7 +18,7 @@ import { contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWith
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { ImageSerializationOptions, ModelWireFacts, RequestDefaults } from './serialize.ts'
-import { dataUrl, readNativeAttachment, ridesNatively } from './native-media.ts'
+import { dataUrl, isTextMediaType, readNativeAttachment, ridesNatively } from './native-media.ts'
 import type { NativeAttachmentOptions } from './native-media.ts'
 import type {
   ResponsesFunctionCallItem,
@@ -141,6 +141,12 @@ async function contentParts(
             'The OpenAI responses protocol has no video input; send the video through an openai-completions route',
             'UNSUPPORTED_CONTENT',
           )
+        }
+        if (isTextMediaType(attachment.mediaType)) {
+          // GLM's parser refuses plain-text uploads through file parts; inline
+          // the text losslessly instead.
+          parts.push({ type: 'input_text', text: Buffer.from(attachment.bytes).toString('utf8') })
+          break
         }
         parts.push({
           type: 'input_file',

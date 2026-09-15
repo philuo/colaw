@@ -270,3 +270,25 @@ describe('native media parts (files and motion pictures)', () => {
     }))).toThrow(/unserialized file attachment/)
   })
 })
+
+describe('text-like files inline as text (GLM 1210 compat)', () => {
+  it('inlines a txt attachment as a text part instead of a file part', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'dsh-txt-inline-'))
+    writeFileSync(join(dir, 'note.txt'), '你好，世界。')
+    const txt: FileAttachmentRef = { attachmentId: AttachmentId(`sha256:${'f'.repeat(64)}`), name: 'note.txt', bytes: 15 }
+    const store = { fileHostPath: (ref: { name: string }) => join(dir, ref.name) } as never
+    const body = await serializeRequestWithImages(
+      request({ messages: [createUserMessage({
+        content: [{ type: 'file', attachment: txt }, { type: 'text', text: '问候语是什么?' }],
+        source: { kind: 'user' },
+      })] }),
+      { requestImages: new Map(), maxRequestImageBytes: 1024 },
+      {},
+      undefined,
+      { attachments: store, families: ['video', 'document'], maxBytes: 20 * 1024 * 1024 },
+    )
+    const [message] = body.messages as unknown as [{ content: string | { type: string; text?: string }[] }]
+    // All-text content collapses to the compact string wire form.
+    expect(message.content).toBe('你好，世界。问候语是什么?')
+  })
+})
