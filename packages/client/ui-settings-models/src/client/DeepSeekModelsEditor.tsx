@@ -148,8 +148,6 @@ export interface DeepSeekModelsEditorProps {
   resolvedModalities: ReadonlyMap<string, readonly string[]>
   /** Modalities this adapter's wire can represent; omission means the full vocabulary. */
   allowedModalities?: readonly string[]
-  /** Show a per-row extended-thinking/reasoning flag (adapters with a binary thinking wire). */
-  showReasoning?: boolean
   /** Replace the user-owned array after one visible edit. */
   onChange: (models: DeepSeekModelDraft[]) => void
   /** Remove the user-owned array and return to inheritance. */
@@ -365,21 +363,6 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                         disabled={props.disabled}
                         onChange={(next) => { update(index, 'inputModalities', next) }}
                       />
-                      {props.showReasoning === true
-                        ? (
-                          <label className={styles['field']}>
-                            <input
-                              type="checkbox"
-                              checked={model['reasoning'] === true}
-                              disabled={props.disabled}
-                              onChange={(event) => {
-                                update(index, 'reasoning', event.target.checked ? true : undefined)
-                              }}
-                            />
-                            <span>{props.t('inputReasoning')}</span>
-                          </label>
-                        )
-                        : null}
                     </div>
                   )
                   : null}

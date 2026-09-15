@@ -81,7 +81,6 @@ export function ModelInputTypes(props: ModelInputTypesProps): ReactNode {
           )
         })}
       </div>
-      {props.declared === undefined ? <p className={styles['inputTypesHint']}>{props.t('inputTypesHint')}</p> : null}
     </div>
   )
 }

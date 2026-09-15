@@ -35,7 +35,7 @@ import type { en } from './locales.ts'
 import styles from './ModelsSection.module.css'
 
 /** The settings namespace a hand-declared provider is written into. */
-const NS = 'llm-pi-ai'
+const NS = 'llm-openai'
 
 /** The create card's resolved-modality map: no live route, nothing to inherit. */
 const EMPTY_MODALITIES: ReadonlyMap<string, readonly string[]> = new Map()

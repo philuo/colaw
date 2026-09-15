@@ -537,12 +537,6 @@
   line-height: 18px;
 }
 
-.inputTypesHint {
-  color: var(--dsw-alias-label-tertiary);
-  font-size: 11px;
-  line-height: 16px;
-}
-
 .modelEmpty {
   padding: 12px;
   border: 1px dashed var(--dsw-alias-border-l3);

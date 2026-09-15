@@ -151,7 +151,7 @@ describe('ui-settings-models apply', () => {
     // A keyed card extension and a footer entry register through the ordinary
     // ledger once the section's registration declared the seats.
     const disposeCard = b.slots.register(
-      { name: 'settings.models.provider-card', key: 'llm-pi-ai' } as never,
+      { name: 'settings.models.provider-card', key: 'llm-openai' } as never,
       () => null,
     )
     b.slots.register({ name: 'settings.models.footer', id: 'extra', order: 0 } as never, () => null)
@@ -186,7 +186,7 @@ describe('pushed invalidations', () => {
     declare(b.slots)
     await b.ctx.plugin({ inject: [...inject], apply }).await()
     // The fake wire face has no methods: a fetch attempt would throw.
-    b.remote.emit('settings/document-updated', ['llm-pi-ai', 1])
+    b.remote.emit('settings/document-updated', ['llm-openai', 1])
     b.remote.emit('credentials/reference-updated', ['OPENAI_API_KEY'])
     b.remote.emit('llm/adapters-updated', [])
     b.ctx.emit('connection/reset')

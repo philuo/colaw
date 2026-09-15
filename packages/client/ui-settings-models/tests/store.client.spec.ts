@@ -8,10 +8,10 @@ import { joinProviderDirectory, ModelsSettingsStore } from '../src/client/store.
 
 it.each([false, true])('retains configuration diagnostics when the route is active: %s', (active) => {
   expect(joinProviderDirectory(active ? [{ id: 'openai', name: 'openai' }] : [], [{
-    provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'],
+    provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'],
     error: 'catalog unavailable',
   }])).toEqual([{
-    provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'],
+    provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'],
     active, error: 'catalog unavailable',
   }])
 })
@@ -37,8 +37,8 @@ function remoteFail<T>(message: string): RemoteAnswer<T> {
 
 const DIRECTORY = [
   { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [], active: true },
-  { provider: 'openai', displayName: 'openai', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'], active: true },
-  { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'], active: false },
+  { provider: 'openai', displayName: 'openai', settingsNs: 'llm-openai', settingsPath: ['providers', 'openai'], active: true },
+  { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-openai', settingsPath: ['providers', 'anthropic'], active: false },
   { provider: 'ghost', displayName: 'Ghost', settingsNs: '', settingsPath: [], active: true },
 ]
 
@@ -227,7 +227,7 @@ describe('edge joins', () => {
       })),
       providers: () => Promise.resolve(ok({
         providers: [
-          { provider: 'weird', displayName: 'weird', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'weird'], active: false },
+          { provider: 'weird', displayName: 'weird', settingsNs: 'llm-openai', settingsPath: ['providers', 'weird'], active: false },
         ] as never,
       })),
     })
@@ -247,7 +247,7 @@ describe('edge joins', () => {
       })),
       providers: () => Promise.resolve(ok({
         providers: [
-          { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'anthropic'], active: false },
+          { provider: 'anthropic', displayName: 'anthropic', settingsNs: 'llm-openai', settingsPath: ['providers', 'anthropic'], active: false },
         ] as never,
       })),
       describeCredentials: refs => Promise.resolve(remoteOk(

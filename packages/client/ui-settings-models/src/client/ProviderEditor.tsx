@@ -384,9 +384,7 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
       resolvedModalities,
       // The Messages/chat-completions routes accept a two-modality wire; the
       // wider DeepSeek vocabulary stays gated to its own family.
-      ...(family === 'openai' || family === 'anthropic'
-        ? { allowedModalities: ['text', 'image'] as const, showReasoning: true }
-        : {}),
+
       onChange: (next: Record<string, unknown>[]) => {
         setDraft(current => schema.setPath(current, ['models'], next))
       },
