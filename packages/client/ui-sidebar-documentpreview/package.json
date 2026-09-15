@@ -82,5 +82,6 @@
     "lib",
     "lib/index.js",
     "lib/client.js"
-  ]
+  ],
+  "dependencies": {}
 }
