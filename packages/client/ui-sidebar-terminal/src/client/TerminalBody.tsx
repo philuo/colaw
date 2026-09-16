@@ -99,8 +99,13 @@ function TerminalScreen({ state, model, visible, label, theme }: {
       window.clearTimeout(resizeTimer)
       resizeTimer = window.setTimeout(() => {
         if (!current.current.visible || !current.current.state.writable) return
-        model.resize(cols, rows)
-      }, 150)
+        void model.resize(cols, rows)
+        // Full-screen TUIs (claude code, vim) redraw on SIGWINCH; some emit
+        // nothing when their frame fits the new size, leaving the pane on the
+        // old frame. A delayed refresh re-snapshots the host grid so the pane
+        // converges on the settled layout even without new program output.
+        window.setTimeout(() => { void model.refresh().catch(() => {}) }, 250)
+      }, 250)
     }
     const observer = new ResizeObserver(measure)
     observer.observe(node)

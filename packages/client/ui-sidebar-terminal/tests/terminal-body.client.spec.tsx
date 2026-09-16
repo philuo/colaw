@@ -248,7 +248,7 @@ it('fits only visible writable terminals with measurable dimensions and clamps t
   // Resize-storm debounce: the local grid resized live above; the host-side
   // resize lands once the observer storm pauses.
   expect(h.model.resize).not.toHaveBeenCalled()
-  await new Promise(resolve => setTimeout(resolve, 200))
+  await new Promise(resolve => setTimeout(resolve, 300))
   expect(h.model.resize).toHaveBeenCalledWith(200, 100)
   h.model.resize.mockClear()
   h.update(state, false)

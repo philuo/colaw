@@ -4,6 +4,17 @@
 .screen { flex: 1; min-height: 0; min-width: 0; overflow: hidden; padding: 8px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }
 .screen :global(.xterm) { height: 100%; }
 .screen :global(.xterm-viewport) { background: var(--dsw-alias-bg-base); }
+/* The xterm viewport is a plain scroll container, so the global scrollbar skin
+   (scrollbar.css) already styles it; xterm.css only paints its opaque black
+   background, which the rule above rebinds. The bar in the screenshots was
+   the UA default because the viewport sits under `.xterm`, and specificity
+   was never the issue — the missing piece is the narrower width the rest of
+   the sidebar uses, so the pane rebinds the geometry token locally. */
+.screen { --dsh-scrollbar-width: 6px; }
+.screen :global(.xterm-viewport)::-webkit-scrollbar { width: var(--dsh-scrollbar-width); }
+.screen :global(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
+.screen :global(.xterm-viewport)::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--dsh-scrollbar-thumb); background-clip: content-box; }
+.screen :global(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background-color: var(--dsh-scrollbar-thumb-hover); }
 .status { display: flex; align-items: center; gap: 8px; padding: 5px 12px; background: var(--dsw-alias-bg-l2); }
 .status button { padding: 6px 10px; border: 0.5px solid var(--dsw-alias-border-l3); border-radius: 6px; color: inherit; background: transparent; cursor: pointer; }
 .status button:hover { background: var(--dsw-alias-bg-l2); }
