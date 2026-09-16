@@ -75,7 +75,7 @@ This section explains the design of the executor and points at the code that rea
 
 ### Design concept
 
-The executor is the pwsh twin of `dsh-bash-sandbox`: it inherits `dsh-pwsh-local`'s process mechanics, consumes its argv-level seam (`argv()`/`runArgv()`/`startArgv()`/`onProcessDone()`), and wraps the exact pwsh invocation through `ctx.sandbox.confine()` before spawning. The confinement substance is platform-neutral — the sandbox seam resolves to the platform's runner — while this package owns the pwsh side only: the selected mode, enforcement completeness, and denial classification on results.
+The executor is the pwsh twin of `dsh-bash-sandbox`: it inherits `dsh-pwsh-local`'s process mechanics, consumes its argv-level seam (`argv()`/`runArgv()`/`startArgv()`/`onProcessDone()`), and awaits confinement of the exact pwsh invocation through `ctx.sandbox.confine()` before spawning. Foreground preparation uses the local executor’s shared command deadline; timeout before spawn carries no enforcement claim. Background preparation follows only the caller signal. Both paths recheck cancellation before spawn. The confinement substance is platform-neutral — the sandbox seam resolves to the platform's runner — while this package owns the pwsh side only: the selected mode, enforcement completeness, and denial classification on results.
 
 ### Source map
 
@@ -92,7 +92,7 @@ For a confined mode, `resolve()` stamps the per-call policy; `run` and `start` w
 
 ### Invariants
 
-- **Fail closed** — a confined mode with no usable runner throws `SANDBOX_UNAVAILABLE`; unconfined passthrough never happens for a confined policy.
+- **Fail closed** — a confined mode with no usable runner rejects with `SANDBOX_UNAVAILABLE`; unconfined passthrough never happens for a confined policy.
 - **Deny-only at the seam** — this executor never grants permission; the approval flow lives in the tool layer.
 - **Per-process facts** — confinement facts are retained per handle until settlement, because a provider may vary enforcement between overlapping calls.
 
@@ -108,7 +108,7 @@ Read these pages when the executor contract is not enough. They move from the se
 - [shell seam](../shell/README.md) — the executor contract this provider implements, including the request/spec split.
 - [bash-sandbox](../bash-sandbox/README.md) — the bash twin of this executor, with the shared denial and escalation surface.
 - [pwsh-local](../pwsh-local/README.md) — the process mechanics this executor inherits.
-- [sandbox-windows-acl](../../sandbox/sandbox-windows-acl/README.md) — the Windows restricted-token runner chain.
+- sandbox-windows-acl — the Windows restricted-token runner chain.
 - [Bash executor subsystem](../../../docs/subsystems/shell.md) — request/spec vocabulary, results, and the service contract in full.
 - [pwsh executor and tool note](../../../.agents/notes/archived/feature/2026-08-01-pwsh-tool-and-executor.md) — the decision behind the pwsh executor and tool pair.
 

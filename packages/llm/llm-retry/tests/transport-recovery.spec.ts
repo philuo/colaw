@@ -49,6 +49,7 @@ async function harness(
   await ctx.plugin(LocalCredentialProvider, { watch: false })
   await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'mock-key')
   await ctx.plugin(LlmDeepSeek, {
+    protocol: 'chat-completions',
     baseURL,
     streamIdleTimeoutMs: options.streamIdleTimeoutMs ?? 1_000,
     retryPolicy: {

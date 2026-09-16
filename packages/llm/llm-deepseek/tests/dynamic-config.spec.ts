@@ -9,7 +9,7 @@ import AttachmentStore, { AttachmentId, ImageVariantId } from '@deepseek-ai/dsh-
 import type {
   ImageAttachmentLimits,
   ImageAttachmentRef,
-  ImageRequestPolicy,
+  ImageRequestTarget,
   RequestImageAttachment,
   SaveImageAttachment,
   StoredImageAttachment,
@@ -71,7 +71,7 @@ class StaticAttachmentStore extends AttachmentStore {
 
   override readImageRequest(
     ref: ImageAttachmentRef,
-    _policy: ImageRequestPolicy,
+    _target: ImageRequestTarget,
     _signal?: AbortSignal,
   ): Promise<RequestImageAttachment> {
     return Promise.resolve({
@@ -127,7 +127,7 @@ async function boot(dir: string, config: object): Promise<Harness> {
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
   // The reference is stated explicitly: the plugin no longer defaults one, so
   // the launching environment is never consulted unless a test opts in.
-  await ctx.plugin(LlmDeepSeek, { apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
+  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
   return { ctx, settingsFiber }
 }
 
@@ -221,16 +221,31 @@ describe('request-level dynamic configuration', () => {
 
     await assemble(ctx, { model: 'deepseek-flash', messages })
     await ctx.settings.update(NS, { maxRequestFilesBytes: 4, imageOffloadByteQuantum: 2 })
-    await assemble(ctx, { model: 'deepseek-flash', messages })
+    // A request whose retained exact bytes exceed the tightened budget names the occurrences to offload.
+    const rejected = await assemble(ctx, { model: 'deepseek-flash', messages })
+    expect(rejected.finish).toMatchObject({
+      kind: 'error',
+      failure: { code: 'IMAGE_OFFLOAD_REQUIRED', offloadImages: 1 },
+    })
+    await assemble(ctx, {
+      model: 'deepseek-flash',
+      messages: [createUserMessage({
+        content: [
+          { type: 'image', attachment: IMAGE_REF, offloaded: true },
+          { type: 'image', attachment: IMAGE_REF },
+        ],
+        source: { kind: 'plugin', plugin: 'test' },
+      })],
+    })
 
     const first = (server.requests[0] as { messages: Array<{ content: unknown }> }).messages[0]?.content
     const second = (server.requests[1] as { messages: Array<{ content: unknown }> }).messages[0]?.content
+    expect(server.requests).toHaveLength(2)
     expect(JSON.stringify(first).match(/"type":"file"/g)).toHaveLength(2)
     expect(JSON.stringify(second)).toContain('[image omitted to fit request image limits')
     expect(JSON.stringify(second)).toContain(MODEL_IMAGE_PATH)
     expect(JSON.stringify(second).match(/"type":"file"/g)).toHaveLength(1)
   })
-
   it('re-registers the route in place when the captured retry policy changes, without an empty-registry window', async () => {
     const dir = await home()
     const { ctx } = await boot(dir, { baseURL: 'http://127.0.0.1:1' })

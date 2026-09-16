@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-skill-baidu-netdisk",
   "description": "Bundled Baidu Netdisk storage skill provider for Colaw",
-  "version": "0.1.5-rc.2",
+  "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
   },

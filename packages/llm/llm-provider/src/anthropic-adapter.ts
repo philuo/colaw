@@ -33,7 +33,7 @@ import type { ModelModality } from '@deepseek-ai/dsh-llm'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { parseSse } from './anthropic-sse.ts'
 import { translate } from './anthropic-translate.ts'
-import { serializeRequest, serializeRequestWithImages, resolveRequestImagePolicy } from './anthropic-serialize.ts'
+import { serializeRequest, serializeRequestWithImages, resolveRequestImageTarget } from './anthropic-serialize.ts'
 import { ridesNatively } from './native-media.ts'
 import type { NativeAttachmentFamily } from '@deepseek-ai/dsh-llm'
 import type { ModelWireFacts, RequestDefaults } from './anthropic-serialize.ts'
@@ -173,10 +173,9 @@ async function prepareRequestImages(
 ): Promise<Map<AttachmentId, RequestImageAttachment>> {
   const refs = new Map<AttachmentId, ImageAttachmentRef>()
   for (const message of options.messages) collectImageRefs(message.content, refs)
-  const policy = resolveRequestImagePolicy()
   const orderedRefs = [...refs.values()]
   const projected = await Promise.all(orderedRefs.map(
-    ref => attachments.readImageRequest(ref, policy, signal),
+    ref => attachments.readImageRequest(ref, resolveRequestImageTarget(ref), signal),
   ))
   return new Map(orderedRefs.map((ref, index) => (
     [ref.attachmentId, projected[index] as RequestImageAttachment]

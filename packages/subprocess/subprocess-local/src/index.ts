@@ -10,15 +10,18 @@
 
 import { constants } from 'node:fs'
 import { access, stat } from 'node:fs/promises'
+import { userInfo } from 'node:os'
 import { delimiter, isAbsolute, resolve } from 'node:path'
+import type { Duplex } from 'node:stream'
 import { Context } from '@deepseek-ai/cordis'
 // Bun compatibility: the unified PTY adapter backs the PTY surface with Bun.Terminal.
 import { getPtyModule } from './pty-adapter.ts'
 import type { IPtyForkOptions } from './pty-adapter.ts'
-import { SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessExecutableNotFoundError, SubprocessRuntime } from '@deepseek-ai/dsh-subprocess'
 import type {
   SubprocessHandle,
   SubprocessSpawnSpec,
+  SubprocessTerminalEnvironment,
   SubprocessTerminalHandle,
   SubprocessTerminalSpawnSpec,
 } from '@deepseek-ai/dsh-subprocess'
@@ -41,6 +44,8 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
   private live = new Set<LocalSubprocessHandle>()
   /** Live terminals retained through normal quiescence or host-exit finalization. */
   private terminals = new Set<LocalTerminalHandle>()
+  /** Caller endpoints retained until close, independently of managed process lifetime. */
+  private controlChannels = new Set<Duplex>()
   /** Test hook: process and spill operations forwarded to spawnSubprocess. */
   internals: SpawnInternals = {}
   /** Test hook for platform process inspection; production resolves lazily on terminal spawn. */
@@ -94,6 +99,11 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       pending.push(terminal.terminate().then(() => { this.terminals.delete(terminal) }))
     }
     const outcomes = await Promise.allSettled(pending)
+    await Promise.all([...this.controlChannels].map(control => new Promise<void>((resolveClose) => {
+      control.once('close', () => { resolveClose() })
+      control.destroy()
+    })))
+    this.controlChannels.clear()
     const failures: unknown[] = []
     for (const outcome of outcomes) {
       if (outcome.status === 'rejected') failures.push(outcome.reason)
@@ -131,7 +141,7 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
       }
     }
     signal?.throwIfAborted()
-    throw new Error(absolute
+    throw new SubprocessExecutableNotFoundError(absolute
       ? `subprocess-local: command ${JSON.stringify(command)} is not an executable file`
       : `subprocess-local: command ${JSON.stringify(command)} was not found on PATH`)
   }
@@ -141,12 +151,28 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     return path.split(delimiter).map(directory => resolve(process.cwd(), directory, command))
   }
 
+  /** @inheritdoc */
+  // oxlint-disable-next-line typescript/require-await -- Keep the provider promise rejection semantics for cancelled inspection.
+  async terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
+    signal?.throwIfAborted()
+    const platform = process.platform === 'win32' ? 'windows' : 'posix'
+    const defaultShell = platform === 'windows'
+      ? process.env.ComSpec || undefined
+      : process.env.SHELL || userInfo().shell || undefined
+    return { platform, ...defaultShell === undefined ? {} : { defaultShell } }
+  }
+
   spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     validateSubprocessSpec(spec)
     // Node-equivalent null-byte validation precedes every launch, fallback included.
     void targetEnvironment(spec)
     const handle = spawnSubprocess(spec, this.internals)
     this.live.add(handle)
+    const control = handle.control
+    if (control !== undefined) {
+      this.controlChannels.add(control)
+      control.once('close', () => { this.controlChannels.delete(control) })
+    }
     // Release ownership only once the whole managed range is gone, not at direct-child
     // settlement — a TERM-trapping helper that outlives the leader must stay
     // owned so teardown can still escalate it. For the common no-survivor
@@ -167,11 +193,11 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     spec.signal?.throwIfAborted()
     const env = targetEnvironment(spec)
     const options: IPtyForkOptions = {
-      name: 'dumb',
+      name: spec.terminalType,
       rows: spec.rows,
       cols: spec.cols,
       cwd: spec.cwd,
-      env,
+      env: { ...env, TERM: spec.terminalType },
     }
     const inspector = this.terminalInspector ?? createProcessInspector()
     const terminal = getPtyModule().spawn(file, [...spec.argv.slice(1)], options)

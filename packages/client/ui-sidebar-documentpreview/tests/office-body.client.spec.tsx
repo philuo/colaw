@@ -117,7 +117,7 @@ describe('Office body', () => {
   it('mounts the scroll viewer into the surface and renders no pagination chrome', async () => {
     const h = harness()
     const view = render(<h.View format="docx" />)
-    expect(screen.getByRole('status').textContent).toBe(en.loading)
+    expect(screen.getByRole('status', { name: en.loading })).toBeTruthy()
     const surface = view.container.querySelector('[class*="surface"]') as HTMLElement
     // The container handed to the viewer is the surface div itself.
     expect(engine.docx.mock.calls[0]?.[0]).toBe(surface)

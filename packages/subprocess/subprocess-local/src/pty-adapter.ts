@@ -33,6 +33,10 @@ export interface IPty {
   write(data: string): void
   kill(signal?: string): void
   resize(cols: number, rows: number): void
+  /** Hold output delivery; chunks arriving while paused are buffered in order. */
+  pause(): void
+  /** Resume output delivery, flushing everything buffered while paused. */
+  resume(): void
 }
 
 export interface IPtyModule {

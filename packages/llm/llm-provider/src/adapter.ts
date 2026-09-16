@@ -27,8 +27,10 @@ import type {
   AttachmentId,
   AttachmentStore,
   ImageAttachmentRef,
+  ImageRequestTarget,
   RequestImageAttachment,
 } from '@deepseek-ai/dsh-attachment'
+import { requestImageDimensions } from '@deepseek-ai/dsh-attachment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
 import { sseFrames } from '@deepseek-ai/dsh-llm'
@@ -197,6 +199,26 @@ export function resolveRequestImagePolicy(model: OpenAICatalogModel): { maxPixel
   }
 }
 
+/**
+ * Resolve the exact request target for one attachment on this route: the
+ * aspect-preserving projection of the source onto the policy's pixel budget,
+ * carrying the encoded-byte budget the quality ladder targets. The attachment
+ * seam takes resolved target dimensions, so the pixel budget is applied here
+ * rather than inside the encoder.
+ * @param ref - provider-independent attachment reference carrying the source size.
+ * @param policy - route-owned pixel and byte policy.
+ * @returns the seam's target dimensions and byte budget.
+ */
+export function resolveRequestImageTarget(
+  ref: Pick<ImageAttachmentRef, 'width' | 'height'>,
+  policy: { maxPixels: number; maxBytes: number },
+): ImageRequestTarget {
+  return {
+    ...requestImageDimensions(ref.width, ref.height, policy.maxPixels),
+    maxBytes: policy.maxBytes,
+  }
+}
+
 async function prepareRequestImages(
   options: GenerateOptions,
   attachments: AttachmentStore,
@@ -208,7 +230,7 @@ async function prepareRequestImages(
   const policy = resolveRequestImagePolicy(model)
   const orderedRefs = [...refs.values()]
   const projected = await Promise.all(orderedRefs.map(
-    ref => attachments.readImageRequest(ref, policy, signal),
+    ref => attachments.readImageRequest(ref, resolveRequestImageTarget(ref, policy), signal),
   ))
   return new Map(orderedRefs.map((ref, index) => (
     [ref.attachmentId, projected[index] as RequestImageAttachment]

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tool-mineru",
   "description": "Model-facing document parsing tool backed by the MinerU cloud API",
-  "version": "0.1.5-rc.2",
+  "version": "0.1.6-alpha.1",
   "publishConfig": {
     "access": "public"
   },

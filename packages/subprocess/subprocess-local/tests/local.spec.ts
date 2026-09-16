@@ -179,7 +179,7 @@ describe('LocalSubprocessRuntime', () => {
     const ctx = new Context()
     const fiber = await ctx.plugin(LocalSubprocessRuntime)
     const base: SubprocessTerminalSpawnSpec = {
-      argv: ['bash'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 10,
+      argv: ['bash'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 10, terminalType: 'dumb',
     }
     await expect(ctx.subprocess.spawnTerminal({ ...base, argv: [] })).rejects.toThrow('must contain a program')
     await expect(ctx.subprocess.spawnTerminal({ ...base, argv: [''] })).rejects.toThrow('must contain a program')
@@ -198,6 +198,7 @@ describe('LocalSubprocessRuntime', () => {
       write: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
+      resize: async () => {},
       terminate,
     }
     const terminals = (ctx.subprocess as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals
@@ -225,6 +226,7 @@ describe('LocalSubprocessRuntime', () => {
       write: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
+      resize: async () => {},
       terminate: vi.fn(async () => { throw firstFailure }),
     }
     const secondFailedTerminal: SubprocessTerminalHandle = {
@@ -277,6 +279,7 @@ describe('LocalSubprocessRuntime', () => {
       write: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
+      resize: async () => {},
       terminate: vi.fn(async () => { throw failure }),
     }
     const terminals = (service as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals
@@ -352,7 +355,7 @@ describe('LocalSubprocessRuntime', () => {
       // exit races the scope bootstrap.
       service.internals = { platform: 'darwin' }
       const handle = await ctx.subprocess.spawnTerminal({
-        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1,
+        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1, terminalType: 'dumb',
       })
       expect((service as unknown as { terminals: Set<SubprocessTerminalHandle> }).terminals.size).toBe(1)
       exitListener?.({ exitCode: 0 })
@@ -405,7 +408,7 @@ describe('LocalSubprocessRuntime', () => {
         signalProcess: () => {},
       }
       const handle = await ctx.subprocess.spawnTerminal({
-        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1,
+        argv: ['shell'], cwd: process.cwd(), rows: 24, cols: 80, graceMs: 1, terminalType: 'dumb',
       })
       const terminate = vi.spyOn(handle, 'terminate')
       exitListener?.({ exitCode: 0 })

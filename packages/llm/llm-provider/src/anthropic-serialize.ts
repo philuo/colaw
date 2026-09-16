@@ -9,7 +9,8 @@
 
 import { contentHasFile, contentHasImage, LlmError, offloadedImageText, offloadRequestImagesWithPolicy, requestImageHandleText } from '@deepseek-ai/dsh-llm'
 import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Message } from '@deepseek-ai/dsh-llm'
-import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import type { ImageAttachmentRef, ImageRequestTarget, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
+import { requestImageDimensions } from '@deepseek-ai/dsh-attachment'
 import { isTextMediaType, readNativeAttachment, ridesNatively } from './native-media.ts'
 import type { NativeAttachmentOptions } from './native-media.ts'
 import type {
@@ -68,6 +69,24 @@ const TOOL_RESULT_IMAGE_TEXT = 'Attached image(s) from tool result:'
  */
 export function resolveRequestImagePolicy(): { maxPixels: number; maxBytes: number } {
   return { maxPixels: 640_000, maxBytes: 1024 * 1024 }
+}
+
+/**
+ * Resolve the fixed-route request target for one attachment: the
+ * aspect-preserving projection of the source onto this route's pixel budget,
+ * carrying its encoded-byte budget. The attachment seam takes resolved target
+ * dimensions, so the budget is applied here rather than inside the encoder.
+ * @param ref - provider-independent attachment reference carrying the source size.
+ * @returns the seam's target dimensions and byte budget.
+ */
+export function resolveRequestImageTarget(
+  ref: Pick<ImageAttachmentRef, 'width' | 'height'>,
+): ImageRequestTarget {
+  const policy = resolveRequestImagePolicy()
+  return {
+    ...requestImageDimensions(ref.width, ref.height, policy.maxPixels),
+    maxBytes: policy.maxBytes,
+  }
 }
 
 /** Validate the adapter-owned effort before resolving its wire budget. */
