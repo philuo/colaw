@@ -97,6 +97,34 @@ export interface WorkspaceDirectoryEntry {
   readonly size?: number
 }
 
+/**
+ * One workspace-tree entry whose name matched a search.
+ *
+ * `path` is workspace-relative and '/'-joined; the basename is its last
+ * segment, so a consumer can dim the directory part and emphasise the name.
+ */
+export interface WorkspaceTreeMatch {
+  /** Workspace-relative path of the entry, '/'-joined. */
+  readonly path: string
+  /** Basename of the entry. */
+  readonly name: string
+  /** Entry kind: directories are browsable, files openable. */
+  readonly type: 'file' | 'directory' | 'other'
+}
+
+/**
+ * One incremental batch of a streamed workspace-tree name search.
+ *
+ * `ready` opens the stream, `matches` batches arrive shallow-first while the
+ * walk runs, and `done` closes it with the truncation flag: a cap (entries,
+ * directories, or time) or an unreadable directory cut the walk short, so
+ * more matches may exist.
+ */
+export type WorkspaceTreeSearchFrame =
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'matches'; readonly matches: readonly WorkspaceTreeMatch[] }
+  | { readonly kind: 'done'; readonly truncated: boolean }
+
 /** Direct children of one workspace directory. */
 export interface WorkspaceDirectoryListing {
   /**

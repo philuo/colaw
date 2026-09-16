@@ -14,7 +14,7 @@ import { act, cleanup, fireEvent } from '@testing-library/react'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
-import { failureLine, matchesFilter, orderEntries } from '../src/client/FilesBody.tsx'
+import { failureLine, orderEntries } from '../src/client/FilesBody.tsx'
 import type { DirLevel } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { mountBody, ROOT, SESSION, TAB } from './mount.client.tsx'
@@ -253,40 +253,62 @@ describe('failureLine', () => {
   })
 })
 
-describe('matchesFilter', () => {
-  it('matches case-insensitively and treats an empty query as match-all', () => {
-    expect(matchesFilter('README.md', '')).toBe(true)
-    expect(matchesFilter('README.md', 'read')).toBe(true)
-    expect(matchesFilter('README.md', 'MD')).toBe(true)
-    expect(matchesFilter('README.md', 'xyz')).toBe(false)
-  })
 
-  it('walks directories while filtering and keeps the ancestor chain of a deep match', async () => {
-    const { view, script } = mountBody()
+describe('search mode', () => {
+  it('calls the host tree search after the debounce and renders its matches', async () => {
+    const { view, script, search } = mountBody()
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     const input = view.container.querySelector('[class*="searchInput"]') as HTMLInputElement
     await act(() => fireEvent.change(input, { target: { value: 'deep' } }))
-    // 搜索激活后应自动请求未列出的目录层级（递归下行）
-    expect(script.outstanding()).toEqual(['/work/app/src'])
-    await act(() => script.settleLatest({
-      ok: true,
-      value: { entries: [{ name: 'deep-file.md', type: 'file' }, { name: 'skipped.md', type: 'file' }], truncated: false },
-    }))
-    // 深层命中保留其祖先目录；未命中文件与非命中目录被裁掉
-    expect(names(view.container)).toEqual(['/work/app/src', '/work/app/src/deep-file.md'])
+    // 防抖后由宿主搜索：客户端不再自己递归列举目录
+    expect(script.outstanding()).toEqual([])
+    search.mockImplementationOnce(() => (async function* () {
+      yield { kind: 'matches', matches: [{ path: 'src/deep-file.md', name: 'deep-file.md', type: 'file' },
+        { path: 'src', name: 'src', type: 'directory' }] }
+      yield { kind: 'done', truncated: true }
+    })())
+    await act(() => new Promise(resolve => setTimeout(resolve, 350)))
+    const rows = [...view.container.querySelectorAll('[data-files-entry]')].map(li => li.getAttribute('data-files-path'))
+    expect(rows).toEqual(['src/deep-file.md', 'src'])
+    expect(view.container.querySelector('[data-files-state]')?.getAttribute('data-files-state')).toBe('search')
   })
 
-  it('filters the visible rows to the query and says when nothing matches', async () => {
-    const { view, script } = mountBody()
+  it('opens a file match through the owner and exits search', async () => {
+    const { view, script, search, tabActions } = mountBody()
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
-    expect(names(view.container)).toEqual(['/work/app/src', '/work/app/.env', '/work/app/pipe', '/work/app/README.md'])
     const input = view.container.querySelector('[class*="searchInput"]') as HTMLInputElement
-    expect(input).not.toBeNull()
     await act(() => fireEvent.change(input, { target: { value: 'read' } }))
-    expect(names(view.container)).toEqual(['/work/app/README.md'])
-    await act(() => fireEvent.change(input, { target: { value: '没有这个文件' } }))
-    expect(view.container.querySelector('[data-files-row="no-match"]')?.textContent).toBe(zh['search.noMatches'])
-    await act(() => fireEvent.change(input, { target: { value: '' } }))
-    expect(names(view.container)).toEqual(['/work/app/src', '/work/app/.env', '/work/app/pipe', '/work/app/README.md'])
+    search.mockImplementationOnce(() => (async function* () {
+      yield { kind: 'matches', matches: [{ path: 'notes/README.md', name: 'README.md', type: 'file' }] }
+      yield { kind: 'done', truncated: false }
+    })())
+    await act(() => new Promise(resolve => setTimeout(resolve, 350)))
+    const fileRow = view.container.querySelector('[data-files-entry="file"] button')
+    await act(() => fireEvent.click(fileRow!))
+    expect(tabActions.openResource).toHaveBeenCalledWith(fileAddressFor(SESSION, ROOT, 'notes/README.md'))
+    expect(view.container.querySelector('[data-files-state]')?.getAttribute('data-files-state')).toBe('tree')
+    expect(search).toHaveBeenLastCalledWith(SESSION, ROOT, 'read', expect.anything())
+  })
+
+  it('browses to a directory match and expands its ancestors', async () => {
+    const { view, script, search } = mountBody()
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    const input = view.container.querySelector('[class*="searchInput"]') as HTMLInputElement
+    await act(() => fireEvent.change(input, { target: { value: 'notes' } }))
+    search.mockImplementationOnce(() => (async function* () {
+      yield { kind: 'matches', matches: [{ path: 'src/deep/notes', name: 'notes', type: 'directory' }] }
+      yield { kind: 'done', truncated: false }
+    })())
+    await act(() => new Promise(resolve => setTimeout(resolve, 350)))
+    const dirRow = view.container.querySelector('[data-files-entry="directory"] button')
+    await act(() => fireEvent.click(dirRow!))
+    expect(view.container.querySelector('[data-files-state]')?.getAttribute('data-files-state')).toBe('tree')
+    // 点击目录命中后，祖先 a 与 a/b 被展开并按需列举。
+    expect(script.outstanding()).toEqual(['/work/app/src', '/work/app/src/deep'])
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    expect(
+      [...view.container.querySelectorAll('[data-files-path]')]
+        .some(el => el.getAttribute('data-files-path')?.startsWith('/work/app/src/')),
+    ).toBe(true)
   })
 })

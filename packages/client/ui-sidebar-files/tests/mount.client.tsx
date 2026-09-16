@@ -15,7 +15,8 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SidebarRightTabActions } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { filesFace } from '../src/client/face.ts'
-import type { FilesInjected } from '../src/client/face.ts'
+import type { WorkspaceTreeMatch } from '@deepseek-ai/dsh-api-workspace-files/types'
+import type { FilesInjected, SearchWorkspaceTree } from '../src/client/face.ts'
 import { FilesBody } from '../src/client/FilesBody.tsx'
 import type { FilesBodyProps } from '../src/client/FilesBody.tsx'
 import { zh } from '../src/client/locales.ts'
@@ -55,13 +56,15 @@ export interface Mounted {
   readonly tabActions: MockedTabActions
   /** Render a fresh body over the same store and face, as a tab switch remounts it. */
   readonly remount: () => RenderResult
+  readonly search: Mock<SearchWorkspaceTree>
 }
 
 /** One store instance, one face, one owner share. */
 function harness(cwd: string | null) {
   const instance = createFilesStore().create()
   const script = scriptedList()
-  const face = filesFace(script.list)(SESSION, instance.actions)
+  const search = vi.fn<SearchWorkspaceTree>(searchYields([]))
+  const face = filesFace(script.list, search)(SESSION, instance.actions)
   const controller = new AbortController()
   const tabActions: MockedTabActions = {
     openResource: vi.fn<SidebarRightTabActions['openResource']>(),
@@ -88,7 +91,19 @@ function harness(cwd: string | null) {
     ...face,
     t: makeTranslate(zh),
   }
-  return { instance, script, face, controller, tabActions, shared }
+  return { instance, script, face, controller, tabActions, shared, search }
+}
+
+/**
+ * One search stream fake: the given matches in a single batch, then done.
+ * @param matches - the batch to yield.
+ * @param truncated - the done frame's flag.
+ */
+export function searchYields(matches: WorkspaceTreeMatch[], truncated = false): SearchWorkspaceTree {
+  return () => (async function* () {
+    yield { kind: 'matches', matches }
+    yield { kind: 'done', truncated }
+  })()
 }
 
 /**
@@ -98,5 +113,5 @@ function harness(cwd: string | null) {
 export function mountBody(cwd: string | null = ROOT): Mounted {
   const { shared, ...hands } = harness(cwd)
   const view = render(<FilesBody {...shared as unknown as FilesBodyProps} />)
-  return { ...hands, view, remount: () => render(<FilesBody {...shared as unknown as FilesBodyProps} />) }
+  return { ...hands, view, search: hands.search, remount: () => render(<FilesBody {...shared as unknown as FilesBodyProps} />) }
 }

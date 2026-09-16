@@ -149,7 +149,10 @@ describe('workspaceFiles.changes — ending', () => {
     })
     let service: WorkspaceFiles | undefined
     const fiber = await harness.ctx.plugin(Object.assign((ctx: Context) => {
-      service = new WorkspaceFiles(ctx, { maxBytes: 1, maxFileBytes: 1, maxLines: 1, maxEntries: 1 })
+      service = new WorkspaceFiles(ctx, {
+        maxBytes: 1, maxFileBytes: 1, maxLines: 1, maxEntries: 1,
+        maxSearchDirs: 1000, maxSearchResults: 100, maxSearchMs: 1000,
+      })
     }, { inject: ['fs', 'sandboxPolicy'] }))
     try {
       if (service === undefined) throw new Error('plugin body did not run')
@@ -267,7 +270,10 @@ describe('workspaceFiles.changes — ending', () => {
   it('ends every open generation when the owning fiber is disposed', async () => {
     let service: WorkspaceFiles | undefined
     const fiber = await harness.ctx.plugin(Object.assign((ctx: Context) => {
-      service = new WorkspaceFiles(ctx, { maxBytes: 1, maxFileBytes: 1, maxLines: 1, maxEntries: 1 })
+      service = new WorkspaceFiles(ctx, {
+        maxBytes: 1, maxFileBytes: 1, maxLines: 1, maxEntries: 1,
+        maxSearchDirs: 1000, maxSearchResults: 100, maxSearchMs: 1000,
+      })
     }, { inject: ['fs', 'sandboxPolicy'] }))
     if (service === undefined) throw new Error('plugin body did not run')
     const stream = open(service)
