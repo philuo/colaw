@@ -14,10 +14,14 @@ import { createTOCView } from './foliate/tree.js'
 import './foliate/view.js'
 import css from './EpubBody.module.css'
 
-/** 注入各章节文档的阅读样式；字号档决定最终形态。固定浅色显示。 */
+/** 注入各章节文档的阅读样式；字号档决定最终形态。固定浅色白底显示。 */
 const readingStyles = (fontScale: number): string => `
-    html {
+    html, body {
         color-scheme: light;
+        background: #fff !important;
+        color: #1a1a1a !important;
+    }
+    html {
         font-size: ${(14 * fontScale).toFixed(1)}px;
     }
     p, li, blockquote, dd {
