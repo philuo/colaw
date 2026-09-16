@@ -22,7 +22,7 @@ import type { ClientRemote, RemoteResult } from '@deepseek-ai/dsh-api-remotes/cl
 import type { BoundActions } from '@deepseek-ai/dsh-client-store'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import type { WorkspaceTreeMatches } from '@deepseek-ai/dsh-api-workspace-files/types'
+import type { WorkspaceTreeSearchFrame } from '@deepseek-ai/dsh-api-workspace-files/types'
 import type { DirLevel, createFilesStore } from './store.ts'
 
 /**
@@ -55,15 +55,16 @@ export type WorkspaceFilesSearchRemote = {
 }
 
 /**
- * One workspace-tree name search, bound to a Remote face. A Remote call does
- * not reject — the result carries the failure.
+ * One streamed workspace-tree name search, bound to a Remote face: frames
+ * arrive shallow-first while the Host walks; iteration throws on failure and
+ * ends on `done`.
  */
 export type SearchWorkspaceTree = (
   sessionId: SessionId,
   root: string,
   query: string,
   signal: AbortSignal,
-) => Promise<RemoteResult<WorkspaceTreeMatches>>
+) => AsyncIterable<WorkspaceTreeSearchFrame>
 
 /**
  * Bind the tree search to one Remote face.
@@ -125,13 +126,13 @@ export interface FilesInjected {
    */
   readonly toggle: (tabId: TabId, path: string, loaded: boolean, signal: AbortSignal) => void
   /**
-   * Search the workspace tree for names containing the query, walked inside
-   * the Host so the Client never blocks. Bound to this face's session.
+   * Stream the workspace-tree names containing the query, walked inside the
+   * Host so the Client never blocks. Bound to this face's session.
    * @param root - absolute path of the workspace root.
    * @param query - the name substring to match, case-insensitively.
    * @param signal - the tab record's lifetime.
    */
-  readonly search: (root: string, query: string, signal: AbortSignal) => Promise<RemoteResult<WorkspaceTreeMatches>>
+  readonly search: (root: string, query: string, signal: AbortSignal) => AsyncIterable<WorkspaceTreeSearchFrame>
 }
 
 /**

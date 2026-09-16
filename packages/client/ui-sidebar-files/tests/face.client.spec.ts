@@ -30,7 +30,7 @@ const LEVEL: DirLevel = { entries: [{ name: 'src', type: 'directory' }], truncat
 function mount() {
   const instance = createFilesStore().create()
   const script = scriptedList()
-  const search = vi.fn(() => Promise.resolve({ ok: true as const, value: { matches: [], truncated: false } }))
+  const search = vi.fn(() => (async function* () { /* 默认无命中 */ })())
   const face = filesFace(script.list, search)(SESSION, instance.actions)
   return { ...script, face, snapshot: () => instance.getSnapshot().byTab[TAB] }
 }

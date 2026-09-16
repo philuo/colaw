@@ -19,7 +19,8 @@
  * file content across the wire, which is a different level of exposure.
  */
 
-import { posix, win32 } from 'node:path'
+import { readdir } from 'node:fs/promises'
+import { join, posix, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type {} from '@deepseek-ai/dsh-fs'
@@ -40,7 +41,7 @@ import type {
   WorkspaceFileText,
   WorkspaceFileWatchFrame,
   WorkspaceTreeMatch,
-  WorkspaceTreeMatches,
+  WorkspaceTreeSearchFrame,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -178,6 +179,13 @@ function workspacePathOf(rootUrl: string, targetUrl: string): string {
 }
 
 /** Strip the resolved child target: the wire carries names and metadata only. */
+/**
+ * Dependency/VCS directories the tree search never descends into or matches:
+ * their contents are bulk-generated, dominate real trees, and never help a
+ * name search.
+ */
+const SKIP_DIRS = new Set(['.git', '.svn', '.hg', 'node_modules'])
+
 function directoryEntry(child: FsDirEntry): WorkspaceDirectoryEntry {
   return {
     name: child.name,
@@ -195,9 +203,9 @@ export class WorkspaceFiles extends TypertRemoteService {
     maxFileBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER - 1).default(32 * 1024 * 1024),
     maxLines: z.number().step(1).min(1).default(5000),
     maxEntries: z.number().step(1).min(1).default(2000),
-    maxSearchDirs: z.number().step(1).min(1).default(2000),
+    maxSearchDirs: z.number().step(1).min(1).default(20000),
     maxSearchResults: z.number().step(1).min(1).default(300),
-    maxSearchMs: z.number().step(1).min(1).default(1500),
+    maxSearchMs: z.number().step(1).min(1).default(3000),
   })
 
   private readonly feed: WorkspaceChangeFeed
@@ -366,75 +374,95 @@ export class WorkspaceFiles extends TypertRemoteService {
   /**
    * Search the workspace tree for entries whose name contains the query —
    * case-insensitively, walking directories breadth-first inside the Host so
-   * the Client never blocks or re-renders per directory. Directory symlinks
-   * are not followed (cycle guard), and the walk stops at the entry,
-   * directory, time, or result caps; `truncated` says when a cap cut it short
-   * so more matches may exist.
+   * the Client never blocks. The walk reads raw dirent names (no per-entry
+   * stat), scans each breadth level concurrently, never descends into
+   * dependency/VCS directories, and does not follow directory symlinks (cycle
+   * guard), so every walked path stays under the root the containment gate
+   * accepted. The walk stops at the entry, directory, or time caps, and
+   * `truncated` says when it was cut short so more matches may exist.
    * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
    * @param root - workspace path to search under, absolute or workspace-relative.
    * @param query - the name substring to match, case-insensitively.
    * @param signal - caller cancellation.
-   * @returns the matched entries, shallowest first, with the truncation flag.
+   * @returns a stream: `ready`, then shallow-first `matches` batches, then `done`.
    */
-  @Remote
-  async searchTree(
+  @Remote({ mode: 'stream' })
+  async *searchTree(
     workspaceFileScope: WorkspaceFileScope,
     root: string,
     query: string,
     signal: AbortSignal,
-  ): Promise<WorkspaceTreeMatches> {
+  ): AsyncIterable<WorkspaceTreeSearchFrame> {
+    yield { kind: 'ready' }
     const needle = query.trim().toLowerCase()
-    if (needle === '') return { matches: [], truncated: false }
+    if (needle === '') {
+      yield { kind: 'done', truncated: false }
+      return
+    }
     const { root: scopeRoot, workspaceRoot, entry } = await this.inspect(workspaceFileScope, root, signal)
     if (entry.type !== 'directory') {
       throw new RemoteError('workspace-file/not-directory', `"${root}" is a ${entry.type}`, { path: root, kind: entry.type })
     }
     const rootTarget = await this.confine(scopeRoot, workspaceRoot, root, signal)
-    const rootRel = workspacePathOf(this.ctx.fs.fileUrl(scopeRoot), this.ctx.fs.fileUrl(rootTarget))
-    const matches: WorkspaceTreeMatch[] = []
-    const queue: Array<{ target: FsTarget; rel: string }> = [{ target: rootTarget, rel: rootRel }]
-    const visited = new Set<string>()
     const deadline = Date.now() + this.config.maxSearchMs
-    let visitedDirs = 0
+    let matches = 0
+    let dirs = 0
     let truncated = false
-    while (queue.length > 0) {
-      if (Date.now() >= deadline || visited.size >= this.config.maxSearchDirs) {
+    let level: Array<{ abs: string; rel: string }> = [{ abs: rootTarget.targetKey, rel: '' }]
+    while (level.length > 0) {
+      if (signal.aborted) return
+      if (Date.now() >= deadline || dirs >= this.config.maxSearchDirs) {
         truncated = true
         break
       }
-      const next = queue.shift()
-      if (next === undefined) break
-      const { target, rel } = next
-      if (visited.has(target.targetKey)) continue
-      visited.add(target.targetKey)
-      visitedDirs += 1
-      // One unreadable directory (permissions, vanished mid-walk) must not fail
-      // the whole search; it only means matches under it may be missed.
-      if (signal.aborted) return { matches, truncated: true }
-      const children = await this.ctx.fs.listDir(target, signal).catch(() => undefined)
-      if (children === undefined) {
-        truncated = true
-        continue
-      }
-      for (const child of children) {
-        const mapped = directoryEntry(child)
-        const childRel = rel === '' ? mapped.name : `${rel}/${mapped.name}`
-        const isDir = mapped.type === 'directory'
-        if (mapped.name.toLowerCase().includes(needle)) {
-          if (matches.length < this.config.maxSearchResults) {
-            matches.push({ path: childRel, name: mapped.name, type: mapped.type })
-          } else {
-            truncated = true
+      // One breadth level at a time, its directories scanned concurrently, so
+      // results stay shallow-first without a scheduler.
+      const settled = await Promise.all(level.map(async dir => ({
+        dir,
+        // One unreadable directory must not fail the search; only its own
+        // subtree is lost.
+        children: await readdir(dir.abs, { withFileTypes: true }).catch(() => undefined),
+      })))
+      const next: typeof level = []
+      const batch: WorkspaceTreeMatch[] = []
+      for (const { dir, children } of settled) {
+        if (children === undefined) {
+          truncated = true
+          continue
+        }
+        dirs += 1
+        for (const child of children) {
+          const isDir = child.isDirectory()
+          if (isDir && SKIP_DIRS.has(child.name)) continue
+          if (child.name.toLowerCase().includes(needle)) {
+            if (matches < this.config.maxSearchResults) {
+              batch.push({
+                path: dir.rel === '' ? child.name : `${dir.rel}/${child.name}`,
+                name: child.name,
+                type: isDir ? 'directory' : child.isFile() ? 'file' : 'other',
+              })
+              matches += 1
+            } else {
+              truncated = true
+            }
+          }
+          if (isDir) {
+            if (dirs + next.length < this.config.maxSearchDirs) {
+              next.push({ abs: join(dir.abs, child.name), rel: dir.rel === '' ? child.name : `${dir.rel}/${child.name}` })
+            } else {
+              truncated = true
+            }
           }
         }
-        if (isDir && visited.size + queue.length < this.config.maxSearchDirs) {
-          queue.push({ target: child.target, rel: childRel })
-        } else if (isDir) {
-          truncated = true
-        }
       }
+      if (batch.length > 0) yield { kind: 'matches', matches: batch }
+      if (matches >= this.config.maxSearchResults) {
+        truncated = true
+        break
+      }
+      level = next
     }
-    return { matches, truncated }
+    yield { kind: 'done', truncated }
   }
 
   /**

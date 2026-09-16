@@ -113,16 +113,17 @@ export interface WorkspaceTreeMatch {
 }
 
 /**
- * The result of one workspace-tree name search: the matched entries in
- * document order (directories first where the walk found them first), and
- * whether the caps cut the walk short so more matches may exist.
+ * One incremental batch of a streamed workspace-tree name search.
+ *
+ * `ready` opens the stream, `matches` batches arrive shallow-first while the
+ * walk runs, and `done` closes it with the truncation flag: a cap (entries,
+ * directories, or time) or an unreadable directory cut the walk short, so
+ * more matches may exist.
  */
-export interface WorkspaceTreeMatches {
-  /** Matched entries, shallowest first. */
-  readonly matches: readonly WorkspaceTreeMatch[]
-  /** Whether a cap (entries, directories, or time) cut the walk short. */
-  readonly truncated: boolean
-}
+export type WorkspaceTreeSearchFrame =
+  | { readonly kind: 'ready' }
+  | { readonly kind: 'matches'; readonly matches: readonly WorkspaceTreeMatch[] }
+  | { readonly kind: 'done'; readonly truncated: boolean }
 
 /** Direct children of one workspace directory. */
 export interface WorkspaceDirectoryListing {

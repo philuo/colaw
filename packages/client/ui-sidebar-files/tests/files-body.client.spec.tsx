@@ -240,16 +240,11 @@ describe('search mode', () => {
     await act(() => fireEvent.change(input, { target: { value: 'deep' } }))
     // 防抖后由宿主搜索：客户端不再自己递归列举目录
     expect(script.outstanding()).toEqual([])
-    search.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        matches: [
-          { path: 'src/deep-file.md', name: 'deep-file.md', type: 'file' },
-          { path: 'src', name: 'src', type: 'directory' },
-        ],
-        truncated: true,
-      },
-    })
+    search.mockImplementationOnce(() => (async function* () {
+      yield { kind: 'matches', matches: [{ path: 'src/deep-file.md', name: 'deep-file.md', type: 'file' },
+        { path: 'src', name: 'src', type: 'directory' }] }
+      yield { kind: 'done', truncated: true }
+    })())
     await act(() => new Promise(resolve => setTimeout(resolve, 350)))
     const rows = [...view.container.querySelectorAll('[data-files-entry]')].map(li => li.getAttribute('data-files-path'))
     expect(rows).toEqual(['src/deep-file.md', 'src'])
@@ -261,13 +256,10 @@ describe('search mode', () => {
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     const input = view.container.querySelector('[class*="searchInput"]') as HTMLInputElement
     await act(() => fireEvent.change(input, { target: { value: 'read' } }))
-    search.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        matches: [{ path: 'notes/README.md', name: 'README.md', type: 'file' }],
-        truncated: false,
-      },
-    })
+    search.mockImplementationOnce(() => (async function* () {
+      yield { kind: 'matches', matches: [{ path: 'notes/README.md', name: 'README.md', type: 'file' }] }
+      yield { kind: 'done', truncated: false }
+    })())
     await act(() => new Promise(resolve => setTimeout(resolve, 350)))
     const fileRow = view.container.querySelector('[data-files-entry="file"] button')
     await act(() => fireEvent.click(fileRow!))
@@ -281,13 +273,10 @@ describe('search mode', () => {
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
     const input = view.container.querySelector('[class*="searchInput"]') as HTMLInputElement
     await act(() => fireEvent.change(input, { target: { value: 'notes' } }))
-    search.mockResolvedValueOnce({
-      ok: true,
-      value: {
-        matches: [{ path: 'src/deep/notes', name: 'notes', type: 'directory' }],
-        truncated: false,
-      },
-    })
+    search.mockImplementationOnce(() => (async function* () {
+      yield { kind: 'matches', matches: [{ path: 'src/deep/notes', name: 'notes', type: 'directory' }] }
+      yield { kind: 'done', truncated: false }
+    })())
     await act(() => new Promise(resolve => setTimeout(resolve, 350)))
     const dirRow = view.container.querySelector('[data-files-entry="directory"] button')
     await act(() => fireEvent.click(dirRow!))

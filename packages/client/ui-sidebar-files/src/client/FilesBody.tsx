@@ -193,6 +193,7 @@ export function FilesBody({
   const [searchPhase, setSearchPhase] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
 
   // 输入停顿后发起一次宿主树搜索；组字期间（中文输入法未上屏）不触发。
+  // 结果流式渐进上屏：ready 后每批命中立刻渲染，done 结束；换词即打断上一场。
   useEffect(() => {
     if (query === '' || state === undefined || signal.aborted) {
       setSearchPhase('idle')
@@ -201,23 +202,37 @@ export function FilesBody({
       return
     }
     let disposed = false
+    const controller = new AbortController()
+    const abort = () => controller.abort()
+    signal.addEventListener('abort', abort, { once: true })
     const timer = window.setTimeout(() => {
       if (disposed || signal.aborted) return
       setSearchPhase('loading')
-      search(state.root, query, signal).then((result) => {
-        if (disposed || signal.aborted) return
-        if (result.ok) {
-          setMatches(result.value.matches)
-          setMore(result.value.truncated)
-          setSearchPhase('ready')
-        } else {
-          setSearchPhase('failed')
+      setMatches([])
+      setMore(false)
+      void (async () => {
+        try {
+          for await (const frame of search(state.root, query, controller.signal)) {
+            if (disposed || controller.signal.aborted) return
+            if (frame.kind === 'matches') {
+              setMatches(prev => [...prev, ...frame.matches])
+              // 首批一到即从 loading 切 ready，后续批次继续追加。
+              setSearchPhase('ready')
+            } else if (frame.kind === 'done') {
+              setMore(frame.truncated)
+            }
+          }
+        } catch {
+          if (!disposed && !controller.signal.aborted) setSearchPhase('failed')
         }
-      }).catch(() => {
-        if (!disposed) setSearchPhase('failed')
-      })
+      })()
     }, SEARCH_DEBOUNCE_MS)
-    return () => { disposed = true; window.clearTimeout(timer) }
+    return () => {
+      disposed = true
+      controller.abort()
+      signal.removeEventListener('abort', abort)
+      window.clearTimeout(timer)
+    }
   }, [query, state, search, signal])
 
   /** 清空搜索并把树展开到一条目录命中处（命中路径相对 root）。 */

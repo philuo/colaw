@@ -15,14 +15,14 @@ import { makeTranslate } from '@deepseek-ai/dsh-client-test-runtime'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SidebarRightTabActions } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import { filesFace } from '../src/client/face.ts'
-import type { FilesInjected } from '../src/client/face.ts'
+import type { WorkspaceTreeMatch } from '@deepseek-ai/dsh-api-workspace-files/types'
+import type { FilesInjected, SearchWorkspaceTree } from '../src/client/face.ts'
 import { FilesBody } from '../src/client/FilesBody.tsx'
 import type { FilesBodyProps } from '../src/client/FilesBody.tsx'
 import { zh } from '../src/client/locales.ts'
 import { createFilesStore } from '../src/client/store.ts'
 import { scriptedList } from './scripted-list.client.ts'
 import type { ScriptedList } from './scripted-list.client.ts'
-import type { SearchWorkspaceTree } from '../src/client/face.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
 export const SESSION = 's-test' as SessionId
@@ -61,9 +61,7 @@ export interface Mounted {
 function harness(cwd: string | null) {
   const instance = createFilesStore().create()
   const script = scriptedList()
-  type SearchOk = { ok: true; value: { matches: []; truncated: false } }
-  const search = vi.fn<(sessionId: SessionId, root: string, query: string, signal: AbortSignal) => Promise<SearchOk>>(() =>
-    Promise.resolve({ ok: true, value: { matches: [], truncated: false } }))
+  const search = vi.fn<SearchWorkspaceTree>(searchYields([]))
   const face = filesFace(script.list, search)(SESSION, instance.actions)
   const controller = new AbortController()
   const tabActions: MockedTabActions = {
@@ -92,6 +90,18 @@ function harness(cwd: string | null) {
     t: makeTranslate(zh),
   }
   return { instance, script, face, controller, tabActions, shared, search }
+}
+
+/**
+ * One search stream fake: the given matches in a single batch, then done.
+ * @param matches - the batch to yield.
+ * @param truncated - the done frame's flag.
+ */
+export function searchYields(matches: WorkspaceTreeMatch[], truncated = false): SearchWorkspaceTree {
+  return () => (async function* () {
+    yield { kind: 'matches', matches }
+    yield { kind: 'done', truncated }
+  })()
 }
 
 /**
