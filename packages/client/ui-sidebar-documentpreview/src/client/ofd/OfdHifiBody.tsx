@@ -193,7 +193,11 @@ export function OfdHifiBody({ content, t }: {
     viewport.scrollLeft = fitX * next - anchorX
     viewport.scrollTop = fitY * next - anchorY
     const badge = hostRef.current?.querySelector<HTMLElement>(`.${css.zoomBadge}`)
-    if (badge !== null && badge !== undefined) badge.textContent = `${Math.round(next * 100)}%`
+    if (badge !== null && badge !== undefined) {
+      // 首段手势时徽标还在 fit 隐藏态：立即露出并写百分比，不等提交。
+      badge.hidden = false
+      badge.textContent = `${Math.round(next * 100)}%`
+    }
     window.clearTimeout(settle.current)
     settle.current = window.setTimeout(() => { setZoom(zoomRef.current) }, GESTURE_COMMIT_MS)
   }, [])
@@ -273,15 +277,15 @@ export function OfdHifiBody({ content, t }: {
           {body}
         </div>
       </div>
-      {zoom > 1 && (
-        <button
-          type="button"
-          className={css.zoomBadge}
-          onClick={() => { zoomAt(1 / zoomRef.current, 0, 0) }}
-        >
-          {`${Math.round(zoom * 100)}%`}
-        </button>
-      )}
+      {/* 徽标常驻 DOM（fit 态隐藏）：首段手势可即时露出，不等待状态提交。 */}
+      <button
+        type="button"
+        className={css.zoomBadge}
+        hidden={zoom <= 1}
+        onClick={() => { zoomAt(1 / zoomRef.current, 0, 0) }}
+      >
+        {`${Math.round(zoom * 100)}%`}
+      </button>
     </div>
   )
 }
