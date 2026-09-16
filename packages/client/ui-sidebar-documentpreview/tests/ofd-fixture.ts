@@ -133,15 +133,15 @@ export async function ofdPackage(): Promise<Uint8Array> {
     + '<ofd:MultiMedia ID="1" Type="Image"><ofd:MediaFile Loc="Res/stamp.png"/></ofd:MultiMedia>'
     + '<ofd:MultiMedia ID="2" Type="Image"><ofd:MediaFile Loc="Res/missing.png"/></ofd:MultiMedia>'
     + '</ofd:Res>'
-  const content = `${XML_DECLARATION}<ofd:Page ${OFD_NS}><ofd:Content>`
+  const content = `${XML_DECLARATION}<ofd:Page ${OFD_NS}><ofd:Content><ofd:Layer ID="1">`
     + '<ofd:TextObject Boundary="20 20 100 30" Size="4">'
-    + '<ofd:TextCode>第一条 测试文本行</ofd:TextCode>'
+    + '<ofd:TextCode Y="0">第一条 测试文本行</ofd:TextCode>'
     + '<ofd:TextCode X="10" Y="35">第二条 另起一行</ofd:TextCode>'
-    + '<ofd:TextCode>第三条 收尾</ofd:TextCode>'
+    + '<ofd:TextCode Y="12">第三条 收尾</ofd:TextCode>'
     + '</ofd:TextObject>'
     + '<ofd:ImageObject Boundary="20 60 40 20" ResourceID="1"/>'
     + '<ofd:ImageObject Boundary="20 90 40 20" ResourceID="2"/>'
-    + '</ofd:Content></ofd:Page>'
+    + '</ofd:Layer></ofd:Content></ofd:Page>'
   const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
   return zipOf([
     { name: 'META-INF/container.xml', data: encode(container) },

@@ -42,6 +42,73 @@ describe('container navigation', () => {
     ] as readonly ZipFixtureEntry[]))
     expect(documentPathOf(bare)).toBe('OFD.xml')
   })
+
+  it('follows DocRoot in the all-in-one package form and reads the Suwell dialect', async () => {
+    // 税局 Suwell 形态：无 container.xml，OFD.xml 即包描述，DocRoot 指向文档；
+    // 页 BaseLoc 直接是 Content.xml 文件；尺寸在 Area/PhysicalBox；
+    // 资源清单由 CommonData 文本子元素指向，MediaFile 文本即文件名。
+    const encode = (text: string): Uint8Array => new TextEncoder().encode(text)
+    const declaration = '<?xml version="1.0" encoding="UTF-8"?>'
+    const ofd = `${declaration}<ofd:OFD xmlns:ofd="http://www.ofdspec.org/2016"><ofd:DocBody><ofd:DocRoot>Doc_0/Document.xml</ofd:DocRoot></ofd:DocBody></ofd:OFD>`
+    const document = `${declaration}<ofd:Document xmlns:ofd="http://www.ofdspec.org/2016">`
+      + '<ofd:CommonData><ofd:PublicRes>DocumentRes.xml</ofd:PublicRes>'
+      + '<ofd:TemplatePage ID="1" BaseLoc="Tpls/Tpl_0/Content.xml"/></ofd:CommonData>'
+      + '<ofd:Pages><ofd:Page ID="1" BaseLoc="Pages/Page_0/Content.xml"/></ofd:Pages>'
+      + '</ofd:Document>'
+    const resources = `${declaration}<ofd:Res xmlns:ofd="http://www.ofdspec.org/2016" BaseLoc="Res"><ofd:MultiMedias>`
+      + '<ofd:MultiMedia ID="7" Type="Image"><ofd:MediaFile>stamp.png</ofd:MediaFile></ofd:MultiMedia>'
+      + '</ofd:MultiMedias></ofd:Res>'
+    const template = `${declaration}<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016">`
+      + '<ofd:Content><ofd:Layer>'
+      + '<ofd:PathObject Boundary="0 0 148 210" LineWidth="0.3">'
+      + '<ofd:StrokeColor Value="0 0 0"/><ofd:AbbreviatedData>M 0 0 L 148 0</ofd:AbbreviatedData>'
+      + '</ofd:PathObject>'
+      + '</ofd:Layer></ofd:Content></ofd:Page>'
+    const content = `${declaration}<ofd:Page xmlns:ofd="http://www.ofdspec.org/2016">`
+      + '<ofd:Area><ofd:PhysicalBox>0 0 148 210</ofd:PhysicalBox></ofd:Area>'
+      + '<ofd:Template TemplateID="1" ZOrder="Background"/>'
+      + '<ofd:Content><ofd:Layer>'
+      + '<ofd:TextObject Boundary="10 10 60 10" Size="4"><ofd:TextCode Y="0">发票文本行</ofd:TextCode></ofd:TextObject>'
+      + '<ofd:ImageObject Boundary="10 30 20 10" ResourceID="7"/>'
+      + '</ofd:Layer></ofd:Content></ofd:Page>'
+    const packageBytes = await zipOf([
+      { name: 'OFD.xml', data: encode(ofd) },
+      { name: 'Doc_0/Document.xml', data: encode(document) },
+      { name: 'Doc_0/DocumentRes.xml', data: encode(resources) },
+      { name: 'Doc_0/Tpls/Tpl_0/Content.xml', data: encode(template) },
+      { name: 'Doc_0/Pages/Page_0/Content.xml', data: encode(content) },
+      { name: 'Doc_0/Res/stamp.png', data: stampBytes() },
+    ])
+    const entries = await unzipEntries(packageBytes)
+    expect(documentPathOf(entries)).toBe('Doc_0/Document.xml')
+    expect((await readOfdPages(packageBytes))[0]?.lines).toEqual(['发票文本行'])
+    const pages = await readOfdLayout(packageBytes)
+    expect(pages[0]).toMatchObject({ widthMm: 148, heightMm: 210 })
+    // Template layers render first (background); within a layer the reference
+    // order is images, paths, then texts.
+    expect(pages[0]!.fragments).toEqual([
+      {
+        kind: 'path',
+        xMm: 0,
+        yMm: 0,
+        wMm: 148,
+        hMm: 210,
+        d: 'M0 0 L148 0',
+        stroke: 'rgb(0, 0, 0)',
+        lineWidthMm: 0.3,
+      },
+      { kind: 'image', xMm: 10, yMm: 30, wMm: 20, hMm: 10, url: expect.stringContaining('data:image/png;base64,') as unknown as string },
+      {
+        kind: 'text',
+        xMm: 10,
+        yMm: 10,
+        wMm: 60,
+        hMm: 10,
+        sizeMm: 4,
+        runs: [{ xMm: 0, yMm: 0, text: '发票文本行' }],
+      },
+    ])
+  })
 })
 
 describe('text extraction', () => {
@@ -55,7 +122,7 @@ describe('text extraction', () => {
 })
 
 describe('layout skeleton', () => {
-  it('resolves the page box, positioned text lines, and image data URLs', async () => {
+  it('resolves the page box, baseline text runs, and image data URLs', async () => {
     const pages = await readOfdLayout(await ofdPackage())
     expect(pages).toHaveLength(1)
     const page = pages[0]!
@@ -64,10 +131,20 @@ describe('layout skeleton', () => {
 
     const texts = page.fragments.filter(fragment => fragment.kind === 'text')
     expect(texts).toEqual([
-      { kind: 'text', xMm: 20, yMm: 20, sizeMm: 4, text: '第一条 测试文本行' },
-      // X/Y attributes win; the attribute-less line stacks at size * 1.5 per row.
-      { kind: 'text', xMm: 30, yMm: 55, sizeMm: 4, text: '第二条 另起一行' },
-      { kind: 'text', xMm: 20, yMm: 32, sizeMm: 4, text: '第三条 收尾' },
+      {
+        kind: 'text',
+        xMm: 20,
+        yMm: 20,
+        wMm: 100,
+        hMm: 30,
+        sizeMm: 4,
+        // TextCode@Y gives each line its own baseline within the object box.
+        runs: [
+          { xMm: 0, yMm: 0, text: '第一条 测试文本行' },
+          { xMm: 10, yMm: 35, text: '第二条 另起一行' },
+          { xMm: 0, yMm: 12, text: '第三条 收尾' },
+        ],
+      },
     ])
 
     const images = page.fragments.filter(fragment => fragment.kind === 'image')

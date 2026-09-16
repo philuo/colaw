@@ -4,6 +4,7 @@ import type { FoliateTocItem } from './epub.d.ts'
 /** The paginator/fixed-layout renderer the view mounts. */
 export interface FoliateRenderer {
   setAttribute(name: string, value: string): void
+  setStyles?(css: string): void
   goTo(target: unknown): Promise<unknown>
   prev(): Promise<unknown>
   next(): Promise<unknown>

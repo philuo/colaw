@@ -60,19 +60,27 @@ export function firstTextOf(elements: readonly Element[]): string {
 
 /**
  * 解析 OFD 包描述，找到文档清单的 zip 路径。GB/T 33190 的容器元素是
- * DocPath；顺带兼容写错成 EPUB full-path 的产出方。
+ * DocPath（顺带兼容写错成 EPUB full-path 的产出方）；无容器时回落 OFD.xml。
+ * 实务中还存在合包形态：OFD.xml 根元素即 ofd:OFD 包描述，真正的文档
+ * 由 DocBody/DocRoot 指向（如税局 Suwell 产出），此处一并跟随。
  * @param entries - 解包后的 OFD 条目映射。
  * @returns 文档清单路径。
  */
 export function documentPathOf(entries: Map<string, Uint8Array>): string {
+  let path = 'OFD.xml'
   const container = entries.get('META-INF/container.xml')
   if (container !== undefined) {
     const containerDocument = parseXml(container)
-    const path = firstTextOf(tagsOf(containerDocument.documentElement, 'DocPath'))
+    const declared = firstTextOf(tagsOf(containerDocument.documentElement, 'DocPath'))
       || firstTextOf(tagsOf(containerDocument.documentElement, 'FullPath'))
-    if (path.length > 0) return path
+    if (declared.length > 0) path = declared
   }
-  return 'OFD.xml'
+  const bytes = entries.get(path)
+  if (bytes === undefined) return path
+  const documentRoot = parseXml(bytes).documentElement
+  const docRoot = firstTextOf(tagsOf(documentRoot, 'DocRoot'))
+  if (docRoot.length > 0) return resolveAgainst(directoryOf(path), docRoot)
+  return path
 }
 
 /** 路径的目录部分（无目录时为空串）。 */
@@ -99,7 +107,8 @@ export function ofdPageTexts(entries: Map<string, Uint8Array>): OfdPageText[] {
   const pageElements = tagsOf(document.documentElement, 'Page')
   for (const [index, pageElement] of pageElements.entries()) {
     const base = pageElement.getAttribute('BaseLoc') ?? `Pages/Page_${index}`
-    const contentBytes = entries.get(resolveAgainst(directoryOf(documentPath), `${base}/Content.xml`))
+    // BaseLoc 指向页目录（规格形态）或直接指向 Content.xml（Suwell 税局形态）。
+    const contentBytes = pageBytesOf(entries, directoryOf(documentPath), base)
     if (contentBytes === undefined) continue
     const content = parseXml(contentBytes)
     const lines: string[] = []
@@ -110,6 +119,16 @@ export function ofdPageTexts(entries: Map<string, Uint8Array>): OfdPageText[] {
     pages.push({ page: index + 1, lines })
   }
   return pages
+}
+
+/**
+ * 读取一页的 Content.xml 字节：BaseLoc 指向页目录时拼 /Content.xml，
+ * 已是文件路径时直接命中。
+ */
+export function pageBytesOf(entries: Map<string, Uint8Array>, baseDirectory: string, base: string): Uint8Array | undefined {
+  if (base.startsWith('/')) return entries.get(base.slice(1))
+  return entries.get(resolveAgainst(baseDirectory, `${base}/Content.xml`))
+    ?? entries.get(resolveAgainst(baseDirectory, base))
 }
 
 /**

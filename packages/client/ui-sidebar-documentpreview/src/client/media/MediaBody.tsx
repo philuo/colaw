@@ -57,6 +57,6 @@ export function MediaBody({ content, resourceAddress, t }: {
     return <LoadingIndicator className={css.status} label={t('loading')} />
   }
   return kind === 'video'
-    ? <video className={css.media} src={source.url} controls autoPlay={false} />
-    : <audio className={css.media} src={source.url} controls />
+    ? <video className={`${css.media} ${css.video}`} src={source.url} controls autoPlay={false} />
+    : <audio className={`${css.media} ${css.audio}`} src={source.url} controls />
 }

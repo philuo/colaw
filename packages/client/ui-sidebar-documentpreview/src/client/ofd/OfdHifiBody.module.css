@@ -9,18 +9,14 @@
 .hifiPage {
   position: relative;
   width: 100%;
-  /* cqw 字号单位以本页框为查询容器。 */
-  container-type: inline-size;
   background: #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
 }
 
-.text {
+/* 片段定位框；SVG/文本在毫米 viewBox 内随宽度缩放，允许出血绘制。 */
+.object {
   position: absolute;
-  white-space: pre;
-  line-height: 1.25;
-  color: #111;
-  font-family: serif;
+  overflow: visible;
 }
 
 .image {

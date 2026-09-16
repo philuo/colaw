@@ -7,6 +7,26 @@ import type { FoliateView } from './foliate/view.js'
 import './foliate/view.js'
 import css from './EpubBody.module.css'
 
+/** 注入各章节文档的阅读样式（对齐官方 reader 的 getCSS，浅色窄栏版）。 */
+const READING_STYLES = `
+    html {
+        color-scheme: light;
+        font-size: 14px;
+    }
+    p, li, blockquote, dd {
+        line-height: 1.6;
+        text-align: start;
+        widows: 2;
+    }
+    pre {
+        white-space: pre-wrap !important;
+    }
+    img, svg, video {
+        max-width: 100%;
+        height: auto;
+    }
+`
+
 /**
  * Present complete EPUB bytes as a scrolled foliate reader.
  * @param props - document bytes and locale.
@@ -33,6 +53,8 @@ export function EpubBody({ content, t }: {
     openEpubBook(data).then(async (book) => {
       if (isDisposed()) return
       view = document.createElement('foliate-view') as FoliateView
+      // 官方 reader 的打开顺序：先挂载视图，再 open，再注入阅读样式并跳到首屏。
+      hostRef.current?.append(view)
       await view.open(book)
       // disposed 在 open 的 await 期间翻转会错过清理：这里补一次。
       if (isDisposed()) {
@@ -42,7 +64,8 @@ export function EpubBody({ content, t }: {
       }
       // 滚动模式适合侧栏窄幅：连续排版，靠原生滚动翻页。
       view.renderer.setAttribute('flow', 'scrolled')
-      hostRef.current?.append(view)
+      view.renderer.setStyles?.(READING_STYLES)
+      await view.renderer.next()
       setState('ready')
     }).catch(() => {
       if (!isDisposed()) setState('failed')
