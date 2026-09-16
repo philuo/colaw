@@ -284,7 +284,7 @@ describe('search mode', () => {
     search.mockResolvedValueOnce({
       ok: true,
       value: {
-        matches: [{ path: 'a/b/notes', name: 'notes', type: 'directory' }],
+        matches: [{ path: 'src/deep/notes', name: 'notes', type: 'directory' }],
         truncated: false,
       },
     })
@@ -292,5 +292,12 @@ describe('search mode', () => {
     const dirRow = view.container.querySelector('[data-files-entry="directory"] button')
     await act(() => fireEvent.click(dirRow!))
     expect(view.container.querySelector('[data-files-state]')?.getAttribute('data-files-state')).toBe('tree')
+    // 点击目录命中后，祖先 a 与 a/b 被展开并按需列举。
+    expect(script.outstanding()).toEqual(['/work/app/src', '/work/app/src/deep'])
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    expect(
+      [...view.container.querySelectorAll('[data-files-path]')]
+        .some(el => el.getAttribute('data-files-path')?.startsWith('/work/app/src/')),
+    ).toBe(true)
   })
 })

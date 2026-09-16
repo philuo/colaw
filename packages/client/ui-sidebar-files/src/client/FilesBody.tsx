@@ -220,10 +220,9 @@ export function FilesBody({
     return () => { disposed = true; window.clearTimeout(timer) }
   }, [query, state, search, signal])
 
-  /** 清空搜索并把树展开到一条目录命中处。 */
+  /** 清空搜索并把树展开到一条目录命中处（命中路径相对 root）。 */
   const browseToMatch = (matchPath: string, tabState: FilesTabState): void => {
-    const base = matchPath.slice(tabState.root.replace(/[/\\]+$/, '').length + 1)
-    const segments = base.split('/')
+    const segments = matchPath.split('/')
     let acc = tabState.root
     for (const segment of segments.slice(0, -1)) {
       acc = childPath(acc, segment)
