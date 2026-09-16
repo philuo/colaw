@@ -306,7 +306,7 @@ function SessionTree({
     setGroupExpanded(currentGroup, true)
   }, [current, currentGroup, setGroupExpanded, groupExpansion])
   const expandedGroups = useMemo(
-    () => Object.entries(groupExpansion).filter(([, expanded]) => expanded).map(([key]) => key),
+    () => Object.entries(groupExpansion ?? {}).filter(([, expanded]) => expanded).map(([key]) => key),
     [groupExpansion],
   )
   const ungroupedSessionIds = useMemo(() => {

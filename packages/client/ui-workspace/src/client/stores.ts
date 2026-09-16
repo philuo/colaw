@@ -62,9 +62,16 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
     actions: {
       setGroupBy: (d, mode: SessionGroupBy) => { d.groupBy = mode },
       setOrderBy: (d, mode: SessionOrderBy) => { d.orderBy = mode },
-      setGroupExpanded: (d, key: string, expanded: boolean) => { d.groupExpansion[key] = expanded },
+      setGroupExpanded: (d, key: string, expanded: boolean) => {
+        d.groupExpansion ??= {}
+        d.groupExpansion[key] = expanded
+      },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)
+        // 持久化状态可能来自旧 schema 而缺字段：读取与写入都做兜底自愈。
+        d.groupExpansion ??= {}
+        d.sessionOrderByAccount ??= {}
+        d.sessionUpdatedAtByAccount ??= {}
         d.groupExpansion = Object.fromEntries(
           Object.entries(d.groupExpansion).filter(([key]) => retained.has(key)),
         )
