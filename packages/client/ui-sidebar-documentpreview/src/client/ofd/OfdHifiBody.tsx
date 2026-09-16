@@ -152,6 +152,7 @@ export function OfdHifiBody({ content, t }: {
   const [failed, setFailed] = useState(false)
   const [zoom, setZoom] = useState(1)
   const zoomRef = useRef(1)
+  const hostRef = useRef<HTMLDivElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
   const drag = useRef<{ readonly x: number; readonly y: number } | undefined>()
@@ -191,7 +192,7 @@ export function OfdHifiBody({ content, t }: {
     column.style.width = `${(next * 100).toFixed(2)}%`
     viewport.scrollLeft = fitX * next - anchorX
     viewport.scrollTop = fitY * next - anchorY
-    const badge = viewport.querySelector<HTMLElement>(`.${css.zoomBadge}`)
+    const badge = hostRef.current?.querySelector<HTMLElement>(`.${css.zoomBadge}`)
     if (badge !== null && badge !== undefined) badge.textContent = `${Math.round(next * 100)}%`
     window.clearTimeout(settle.current)
     settle.current = window.setTimeout(() => { setZoom(zoomRef.current) }, GESTURE_COMMIT_MS)
@@ -255,20 +256,22 @@ export function OfdHifiBody({ content, t }: {
   }, [pages, failed, t])
 
   return (
-    <div
-      ref={viewportRef}
-      className={css.hifi}
-      data-ofd-preview=""
-      data-pannable={zoom > 1 || undefined}
-      onWheel={onWheel}
-      onDoubleClick={onDoubleClick}
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    >
-      <div ref={columnRef} className={css.column}>
-        {body}
+    <div ref={hostRef} className={css.host} data-ofd-preview="">
+      {/* 滚动容器只包内容；徽标是它的兄弟，钉在窗格右下角不随滚动/缩放移动。 */}
+      <div
+        ref={viewportRef}
+        className={css.hifi}
+        data-pannable={zoom > 1 || undefined}
+        onWheel={onWheel}
+        onDoubleClick={onDoubleClick}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <div ref={columnRef} className={css.column}>
+          {body}
+        </div>
       </div>
       {zoom > 1 && (
         <button

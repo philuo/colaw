@@ -1,10 +1,17 @@
 /* 窗格贴合：`body:has([data-ofd-preview])` 把共享滚动口变成定界弹性格，
-   本视口撑满它——缩放/平移与右下角徽标都以侧栏可见边界为基准。 */
-.hifi {
+   本外壳撑满它——缩放/平移与右下角徽标都以侧栏可见边界为基准。 */
+.host {
   position: relative;
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
+}
+
+/* 滚动容器只包内容；徽标是外壳的兄弟，不随滚动/缩放移动。 */
+.hifi {
+  position: absolute;
+  inset: 0;
   overflow: auto;
   /* 滚动全部走手势与拖拽，滚动条不显示。 */
   scrollbar-width: none;
