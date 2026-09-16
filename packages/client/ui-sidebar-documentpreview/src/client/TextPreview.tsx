@@ -294,6 +294,7 @@ export function TextPreview({
         </div>
         <Menu
           open={menuOpen}
+          className={css.opaqueMenu}
           anchor={(
             <button type="button" className={clsx(css.tool, css.viewerTool)} aria-label={t('openWith')} title={selected.title()} data-document-viewer-menu onClick={() => { setMenuOpen(value => !value) }}>
               {selected.title()}

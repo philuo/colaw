@@ -38,11 +38,17 @@
 }
 
 .barButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 24px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: inherit;
-  font-size: 13px;
-  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 1;
   border-radius: 6px;
   cursor: pointer;
 }

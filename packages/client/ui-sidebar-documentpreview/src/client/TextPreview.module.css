@@ -25,6 +25,8 @@
   box-sizing: border-box;
   height: 38px;
   padding: 0 6px 0 16px;
+  /* 不透明：白底内容滚动时顶栏依然可辨（仅本文档预览的顶栏作用域）。 */
+  background: var(--dsw-alias-bg-base);
   border-bottom: 0.5px solid var(--dsw-alias-border-l3);
 }
 
@@ -319,4 +321,16 @@
    pane in use); a scroll container never paints a focus ring for that. */
 .body:focus {
   outline: none;
+}
+
+/* “打开方式”菜单在本文档预览内不透明：暗色主题的共享玻璃变体
+   （5% 白 + blur）压在白色内容上不可辨。仅覆盖本面板用到的这个
+   菜单实例（双类提高优先级压过共享的玻璃 ::before），别处不受影响。 */
+.opaqueMenu.opaqueMenu {
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.opaqueMenu.opaqueMenu::before,
+body[data-ds-dark-theme] .opaqueMenu.opaqueMenu::before {
+  display: none;
 }
