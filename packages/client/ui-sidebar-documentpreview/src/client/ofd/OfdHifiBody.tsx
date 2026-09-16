@@ -2,15 +2,19 @@
  * OFD 高保真预览（版式）：毫米坐标以页面百分比定位；文本/路径片段用
  * SVG viewBox（毫米局部坐标系）随宽度等比缩放——文本按基线渲染
  * （DeltaX/DeltaY 已在解析期分组），矢量与图片按图层顺序叠加。
+ * 缩放：⌘/Ctrl+滚轮或触控板捏合，页宽按倍数伸缩，徽标点击复位。
  */
-import { useEffect, useMemo, useState } from 'react'
-import type { ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { readOfdLayout } from './ofd-layout.ts'
 import type { OfdLayoutPage, OfdImageFragment, OfdTextFragment, OfdPathFragment } from './ofd-layout.ts'
 import css from './OfdHifiBody.module.css'
 
 type Fragment = OfdTextFragment | OfdImageFragment | OfdPathFragment
+
+const MIN_ZOOM = 0.5
+const MAX_ZOOM = 4
 
 /** 毫米坐标换算为页面宽/高的百分比样式。 */
 function percent(valueMm: number, totalMm: number): string {
@@ -23,7 +27,7 @@ function matrixOf(ctm: readonly number[] | undefined): string | undefined {
 }
 
 /** 片段的公共定位框：页面百分比位置与尺寸。 */
-function boxStyle(fragment: Fragment, page: OfdLayoutPage): React.CSSProperties {
+function boxStyle(fragment: Fragment, page: OfdLayoutPage): CSSProperties {
   return {
     left: percent(fragment.xMm, page.widthMm),
     top: percent(fragment.yMm, page.heightMm),
@@ -45,6 +49,7 @@ function TextView({ fragment, page }: { fragment: OfdTextFragment; page: OfdLayo
           y={run.yMm}
           fontSize={fragment.sizeMm}
           fill={fragment.fill ?? '#111'}
+          fontFamily={fragment.family}
           transform={matrix ?? (hScale !== undefined ? `matrix(${hScale}, 0, 0, 1, ${(1 - hScale) * run.xMm}, 0)` : undefined)}
         >{run.text}</text>
       ))}
@@ -67,19 +72,20 @@ function PathView({ fragment, page }: { fragment: OfdPathFragment; page: OfdLayo
   )
 }
 
-/** 图片对象：资源解析失败的以虚线占位框标注。 */
+/** 图片对象：资源解析失败的以虚线占位框标注；印章类图片用正片叠底。 */
 function ImageView({ fragment, page }: { fragment: OfdImageFragment; page: OfdLayoutPage }): ReactNode {
+  const style = { ...boxStyle(fragment, page), ...(fragment.blend !== undefined ? { mixBlendMode: fragment.blend } : {}) }
   return fragment.url !== undefined
-    ? <img className={css.image} style={boxStyle(fragment, page)} src={fragment.url} alt="" />
+    ? <img className={css.image} style={style} src={fragment.url} alt="" />
     : <span className={css.unresolvedImage} style={boxStyle(fragment, page)} />
 }
 
-/** 一页的渲染：白底页框内按文档顺序叠加的片段。 */
-function PageView({ page, index }: { page: OfdLayoutPage; index: number }): ReactNode {
+/** 一页的渲染：白底页框内按文档顺序叠加的片段，内容裁剪在页框内。 */
+function PageView({ page, index, zoom }: { page: OfdLayoutPage; index: number; zoom: number }): ReactNode {
   return (
     <section
       className={css.hifiPage}
-      style={{ aspectRatio: `${page.widthMm} / ${page.heightMm}` }}
+      style={{ width: `${(zoom * 100).toFixed(1)}%`, aspectRatio: `${page.widthMm} / ${page.heightMm}` }}
       aria-label={`P${index + 1}`}
     >
       {page.fragments.map((fragment, at) => fragment.kind === 'text'
@@ -98,11 +104,13 @@ function PageView({ page, index }: { page: OfdLayoutPage; index: number }): Reac
  */
 export function OfdHifiBody({ content, t }: {
   content: { kind: string; data?: Uint8Array<ArrayBuffer> }
-  t: (key: 'hifiLoading' | 'hifiFailed') => string
+  t: (key: 'loading' | 'failed') => string
 }): ReactNode {
   const data = content.kind === 'bytes' ? content.data : undefined
   const [pages, setPages] = useState<readonly OfdLayoutPage[]>()
   const [failed, setFailed] = useState(false)
+  const [zoom, setZoom] = useState(1)
+  const hostRef = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
     if (data === undefined) {
@@ -118,11 +126,38 @@ export function OfdHifiBody({ content, t }: {
     return () => { disposed = true }
   }, [data])
 
-  const body = useMemo(() => {
-    if (failed) return <p className={css.status} role="alert">{t('hifiFailed')}</p>
-    if (pages === undefined) return <LoadingIndicator className={css.status} label={t('hifiLoading')} />
-    return pages.map((page, index) => <PageView key={index} page={page} index={index} />)
-  }, [pages, failed, t])
+  useEffect(() => {
+    const host = hostRef.current
+    if (host === null || pages === undefined) return
+    const onWheel = (event: WheelEvent): void => {
+      // 触控板捏合与 Ctrl+滚轮都带 ctrlKey；普通滚轮保持原生滚动。
+      if (!event.ctrlKey && !event.metaKey) return
+      event.preventDefault()
+      setZoom(at => Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, at * (event.deltaY < 0 ? 1.1 : 1 / 1.1))))
+    }
+    host.addEventListener('wheel', onWheel, { passive: false })
+    return () => { host.removeEventListener('wheel', onWheel) }
+  }, [pages])
 
-  return <div className={css.hifi}>{body}</div>
+  const body = useMemo(() => {
+    if (failed) return <p className={css.status} role="alert">{t('failed')}</p>
+    if (pages === undefined) return <LoadingIndicator className={css.status} label={t('loading')} />
+    return pages.map((page, index) => <PageView key={index} page={page} index={index} zoom={zoom} />)
+  }, [pages, failed, t, zoom])
+
+  return (
+    <div className={css.hifi} ref={hostRef}>
+      {zoom !== 1 && (
+        <button
+          type="button"
+          className={css.zoomBadge}
+          onClick={() => setZoom(1)}
+          aria-label="Reset zoom"
+        >
+          {`${Math.round(zoom * 100)}%`}
+        </button>
+      )}
+      {body}
+    </div>
+  )
 }

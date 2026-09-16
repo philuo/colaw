@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
-/** OFD reading: zip round-trip, container navigation, text extraction, and layout fragments. */
+/** OFD reading: zip round-trip, container navigation, layout fragments, and decoding. */
 import { describe, expect, it } from 'vitest'
 import { unzipEntries } from '../src/client/ofd/zip.ts'
-import { decodeXmlBytes, documentPathOf, readOfdPages } from '../src/client/ofd/ofd-document.ts'
+import { decodeXmlBytes, documentPathOf } from '../src/client/ofd/ofd-document.ts'
 import { readOfdLayout } from '../src/client/ofd/ofd-layout.ts'
 import { DEFLATE_METHOD, STORE_METHOD, ofdPackage, stampBytes, zipOf, type ZipFixtureEntry } from './ofd-fixture.ts'
 
@@ -81,7 +81,6 @@ describe('container navigation', () => {
     ])
     const entries = await unzipEntries(packageBytes)
     expect(documentPathOf(entries)).toBe('Doc_0/Document.xml')
-    expect((await readOfdPages(packageBytes))[0]?.lines).toEqual(['发票文本行'])
     const pages = await readOfdLayout(packageBytes)
     expect(pages[0]).toMatchObject({ widthMm: 148, heightMm: 210 })
     // Template layers render first (background); within a layer the reference
@@ -108,16 +107,6 @@ describe('container navigation', () => {
         runs: [{ xMm: 0, yMm: 0, text: '发票文本行' }],
       },
     ])
-  })
-})
-
-describe('text extraction', () => {
-  it('collects per-page TextCode lines in document order', async () => {
-    const pages = await readOfdPages(await ofdPackage())
-    expect(pages).toEqual([{
-      page: 1,
-      lines: ['第一条 测试文本行', '第二条 另起一行', '第三条 收尾'],
-    }])
   })
 })
 

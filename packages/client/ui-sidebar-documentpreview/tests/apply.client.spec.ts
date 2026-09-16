@@ -26,8 +26,7 @@ import { ImageBody } from '../src/client/image/ImageBody.tsx'
 import { IMAGE_BODY_ID } from '../src/client/image/index.ts'
 import { MEDIA_BODY_ID } from '../src/client/media/index.ts'
 import { MediaBody } from '../src/client/media/MediaBody.tsx'
-import { OFD_TEXT_BODY_ID, OFD_HIFI_BODY_ID } from '../src/client/ofd/index.ts'
-import { OfdTextBody } from '../src/client/ofd/OfdTextBody.tsx'
+import { OFD_HIFI_BODY_ID } from '../src/client/ofd/index.ts'
 import { OfdHifiBody } from '../src/client/ofd/OfdHifiBody.tsx'
 import { EPUB_BODY_ID } from '../src/client/epub/index.ts'
 import { EpubBody } from '../src/client/epub/EpubBody.tsx'
@@ -106,7 +105,6 @@ describe('ui-sidebar-documentpreview apply', () => {
       ['sidebar.right.tab.document', HTML_BODY_ID, 'documentHtml', HtmlBody],
       ['sidebar.right.tab.document', IMAGE_BODY_ID, 'sidebarImage', ImageBody],
       ['sidebar.right.tab.document', MEDIA_BODY_ID, 'sidebarMedia', MediaBody],
-      ['sidebar.right.tab.document', OFD_TEXT_BODY_ID, 'sidebarOfd', OfdTextBody],
       ['sidebar.right.tab.document', OFD_HIFI_BODY_ID, 'sidebarOfd', OfdHifiBody],
       ['sidebar.right.tab.document', EPUB_BODY_ID, 'sidebarEpub', EpubBody],
       ['sidebar.right.tab.document', PDF_BODY_ID, 'sidebarPdf', PdfBody],

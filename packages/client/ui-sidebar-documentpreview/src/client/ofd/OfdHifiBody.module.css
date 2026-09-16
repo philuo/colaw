@@ -1,4 +1,5 @@
 .hifi {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -8,12 +9,28 @@
 
 .hifiPage {
   position: relative;
-  width: 100%;
+  flex: none;
   background: #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
+  /* 片段出血裁剪在页框内，与 PDF 查看器一致；避免横向滚动条。 */
+  overflow: clip;
 }
 
-/* 片段定位框；SVG/文本在毫米 viewBox 内随宽度缩放，允许出血绘制。 */
+/* 缩放徽标：非 100% 时浮在左上角，点击复位。 */
+.zoomBadge {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  align-self: flex-start;
+  padding: 2px 8px;
+  border: 1px solid rgb(255 255 255 / 25%);
+  border-radius: 999px;
+  background: rgb(0 0 0 / 55%);
+  color: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .object {
   position: absolute;
   overflow: visible;

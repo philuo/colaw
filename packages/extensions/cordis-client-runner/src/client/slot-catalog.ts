@@ -2447,7 +2447,6 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'client-ui-sidebar-documentpreview ImageBody',
       'client-ui-sidebar-documentpreview MarkdownBody',
       'client-ui-sidebar-documentpreview MediaBody',
-      'client-ui-sidebar-documentpreview OfdTextBody',
       'client-ui-sidebar-documentpreview OfdHifiBody',
       'client-ui-sidebar-documentpreview Body',
       'client-ui-sidebar-documentpreview PdfBody',

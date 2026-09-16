@@ -1,7 +1,7 @@
 /**
  * OFD（GB/T 33190）版式解析——参照 ofd.js 参考实现的实务形态：
  * 页面尺寸（Page/Area/PhysicalBox）、模板层 + 内容层的图层顺序、
- * 文本对象按基线分组（DeltaX/DeltaY 逐字定位）、矢量路径与图片资源。
+ * 图层 DrawParam 颜色默认链、字体资源映射、注解（水印/印章）外观。
  * 片段坐标一律毫米，边界框内为局部坐标，由渲染侧按页面尺寸等比缩放。
  */
 
@@ -23,6 +23,7 @@ export interface OfdTextFragment {
   readonly wMm: number
   readonly hMm: number
   readonly sizeMm: number
+  readonly family?: string
   readonly fill?: string
   readonly ctm?: readonly number[]
   readonly hScale?: number
@@ -37,6 +38,7 @@ export interface OfdImageFragment {
   readonly wMm: number
   readonly hMm: number
   readonly url?: string
+  readonly blend?: 'multiply'
 }
 
 /** 矢量路径对象：AbbreviatedData 即局部坐标的 SVG path。 */
@@ -53,11 +55,29 @@ export interface OfdPathFragment {
   readonly ctm?: readonly number[]
 }
 
+/** 一个版式片段：文本、图片或矢量路径。 */
+export type OfdFragment = OfdTextFragment | OfdImageFragment | OfdPathFragment
+
 /** 一页的版式：物理尺寸与按文档顺序的定位片段。 */
 export interface OfdLayoutPage {
   readonly widthMm: number
   readonly heightMm: number
   readonly fragments: readonly OfdFragment[]
+}
+
+/** 资源包：图片数据 URL、绘图参数默认值、字体族映射。 */
+interface OfdResources {
+  readonly images: ReadonlyMap<string, string>
+  readonly drawParams: ReadonlyMap<string, OfdDrawParam>
+  readonly fonts: ReadonlyMap<string, string>
+}
+
+/** DrawParam 资源：对象颜色与线宽的默认来源，可经 Relative 链继承。 */
+interface OfdDrawParam {
+  readonly fill?: string
+  readonly stroke?: string
+  readonly lineWidth?: number
+  readonly relative?: string
 }
 
 /** 解析 Boundary="x y w h"（毫米浮点）。 */
@@ -96,6 +116,27 @@ function fillOf(element: Element): string | undefined {
     return color.replace('rgb(', 'rgba(').replace(')', `, ${(alpha / 255).toFixed(3)})`)
   }
   return color
+}
+
+/** 对象描边色：StrokeColor 子元素的 Value。 */
+function strokeOf(element: Element): string | undefined {
+  return colorOf(tagsOf(element, 'StrokeColor')[0]?.getAttribute('Value') ?? null)
+}
+
+/** 常用中文字体的 CSS 族映射（资源 FontName → 可用族名）。 */
+const FONT_FAMILIES: Readonly<Record<string, string>> = {
+  宋体: 'SimSun, STSong, serif',
+  楷体: 'KaiTi, STKaiti, serif',
+  仿宋: 'FangSong, STFangsong, serif',
+  黑体: 'SimHei, sans-serif',
+  微软雅黑: 'Microsoft YaHei, sans-serif',
+  'courier new': '"Courier New", monospace',
+  'times new roman': '"Times New Roman", serif',
+}
+
+/** FontName → CSS font-family（未知字体名原样透传）。 */
+function fontFamilyOf(name: string): string {
+  return FONT_FAMILIES[name] ?? FONT_FAMILIES[name.toLowerCase()] ?? name
 }
 
 /**
@@ -218,13 +259,15 @@ function dataUrlOf(bytes: Uint8Array, path: string): string | undefined {
 }
 
 /**
- * 从文档清单的 Res/PublicRes 清单构建 ResourceID → data URL。
- * 清单以 Res@BaseLoc 属性或元素文本（Suwell 形态）指向清单 XML；
- * 图片 Loc 在 MultiMedia 子元素的 Loc 属性或 MediaFile 文本上，
- * 以清单根元素 BaseLoc（缺省清单所在目录）为基准目录。
+ * 汇总文档清单的 PublicRes/DocumentRes/Res 资源：MultiMedia 图片、
+ * DrawParam 颜色默认、Font 字体名。清单以 Res@BaseLoc 属性或元素文本
+ * （Suwell 形态）指向清单 XML；图片 Loc 在子元素 Loc 属性或 MediaFile
+ * 文本上，以清单根元素 BaseLoc（缺省清单所在目录）为基准目录。
  */
-function imageTableOf(entries: Map<string, Uint8Array>, documentPath: string): Map<string, string> {
-  const table = new Map<string, string>()
+function resourcesOf(entries: Map<string, Uint8Array>, documentPath: string): OfdResources {
+  const images = new Map<string, string>()
+  const drawParams = new Map<string, OfdDrawParam>()
+  const fonts = new Map<string, string>()
   const documentDirectory = directoryOf(documentPath)
   const document = parseXml(entries.get(documentPath) ?? new Uint8Array())
   const listElements = [
@@ -240,25 +283,61 @@ function imageTableOf(entries: Map<string, Uint8Array>, documentPath: string): M
     if (listBytes === undefined) continue
     const listDocument = parseXml(listBytes)
     const rootBaseLoc = listDocument.documentElement.getAttribute('BaseLoc')
-    // 基准保持目录形态（尾斜杠），后续拼相对文件名。
     const joined = rootBaseLoc !== null ? resolveAgainst(directoryOf(listPath), rootBaseLoc) : directoryOf(listPath)
     const baseDirectory = joined.endsWith('/') ? joined : `${joined}/`
     for (const media of tagsOf(listDocument.documentElement, 'MultiMedia')) {
       const id = media.getAttribute('ID')
       if (id === null) continue
       for (const child of Array.from(media.children)) {
+        // Loc 在属性上（规格形态）或 MediaFile 文本即文件名（Suwell 形态）。
         const attrLoc = child.getAttribute('Loc')
         const loc = attrLoc !== null && attrLoc.length > 0 ? attrLoc : textOf(child)
         if (loc.length === 0) continue
         const imagePath = resolveAgainst(baseDirectory, loc)
         const imageBytes = entries.get(imagePath)
         const url = imageBytes !== undefined ? dataUrlOf(imageBytes, imagePath) : undefined
-        if (url !== undefined) table.set(id, url)
+        if (url !== undefined) images.set(id, url)
         break
       }
     }
+    for (const param of tagsOf(listDocument.documentElement, 'DrawParam')) {
+      const id = param.getAttribute('ID')
+      if (id === null) continue
+      const relative = param.getAttribute('Relative') ?? undefined
+      const fill = fillOf(param)
+      const stroke = strokeOf(param)
+      const lineWidth = Number(param.getAttribute('LineWidth'))
+      drawParams.set(id, {
+        ...(fill !== undefined ? { fill } : {}),
+        ...(stroke !== undefined ? { stroke } : {}),
+        ...(Number.isFinite(lineWidth) && lineWidth > 0 ? { lineWidth } : {}),
+        ...(relative !== undefined && relative.length > 0 ? { relative } : {}),
+      })
+    }
+    for (const font of tagsOf(listDocument.documentElement, 'Font')) {
+      const id = font.getAttribute('ID')
+      const name = font.getAttribute('FontName')
+      if (id !== null && name !== null) fonts.set(id, fontFamilyOf(name))
+    }
   }
-  return table
+  return { images, drawParams, fonts }
+}
+
+/** 沿 Relative 链解析 DrawParam 的最终默认值。 */
+function resolvedDrawParam(resources: OfdResources, id: string): OfdDrawParam {
+  const resolved: { fill?: string; stroke?: string; lineWidth?: number } = {}
+  const seen = new Set<string>()
+  let cursor: string | undefined = id
+  while (cursor !== undefined && !seen.has(cursor)) {
+    seen.add(cursor)
+    const param = resources.drawParams.get(cursor)
+    if (param === undefined) break
+    if (resolved.fill === undefined && param.fill !== undefined) resolved.fill = param.fill
+    if (resolved.stroke === undefined && param.stroke !== undefined) resolved.stroke = param.stroke
+    if (resolved.lineWidth === undefined && param.lineWidth !== undefined) resolved.lineWidth = param.lineWidth
+    cursor = param.relative
+  }
+  return resolved
 }
 
 /**
@@ -279,36 +358,86 @@ function templatesOf(entries: Map<string, Uint8Array>, document: XMLDocument, do
 }
 
 /**
- * 一个图层的定位片段。图层内按参考实现顺序：图片、路径、文本；
- * 同类对象保持文档顺序。
+ * 页注解表：PageID → 注解页文档（水印/印章的外观层在其中）。
+ * Document@Annotations 元素文本指向 Annotations.xml，其 Page@PageID
+ * 经 FileLoc 指向具体注解 XML（相对注解清单所在目录）。
  */
-function layerFragmentsOf(layer: Element, images: ReadonlyMap<string, string>): OfdFragment[] {
+function annotationsOf(entries: Map<string, Uint8Array>, document: XMLDocument, documentDirectory: string): Map<string, XMLDocument> {
+  const byPage = new Map<string, XMLDocument>()
+  const listElement = tagsOf(document.documentElement, 'Annotations')[0]
+  if (listElement === undefined) return byPage
+  const listLoc = listElement.getAttribute('BaseLoc') ?? firstTextOf([listElement])
+  if (listLoc.length === 0) return byPage
+  const listPath = resolveAgainst(documentDirectory, listLoc)
+  const listBytes = entries.get(listPath)
+  if (listBytes === undefined) return byPage
+  const listDirectory = directoryOf(listPath)
+  for (const page of tagsOf(parseXml(listBytes).documentElement, 'Page')) {
+    const pageId = page.getAttribute('PageID')
+    const fileLoc = firstTextOf(tagsOf(page, 'FileLoc'))
+    if (pageId === null || fileLoc.length === 0) continue
+    const bytes = entries.get(resolveAgainst(listDirectory, fileLoc))
+    if (bytes === undefined) continue
+    byPage.set(pageId, parseXml(bytes))
+  }
+  return byPage
+}
+
+/**
+ * 一个图层（或注解外观）的定位片段。图层内按参考实现顺序：图片、
+ * 路径、文本；同类对象保持文档顺序。颜色默认沿 对象颜色 → 对象
+ * DrawParam → 图层 DrawParam → Relative 链 取值。
+ */
+function layerFragmentsOf(
+  layer: Element,
+  resources: OfdResources,
+  offsetX = 0,
+  offsetY = 0,
+): OfdFragment[] {
   const fragments: OfdFragment[] = []
+  const layerParam = layer.getAttribute('DrawParam')
+  const layerDefaults = layerParam !== null ? resolvedDrawParam(resources, layerParam) : {}
+  const defaultsFor = (element: Element): { fill?: string; stroke?: string; lineWidth?: number } => {
+    const own = element.getAttribute('DrawParam')
+    const ownDefaults = own !== null ? resolvedDrawParam(resources, own) : {}
+    return { ...layerDefaults, ...ownDefaults }
+  }
   for (const imageObject of tagsOf(layer, 'ImageObject')) {
     const boundary = boundaryOf(imageObject)
     if (boundary.w <= 0 || boundary.h <= 0) continue
     const resourceId = imageObject.getAttribute('ResourceID')
-    const url = resourceId !== null ? images.get(resourceId) : undefined
-    fragments.push({ kind: 'image', xMm: boundary.x, yMm: boundary.y, wMm: boundary.w, hMm: boundary.h, ...(url !== undefined ? { url } : {}) })
+    const url = resourceId !== null ? resources.images.get(resourceId) : undefined
+    const blend = imageObject.getAttribute('BlendMode') === 'Darken' ? 'multiply' as const : undefined
+    fragments.push({
+      kind: 'image',
+      xMm: offsetX + boundary.x,
+      yMm: offsetY + boundary.y,
+      wMm: boundary.w,
+      hMm: boundary.h,
+      ...(url !== undefined ? { url } : {}),
+      ...(blend !== undefined ? { blend } : {}),
+    })
   }
   for (const pathObject of tagsOf(layer, 'PathObject')) {
     const boundary = boundaryOf(pathObject)
     const abbreviated = firstTextOf(tagsOf(pathObject, 'AbbreviatedData'))
     if (abbreviated.length === 0 || boundary.w <= 0 || boundary.h <= 0) continue
-    const strokeColor = colorOf(tagsOf(pathObject, 'StrokeColor')[0]?.getAttribute('Value') ?? null)
-    const lineWidth = Number(pathObject.getAttribute('LineWidth'))
-    const fill = fillOf(pathObject)
+    const defaults = defaultsFor(pathObject)
+    const stroke = strokeOf(pathObject) ?? defaults.stroke
+    const fill = fillOf(pathObject) ?? defaults.fill
+    const objectWidth = Number(pathObject.getAttribute('LineWidth'))
+    const lineWidth = Number.isFinite(objectWidth) && objectWidth > 0 ? objectWidth : defaults.lineWidth
     const ctm = ctmOf(pathObject)
     fragments.push({
       kind: 'path',
-      xMm: boundary.x,
-      yMm: boundary.y,
+      xMm: offsetX + boundary.x,
+      yMm: offsetY + boundary.y,
       wMm: boundary.w,
       hMm: boundary.h,
       d: pathDataOf(abbreviated),
       ...(fill !== undefined ? { fill } : {}),
-      ...(strokeColor !== undefined ? { stroke: strokeColor } : {}),
-      ...(Number.isFinite(lineWidth) && lineWidth > 0 ? { lineWidthMm: lineWidth } : {}),
+      ...(stroke !== undefined ? { stroke } : {}),
+      ...(lineWidth !== undefined ? { lineWidthMm: lineWidth } : {}),
       ...(ctm !== undefined ? { ctm } : {}),
     })
   }
@@ -320,15 +449,19 @@ function layerFragmentsOf(layer: Element, images: ReadonlyMap<string, string>): 
     const objectSize = Number(textObject.getAttribute('Size'))
     const sizeMm = Number.isFinite(objectSize) && objectSize > 0 ? objectSize : 3.7
     const hScale = Number(textObject.getAttribute('HScale'))
-    const fill = fillOf(textObject)
+    const defaults = defaultsFor(textObject)
+    const fill = fillOf(textObject) ?? defaults.fill
+    const fontId = textObject.getAttribute('Font')
+    const family = fontId !== null ? resources.fonts.get(fontId) : undefined
     const ctm = ctmOf(textObject)
     fragments.push({
       kind: 'text',
-      xMm: boundary.x,
-      yMm: boundary.y,
+      xMm: offsetX + boundary.x,
+      yMm: offsetY + boundary.y,
       wMm: boundary.w,
       hMm: boundary.h,
       sizeMm,
+      ...(family !== undefined ? { family } : {}),
       ...(fill !== undefined ? { fill } : {}),
       ...(ctm !== undefined ? { ctm } : {}),
       ...(Number.isFinite(hScale) && hScale > 0 && hScale !== 1 ? { hScale } : {}),
@@ -338,20 +471,20 @@ function layerFragmentsOf(layer: Element, images: ReadonlyMap<string, string>): 
   return fragments
 }
 
-/** 一个版式片段：文本、图片或矢量路径。 */
-export type OfdFragment = OfdTextFragment | OfdImageFragment | OfdPathFragment
-
 /**
- * 解析一页的定位片段：模板层（背景）先行，内容层随后。
+ * 解析一页的定位片段：模板层（背景）先行，内容层随后，注解外观
+ * （水印/印章）最后叠加。
  * @param content - 页面 Content.xml 文档。
- * @param images - ResourceID → data URL。
+ * @param resources - 资源包（图片/绘图参数/字体）。
  * @param templates - TemplatePage@ID → 模板页文档。
+ * @param annotations - 本页的注解文档（可缺省）。
  * @returns 该页的定位片段。
  */
 export function pageFragmentsOf(
   content: XMLDocument,
-  images: ReadonlyMap<string, string>,
+  resources: OfdResources,
   templates: ReadonlyMap<string, XMLDocument> = new Map(),
+  annotations?: XMLDocument,
 ): OfdFragment[] {
   const fragments: OfdFragment[] = []
   const root = content.documentElement
@@ -360,11 +493,19 @@ export function pageFragmentsOf(
     const templateDocument = templateId !== null ? templates.get(templateId) : undefined
     if (templateDocument === undefined) continue
     for (const layer of tagsOf(templateDocument.documentElement, 'Layer')) {
-      fragments.push(...layerFragmentsOf(layer, images))
+      fragments.push(...layerFragmentsOf(layer, resources))
     }
   }
   for (const layer of tagsOf(root, 'Layer')) {
-    fragments.push(...layerFragmentsOf(layer, images))
+    fragments.push(...layerFragmentsOf(layer, resources))
+  }
+  if (annotations !== undefined) {
+    for (const annot of tagsOf(annotations.documentElement, 'Annot')) {
+      for (const appearance of tagsOf(annot, 'Appearance')) {
+        const boundary = boundaryOf(appearance)
+        fragments.push(...layerFragmentsOf(appearance, resources, boundary.x, boundary.y))
+      }
+    }
   }
   return fragments
 }
@@ -389,7 +530,7 @@ function pageSizeOf(pageElement: Element, content: XMLDocument | undefined): { w
 }
 
 /**
- * 解析 OFD 的版式：页面物理尺寸 + 模板层与内容层的定位片段。
+ * 解析 OFD 的版式：页面物理尺寸 + 模板层、内容层与注解外观的定位片段。
  * @param entries - 解包后的 OFD 条目映射。
  * @returns 按页序排列的版式页。
  */
@@ -397,16 +538,21 @@ export function ofdLayoutPages(entries: Map<string, Uint8Array>): readonly OfdLa
   const documentPath = documentPathOf(entries)
   const documentDirectory = directoryOf(documentPath)
   const document = parseXml(entries.get(documentPath) ?? new Uint8Array())
-  const images = imageTableOf(entries, documentPath)
+  const resources = resourcesOf(entries, documentPath)
   const templates = templatesOf(entries, document, documentDirectory)
+  const annotations = annotationsOf(entries, document, documentDirectory)
   const pageElements = tagsOf(document.documentElement, 'Page')
   return pageElements.map((pageElement, index) => {
     const base = pageElement.getAttribute('BaseLoc') ?? `Pages/Page_${index}`
     const contentBytes = pageBytesOf(entries, documentDirectory, base)
     const content = contentBytes !== undefined ? parseXml(contentBytes) : undefined
+    const pageId = pageElement.getAttribute('ID')
+    const annotDocument = pageId !== null ? annotations.get(pageId) : undefined
     return {
       ...pageSizeOf(pageElement, content),
-      fragments: content !== undefined ? pageFragmentsOf(content, images, templates) : [],
+      fragments: content !== undefined
+        ? pageFragmentsOf(content, resources, templates, annotDocument)
+        : [],
     }
   })
 }

@@ -1,12 +1,5 @@
-/** OFD（GB/T 33190）zip+XML 结构的最小读取：容器 → 文档 → 分页文本。 */
+/** OFD（GB/T 33190）zip+XML 结构的最小读取：容器定位、编码、路径与页内容。 */
 
-import { unzipEntries } from './zip.ts'
-
-/** 一页的结构化文本：TextCode 按文档顺序聚合的文本行。 */
-export interface OfdPageText {
-  readonly page: number
-  readonly lines: readonly string[]
-}
 
 /**
  * 按 XML 声明的编码解码字节。OFD 实务中存在 GBK/GB2312 编码的条目，
@@ -96,32 +89,6 @@ export function resolveAgainst(base: string, relative: string): string {
 }
 
 /**
- * 提取 OFD 的分页文本：每页聚合 TextCode 文本行（文档顺序）。
- * @param entries - 解包后的 OFD 条目映射。
- * @returns 按页序排列的文本页。
- */
-export function ofdPageTexts(entries: Map<string, Uint8Array>): OfdPageText[] {
-  const documentPath = documentPathOf(entries)
-  const document = parseXml(entries.get(documentPath) ?? new Uint8Array())
-  const pages: OfdPageText[] = []
-  const pageElements = tagsOf(document.documentElement, 'Page')
-  for (const [index, pageElement] of pageElements.entries()) {
-    const base = pageElement.getAttribute('BaseLoc') ?? `Pages/Page_${index}`
-    // BaseLoc 指向页目录（规格形态）或直接指向 Content.xml（Suwell 税局形态）。
-    const contentBytes = pageBytesOf(entries, directoryOf(documentPath), base)
-    if (contentBytes === undefined) continue
-    const content = parseXml(contentBytes)
-    const lines: string[] = []
-    for (const textCode of tagsOf(content.documentElement, 'TextCode')) {
-      const line = textOf(textCode)
-      if (line.length > 0) lines.push(line)
-    }
-    pages.push({ page: index + 1, lines })
-  }
-  return pages
-}
-
-/**
  * 读取一页的 Content.xml 字节：BaseLoc 指向页目录时拼 /Content.xml，
  * 已是文件路径时直接命中。
  */
@@ -129,14 +96,4 @@ export function pageBytesOf(entries: Map<string, Uint8Array>, baseDirectory: str
   if (base.startsWith('/')) return entries.get(base.slice(1))
   return entries.get(resolveAgainst(baseDirectory, `${base}/Content.xml`))
     ?? entries.get(resolveAgainst(baseDirectory, base))
-}
-
-/**
- * 打开一个 OFD 文件的全部条目并提取分页文本。
- * @param data - OFD 文件字节。
- * @returns 分页文本。
- */
-export async function readOfdPages(data: Uint8Array): Promise<readonly OfdPageText[]> {
-  const entries = await unzipEntries(data)
-  return ofdPageTexts(entries)
 }
