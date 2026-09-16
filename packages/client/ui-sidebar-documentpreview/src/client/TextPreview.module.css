@@ -331,7 +331,10 @@
 }
 
 body[data-ds-dark-theme] .header [role='menu']::before {
-  display: none;
+  background: rgba(32, 32, 32, .64);
+  border-radius: 13px;
+  -webkit-backdrop-filter: var(--dsh-glass-filter-v0);
+  backdrop-filter: var(--dsh-glass-filter-v0);
 }
 
 body[data-ds-dark-theme] .header [role='menu'] .submenu::before {
