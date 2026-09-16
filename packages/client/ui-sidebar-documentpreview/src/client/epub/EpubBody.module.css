@@ -94,8 +94,17 @@
 .drawerBody svg {
   width: 13px;
   height: 13px;
-  margin-right: 4px;
   transition: transform 0.12s;
+}
+
+/* 展开箭头的可点热区放大到整行高（官方树把点击绑在箭头上，
+   13px 太小）；负 margin 抵消视觉位移。 */
+.drawerBody a > svg:first-child {
+  box-sizing: content-box;
+  width: 10px;
+  height: 10px;
+  padding: 7px 6px 7px 0;
+  margin: -7px 2px -7px 0;
 }
 
 .drawerBody a[aria-expanded='true'] > svg {
