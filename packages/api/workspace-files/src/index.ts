@@ -408,7 +408,14 @@ export class WorkspaceFiles extends TypertRemoteService {
       if (visited.has(target.targetKey)) continue
       visited.add(target.targetKey)
       visitedDirs += 1
-      const children = await this.ctx.fs.listDir(target, signal)
+      // One unreadable directory (permissions, vanished mid-walk) must not fail
+      // the whole search; it only means matches under it may be missed.
+      if (signal.aborted) return { matches, truncated: true }
+      const children = await this.ctx.fs.listDir(target, signal).catch(() => undefined)
+      if (children === undefined) {
+        truncated = true
+        continue
+      }
       for (const child of children) {
         const mapped = directoryEntry(child)
         const childRel = rel === '' ? mapped.name : `${rel}/${mapped.name}`
