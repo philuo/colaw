@@ -10,7 +10,7 @@
  * ink, then the one control at its end, reload, which drops every listed level
  * and asks again for the expanded ones.
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
@@ -20,7 +20,7 @@ import {
   IconSearchOutline16, classifyFileType,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { fileAddressFor, pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
-import type { WorkspaceDirectoryEntry } from '@deepseek-ai/dsh-api-workspace-files/types'
+import type { WorkspaceDirectoryEntry, WorkspaceTreeMatch } from '@deepseek-ai/dsh-api-workspace-files/types'
 import { childPath } from './face.ts'
 import type { FilesInjected } from './face.ts'
 import type {} from './locales.ts'
@@ -37,17 +37,10 @@ export type FilesBodyProps =
 /** Natural, case-insensitive name order, so `file2` precedes `file10`. */
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
 
-/**
- * Whether one entry's name passes the search filter: an empty query matches
- * everything, otherwise a case-insensitive substring of the name.
- * @param name - the entry's name as listed.
- * @param query - the search text, already as typed.
- * @returns true when the entry should stay visible.
- */
-export function matchesFilter(name: string, query: string): boolean {
-  if (query === '') return true
-  return name.toLowerCase().includes(query.toLowerCase())
-}
+/** 输入停顿多久后发起一次宿主树搜索（防每键抖动；组字期间由 IME 守卫跳过）。 */
+const SEARCH_DEBOUNCE_MS = 300
+/** 单次搜索最多渲染的匹配条数（与宿主上限一致）。 */
+const SEARCH_MATCH_LIMIT = 300
 
 /**
  * Order one level's entries for display: directories first, then everything
@@ -113,12 +106,9 @@ function usePathClipped(
 }
 /* jscpd:ignore-end */
 
-/** What every level shares: the tab's tree, the search filter, and the gestures. */
+/** What every level shares: the tab's tree and the two gestures. */
 interface TreeContext {
   readonly state: FilesTabState
-  readonly filter: string
-  /** 过滤激活时保留的路径集合（命中 + 命中后代的祖先）；null 表示未在过滤。 */
-  readonly visible: ReadonlySet<string> | null
   readonly onToggle: (path: string) => void
   readonly onOpen: (path: string) => void
   readonly t: TranslateNS<'sidebarFiles'>
@@ -127,9 +117,8 @@ interface TreeContext {
 /** One entry's row, and its children when it is an expanded directory. */
 function Entry({ parent, entry, tree }: { parent: string; entry: WorkspaceDirectoryEntry; tree: TreeContext }): ReactNode {
   const path = childPath(parent, entry.name)
-  const filtering = tree.filter !== ''
   if (entry.type === 'directory') {
-    const expanded = filtering || tree.state.expanded.includes(path)
+    const expanded = tree.state.expanded.includes(path)
     return (
       <li className={css.item} data-files-entry="directory" data-files-path={path}>
         <button type="button" className={css.row} aria-expanded={expanded} onClick={() => { tree.onToggle(path) }}>
@@ -174,14 +163,10 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
     )
   }
   const entries = orderEntries(level.level.entries)
-  const filtering = tree.filter !== ''
-  const kept = filtering
-    ? entries.filter(entry => tree.visible?.has(childPath(path, entry.name)) === true)
-    : entries
   return (
     <>
-      {kept.length === 0 && <li className={css.note} data-files-row={filtering ? 'no-match' : 'empty'}>{filtering ? t('search.noMatches') : t('empty')}</li>}
-      {kept.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
+      {entries.length === 0 && <li className={css.note} data-files-row="empty">{t('empty')}</li>}
+      {entries.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
       {level.level.truncated && <li className={css.note} data-files-row="truncated">{t('truncated')}</li>}
     </>
   )
@@ -189,7 +174,7 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
 
 /** The file tree's body: the workspace root and whatever the reader has opened under it. */
 export function FilesBody({
-  useTabInfo, sessionId, useSessions, useStore, actions, start, load, toggle, t,
+  useTabInfo, sessionId, useSessions, useStore, actions, start, load, toggle, search, t,
 }: FilesBodyProps): ReactNode {
   const { tab } = useTabInfo()
   const { signal, actions: tabActions } = tab
@@ -202,51 +187,51 @@ export function FilesBody({
   const searchInput = useRef<HTMLInputElement>(null)
   usePathClipped(pathRef, pathTextRef, state?.root)
 
-  /**
-   * 过滤激活时保留的路径集合：命中文件、命中目录，以及含命中后代的
-   * 祖先目录。对已列出的层级做一次深度优先收集；未知层级按需由
-   * 下面的递归列举逐步补齐后再收敛。
-   */
-  const visiblePaths = useMemo(() => {
-    if (query === '' || state === undefined) return null
-    const out = new Set<string>()
-    const visit = (dirPath: string): number => {
-      const level = state.levels[dirPath]
-      if (level === undefined || level.kind !== 'ready') return 0
-      let kept = 0
-      for (const entry of level.level.entries) {
-        const child = childPath(dirPath, entry.name)
-        if (entry.type === 'directory') {
-          const before = out.size
-          kept += visit(child)
-          const hasKeptDescendant = out.size > before
-          if (matchesFilter(entry.name, query) || hasKeptDescendant) {
-            out.add(child)
-            kept += 1
-          }
-        } else if (matchesFilter(entry.name, query)) {
-          out.add(child)
-          kept += 1
-        }
-      }
-      return kept
-    }
-    visit(state.root)
-    return out
-  }, [query, state])
+  // 搜索结果与状态（宿主进程递归列举并匹配，一次调用返回）。
+  const [matches, setMatches] = useState<readonly WorkspaceTreeMatch[]>([])
+  const [more, setMore] = useState(false)
+  const [searchPhase, setSearchPhase] = useState<'idle' | 'loading' | 'ready' | 'failed'>('idle')
 
-  // 过滤激活时对已知目录按需递归列举，让深层路径也能被搜到。
+  // 输入停顿后发起一次宿主树搜索；组字期间（中文输入法未上屏）不触发。
   useEffect(() => {
-    if (query === '' || state === undefined || signal.aborted) return
-    for (const [path, level] of Object.entries(state.levels)) {
-      if (level.kind !== 'ready') continue
-      for (const entry of level.level.entries) {
-        if (entry.type !== 'directory') continue
-        const child = childPath(path, entry.name)
-        if (state.levels[child] === undefined) load(tab.id, child, signal)
-      }
+    if (query === '' || state === undefined || signal.aborted) {
+      setSearchPhase('idle')
+      setMatches([])
+      setMore(false)
+      return
     }
-  }, [query, state, load, signal, tab.id])
+    let disposed = false
+    const timer = window.setTimeout(() => {
+      if (disposed || signal.aborted) return
+      setSearchPhase('loading')
+      search(state.root, query, signal).then((result) => {
+        if (disposed || signal.aborted) return
+        if (result.ok) {
+          setMatches(result.value.matches)
+          setMore(result.value.truncated)
+          setSearchPhase('ready')
+        } else {
+          setSearchPhase('failed')
+        }
+      }).catch(() => {
+        if (!disposed) setSearchPhase('failed')
+      })
+    }, SEARCH_DEBOUNCE_MS)
+    return () => { disposed = true; window.clearTimeout(timer) }
+  }, [query, state, search, signal])
+
+  /** 清空搜索并把树展开到一条目录命中处。 */
+  const browseToMatch = (matchPath: string, tabState: FilesTabState): void => {
+    const base = matchPath.slice(tabState.root.replace(/[/\\]+$/, '').length + 1)
+    const segments = base.split('/')
+    let acc = tabState.root
+    for (const segment of segments.slice(0, -1)) {
+      acc = childPath(acc, segment)
+      if (!tabState.expanded.includes(acc)) toggle(tab.id, acc, tabState.levels[acc] !== undefined, signal)
+    }
+    setQuery('')
+  }
+
   useEffect(() => {
     // A bucket gone because the record aborted must not be re-seeded by a
     // component that has not unmounted yet.
@@ -264,8 +249,6 @@ export function FilesBody({
   if (state === undefined) return null
   const tree: TreeContext = {
     state,
-    filter: query,
-    visible: visiblePaths,
     onToggle: (path) => { toggle(tab.id, path, state.levels[path] !== undefined, signal) },
     // Every row is under the tree's root, so its address is session-relative.
     onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) },
@@ -278,8 +261,9 @@ export function FilesBody({
     for (const path of state.expanded) load(tab.id, path, signal)
   }
   const { directory, name } = pathPartsOf(state.root)
+  const searching = query !== ''
   return (
-    <div className={css.root} data-files-state="tree" data-files-root={state.root}>
+    <div className={css.root} data-files-state={searching ? 'search' : 'tree'} data-files-root={state.root}>
       {/* jscpd:ignore-start -- the text preview's header row; see `usePathClipped`. */}
       <div className={css.header}>
         <div ref={pathRef} className={css.path} title={state.root} data-files-path>
@@ -319,8 +303,14 @@ export function FilesBody({
               placeholder={t('search.placeholder')}
               value={query}
               tabIndex={searchOpen ? 0 : -1}
-              onChange={e => setQuery(e.target.value)}
+              onChange={(e) => {
+                // 中文输入法组字期间不上屏、不触发搜索（isComposing 来自 DOM InputEvent）。
+                if ((e.nativeEvent as InputEvent).isComposing) return
+                setQuery(e.target.value)
+              }}
               onKeyDown={(e) => {
+                // 组字期间的 Escape 属于输入法，不关闭搜索。
+                if (e.nativeEvent.isComposing) return
                 if (e.key !== 'Escape') return
                 setQuery('')
                 setSearchOpen(false)
@@ -351,7 +341,39 @@ export function FilesBody({
       </div>
       {/* jscpd:ignore-end */}
       <div className={css.body}>
-        <ul className={css.level}><Level path={state.root} tree={tree} /></ul>
+        {searching ? (
+          <ul className={css.level} data-files-state="search">
+            {searchPhase === 'loading' && <li className={css.note} data-files-row="loading">{t('search.placeholder')}</li>}
+            {searchPhase === 'failed' && <li className={css.note} data-files-row="failed">{t('search.failed')}</li>}
+            {searchPhase === 'ready' && matches.length === 0 && (
+              <li className={css.note} data-files-row="no-match">{t('search.noMatches')}</li>
+            )}
+            {searchPhase === 'ready' && matches.slice(0, SEARCH_MATCH_LIMIT).map((match) => {
+              const at = match.path.lastIndexOf('/')
+              const dir = match.path.slice(0, at + 1)
+              return (
+                <li key={match.path} className={css.item} data-files-entry={match.type} data-files-path={match.path}>
+                  {match.type === 'directory' ? (
+                    <button type="button" className={css.row} onClick={() => { browseToMatch(match.path, state) }}>
+                      <IconFolderClose16 className={css.icon} />
+                      <span className={clsx(css.name, css.matchDir)}>{dir}</span>
+                      <span className={css.name}>{match.name}</span>
+                    </button>
+                  ) : (
+                    <button type="button" className={css.row} onClick={() => { tabActions.openResource(fileAddressFor(sessionId, state.root, match.path)); setQuery('') }}>
+                      <FileTypeIcon kind={classifyFileType(match.name)} size={16} className={css.fileIcon} />
+                      <span className={clsx(css.name, css.matchDir)}>{dir}</span>
+                      <span className={css.name}>{match.name}</span>
+                    </button>
+                  )}
+                </li>
+              )
+            })}
+            {more && <li className={css.note}>{t('search.more', { n: SEARCH_MATCH_LIMIT })}</li>}
+          </ul>
+        ) : (
+          <ul className={css.level}><Level path={state.root} tree={tree} /></ul>
+        )}
       </div>
     </div>
   )

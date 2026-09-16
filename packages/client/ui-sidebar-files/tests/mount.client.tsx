@@ -22,6 +22,7 @@ import { zh } from '../src/client/locales.ts'
 import { createFilesStore } from '../src/client/store.ts'
 import { scriptedList } from './scripted-list.client.ts'
 import type { ScriptedList } from './scripted-list.client.ts'
+import type { SearchWorkspaceTree } from '../src/client/face.ts'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 
 export const SESSION = 's-test' as SessionId
@@ -53,13 +54,17 @@ export interface Mounted {
   readonly face: FilesInjected
   readonly controller: AbortController
   readonly tabActions: MockedTabActions
+  readonly search: Mock<SearchWorkspaceTree>
 }
 
 /** One store instance, one face, one owner share. */
 function harness(cwd: string | null) {
   const instance = createFilesStore().create()
   const script = scriptedList()
-  const face = filesFace(script.list)(SESSION, instance.actions)
+  type SearchOk = { ok: true; value: { matches: []; truncated: false } }
+  const search = vi.fn<(sessionId: SessionId, root: string, query: string, signal: AbortSignal) => Promise<SearchOk>>(() =>
+    Promise.resolve({ ok: true, value: { matches: [], truncated: false } }))
+  const face = filesFace(script.list, search)(SESSION, instance.actions)
   const controller = new AbortController()
   const tabActions: MockedTabActions = {
     openResource: vi.fn<SidebarRightTabActions['openResource']>(),
@@ -86,7 +91,7 @@ function harness(cwd: string | null) {
     ...face,
     t: makeTranslate(zh),
   }
-  return { instance, script, face, controller, tabActions, shared }
+  return { instance, script, face, controller, tabActions, shared, search }
 }
 
 /**
@@ -96,5 +101,5 @@ function harness(cwd: string | null) {
 export function mountBody(cwd: string | null = ROOT): Mounted {
   const { shared, ...hands } = harness(cwd)
   const view = render(<FilesBody {...shared as unknown as FilesBodyProps} />)
-  return { ...hands, view }
+  return { ...hands, view, search: hands.search }
 }

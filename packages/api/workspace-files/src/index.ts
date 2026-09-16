@@ -39,6 +39,8 @@ import type {
   WorkspaceFileStat,
   WorkspaceFileText,
   WorkspaceFileWatchFrame,
+  WorkspaceTreeMatch,
+  WorkspaceTreeMatches,
 } from './types.ts'
 
 export type * from './types.ts'
@@ -81,6 +83,12 @@ export interface Config {
   readonly maxLines: number
   /** Cap on returned directory entries; the rest is dropped and reported cut. */
   readonly maxEntries: number
+  /** Cap on directories visited by one workspace-tree search. */
+  readonly maxSearchDirs: number
+  /** Cap on matched entries returned by one workspace-tree search. */
+  readonly maxSearchResults: number
+  /** Wall-clock cap on one workspace-tree search, in milliseconds. */
+  readonly maxSearchMs: number
 }
 
 /** One page cut from a decoded text stream. */
@@ -187,6 +195,9 @@ export class WorkspaceFiles extends TypertRemoteService {
     maxFileBytes: z.number().step(1).min(1).max(Number.MAX_SAFE_INTEGER - 1).default(32 * 1024 * 1024),
     maxLines: z.number().step(1).min(1).default(5000),
     maxEntries: z.number().step(1).min(1).default(2000),
+    maxSearchDirs: z.number().step(1).min(1).default(2000),
+    maxSearchResults: z.number().step(1).min(1).default(300),
+    maxSearchMs: z.number().step(1).min(1).default(1500),
   })
 
   private readonly feed: WorkspaceChangeFeed
@@ -350,6 +361,73 @@ export class WorkspaceFiles extends TypertRemoteService {
       entries: children.slice(0, this.config.maxEntries).map(directoryEntry),
       truncated: children.length > this.config.maxEntries,
     }
+  }
+
+  /**
+   * Search the workspace tree for entries whose name contains the query —
+   * case-insensitively, walking directories breadth-first inside the Host so
+   * the Client never blocks or re-renders per directory. Directory symlinks
+   * are not followed (cycle guard), and the walk stops at the entry,
+   * directory, time, or result caps; `truncated` says when a cap cut it short
+   * so more matches may exist.
+   * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+   * @param root - workspace path to search under, absolute or workspace-relative.
+   * @param query - the name substring to match, case-insensitively.
+   * @param signal - caller cancellation.
+   * @returns the matched entries, shallowest first, with the truncation flag.
+   */
+  @Remote
+  async searchTree(
+    workspaceFileScope: WorkspaceFileScope,
+    root: string,
+    query: string,
+    signal: AbortSignal,
+  ): Promise<WorkspaceTreeMatches> {
+    const needle = query.trim().toLowerCase()
+    if (needle === '') return { matches: [], truncated: false }
+    const { root: scopeRoot, workspaceRoot, entry } = await this.inspect(workspaceFileScope, root, signal)
+    if (entry.type !== 'directory') {
+      throw new RemoteError('workspace-file/not-directory', `"${root}" is a ${entry.type}`, { path: root, kind: entry.type })
+    }
+    const rootTarget = await this.confine(scopeRoot, workspaceRoot, root, signal)
+    const rootRel = workspacePathOf(this.ctx.fs.fileUrl(scopeRoot), this.ctx.fs.fileUrl(rootTarget))
+    const matches: WorkspaceTreeMatch[] = []
+    const queue: Array<{ target: FsTarget; rel: string }> = [{ target: rootTarget, rel: rootRel }]
+    const visited = new Set<string>()
+    const deadline = Date.now() + this.config.maxSearchMs
+    let visitedDirs = 0
+    let truncated = false
+    while (queue.length > 0) {
+      if (Date.now() >= deadline || visited.size >= this.config.maxSearchDirs) {
+        truncated = true
+        break
+      }
+      const next = queue.shift()
+      if (next === undefined) break
+      const { target, rel } = next
+      if (visited.has(target.targetKey)) continue
+      visited.add(target.targetKey)
+      visitedDirs += 1
+      const children = await this.ctx.fs.listDir(target, signal)
+      for (const child of children) {
+        const mapped = directoryEntry(child)
+        const childRel = rel === '' ? mapped.name : `${rel}/${mapped.name}`
+        const isDir = mapped.type === 'directory'
+        if (mapped.name.toLowerCase().includes(needle)) {
+          if (matches.length < this.config.maxSearchResults) {
+            matches.push({ path: childRel, name: mapped.name, type: mapped.type })
+          } else {
+            truncated = true
+          }
+        }
+        if (isDir && visited.size + queue.length < this.config.maxSearchDirs) {
+          queue.push({ target: child.target, rel: childRel })
+        } else if (isDir) {
+          truncated = true
+        }
+      }
+    }
+    return { matches, truncated }
   }
 
   /**

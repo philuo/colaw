@@ -22,6 +22,7 @@ import type { ClientRemote, RemoteResult } from '@deepseek-ai/dsh-api-remotes/cl
 import type { BoundActions } from '@deepseek-ai/dsh-client-store'
 import type { TabId } from '@deepseek-ai/dsh-client-ui-dockkit'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { WorkspaceTreeMatches } from '@deepseek-ai/dsh-api-workspace-files/types'
 import type { DirLevel, createFilesStore } from './store.ts'
 
 /**
@@ -43,6 +44,34 @@ export type ListWorkspaceDirectory = (
  */
 export type WorkspaceFilesListRemote = {
   readonly workspaceFiles: Pick<ClientRemote['workspaceFiles'], 'list'>
+}
+
+/**
+ * The slice of the Client Remote face the tree's search calls: the Host walks
+ * the workspace tree and matches names so the Client never blocks on reflows.
+ */
+export type WorkspaceFilesSearchRemote = {
+  readonly workspaceFiles: Pick<ClientRemote['workspaceFiles'], 'searchTree'>
+}
+
+/**
+ * One workspace-tree name search, bound to a Remote face. A Remote call does
+ * not reject — the result carries the failure.
+ */
+export type SearchWorkspaceTree = (
+  sessionId: SessionId,
+  root: string,
+  query: string,
+  signal: AbortSignal,
+) => Promise<RemoteResult<WorkspaceTreeMatches>>
+
+/**
+ * Bind the tree search to one Remote face.
+ * @param remote - the Client Remote face carrying the `workspaceFiles` namespace.
+ * @returns the search the body's face performs.
+ */
+export function createSearch(remote: WorkspaceFilesSearchRemote): SearchWorkspaceTree {
+  return (sessionId, root, query, signal) => remote.workspaceFiles.searchTree(sessionId, root, query, signal)
 }
 
 /**
@@ -95,15 +124,25 @@ export interface FilesInjected {
    * @param signal - the tab record's lifetime.
    */
   readonly toggle: (tabId: TabId, path: string, loaded: boolean, signal: AbortSignal) => void
+  /**
+   * Search the workspace tree for names containing the query, walked inside
+   * the Host so the Client never blocks. Bound to this face's session.
+   * @param root - absolute path of the workspace root.
+   * @param query - the name substring to match, case-insensitively.
+   * @param signal - the tab record's lifetime.
+   */
+  readonly search: (root: string, query: string, signal: AbortSignal) => Promise<RemoteResult<WorkspaceTreeMatches>>
 }
 
 /**
- * Bind the tree's face to one directory listing.
+ * Bind the tree's face to one directory listing and one tree search.
  * @param list - the bound `workspaceFiles.list` call.
+ * @param search - the bound `workspaceFiles.searchTree` call.
  * @returns the Slot `inject` factory: session and bound actions in, face out.
  */
 export function filesFace(
   list: ListWorkspaceDirectory,
+  search: SearchWorkspaceTree,
 ): (sessionId: SessionId, actions: BoundActions<ReturnType<typeof createFilesStore>>) => FilesInjected {
   return (
     sessionId: SessionId,
@@ -144,6 +183,14 @@ export function filesFace(
         actions.toggled(tabId, path)
         if (!loaded) load(tabId, path, signal)
       },
+      search: (root, query, signal) => search(sessionId, root, query, signal),
     }
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** 占位：防止空的接口合并（真正类型在下方文件作用域声明）。 */
+    __placeholder__: unknown
   }
 }
