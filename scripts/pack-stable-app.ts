@@ -835,6 +835,34 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
         addUnit(spec, resolveBareFile(spec, manifestPath).file, manifestPath)
         settled = false
       }
+      // Runtime-required dependencies the import scanner cannot see:
+      // `createLazyRequire` loads them through a runtime string `require`
+      // (xterm's headless/addon-serialize, sharp's lazy platform loader),
+      // so the closure would otherwise ship the requiring package without
+      // its hard runtime prerequisites. Declared workspace dependencies are
+      // usually already present via imports; the loop below is additive —
+      // each unmet declaration joins the closure, each absent/optional one
+      // lands in `unresolved` exactly like a scan-time miss.
+      const dependencyRoots = new Set<string>()
+      for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies'] as const) {
+        const declaredDeps = packageManifest[field]
+        if (declaredDeps === null || typeof declaredDeps !== 'object') continue
+        for (const name of Object.keys(declaredDeps as Record<string, unknown>)) {
+          if (isBare(name)) dependencyRoots.add(name)
+        }
+      }
+      for (const name of dependencyRoots) {
+        if (closure.packages.has(name)) continue
+        const marker = manifestPath
+        try {
+          addUnit(name, resolveBareFile(name, marker).file, marker)
+          settled = false
+        } catch {
+          // Declared but not installed (optional platform package): the
+          // runtime meets the same miss it meets today.
+          closure.unresolved.add(name)
+        }
+      }
       if (packageManifest.type !== 'module') {
         for (const file of commonJSPackageFiles(record.dir)) fileQueue.push(file)
       }
