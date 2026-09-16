@@ -322,15 +322,3 @@
 .body:focus {
   outline: none;
 }
-
-/* “打开方式”菜单在本文档预览内不透明：暗色主题的共享玻璃变体
-   （5% 白 + blur）压在白色内容上不可辨。仅覆盖本面板用到的这个
-   菜单实例（双类提高优先级压过共享的玻璃 ::before），别处不受影响。 */
-.opaqueMenu.opaqueMenu {
-  background: var(--dsw-alias-bg-layer-3);
-}
-
-.opaqueMenu.opaqueMenu::before,
-body[data-ds-dark-theme] .opaqueMenu.opaqueMenu::before {
-  display: none;
-}

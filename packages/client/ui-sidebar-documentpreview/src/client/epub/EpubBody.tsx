@@ -1,8 +1,8 @@
 /**
  * EPUB 预览：foliate 视图组件挂载滚动阅读器，附目录抽屉、翻页与字号
  * 缩放。打开顺序遵循官方 reader：先挂载视图，再 open，再注入阅读样式
- * 并跳到首屏。阅读样式跟随系统明暗主题（暗色强制底色/字色，书籍自带
- * 样式除外）。
+ * 并跳到首屏。阅读样式固定浅色（书籍自带样式多为白底，强制暗色观感
+ * 很差且 foliate 不自带暗色主题）；内链/章节跳转由 foliate 原生处理。
  */
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -14,15 +14,12 @@ import { createTOCView } from './foliate/tree.js'
 import './foliate/view.js'
 import css from './EpubBody.module.css'
 
-/** 注入各章节文档的阅读样式；字号档与明暗主题决定最终形态。 */
-const readingStyles = (fontScale: number, dark: boolean): string => `
+/** 注入各章节文档的阅读样式；字号档决定最终形态。固定浅色显示。 */
+const readingStyles = (fontScale: number): string => `
     html {
-        color-scheme: ${dark ? 'dark' : 'light'};
+        color-scheme: light;
         font-size: ${(14 * fontScale).toFixed(1)}px;
-        ${dark ? 'background: #1f1f20; color: #d8d8d8;' : ''}
     }
-    ${dark ? 'body { background: #1f1f20; color: #d8d8d8; }' : ''}
-    ${dark ? 'a:link { color: #8ab4f8; }' : ''}
     p, li, blockquote, dd {
         line-height: 1.6;
         text-align: start;
@@ -41,18 +38,6 @@ const MIN_FONT_SCALE = 0.6
 const MAX_FONT_SCALE = 3
 
 type Phase = 'loading' | 'ready' | 'failed' | 'unsupported'
-
-/** 系统明暗主题（阅读样式跟随）。 */
-function usePrefersDark(): boolean {
-  const [dark, setDark] = useState(() => globalThis.matchMedia('(prefers-color-scheme: dark)').matches)
-  useEffect(() => {
-    const query = globalThis.matchMedia('(prefers-color-scheme: dark)')
-    const onChange = (event: MediaQueryListEvent): void => { setDark(event.matches) }
-    query.addEventListener('change', onChange)
-    return () => { query.removeEventListener('change', onChange) }
-  }, [])
-  return dark
-}
 
 /** 统一尺寸的线性图标（章节前进/后退）。 */
 function ChevronIcon({ direction }: { direction: 'left' | 'right' }): ReactNode {
@@ -88,7 +73,7 @@ function TocDrawer({ view, toc, onClose }: {
     return () => { element.remove() }
   }, [view, toc, onClose])
   return (
-    <div className={css.drawer}>
+    <div className={css.drawer} data-toc-drawer="">
       <div className={css.drawerTitle}>目录</div>
       <div className={css.drawerBody} ref={hostRef} />
     </div>
@@ -110,7 +95,6 @@ export function EpubBody({ content, t }: {
   const [toc, setToc] = useState<readonly FoliateTocItem[]>()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [fontScale, setFontScale] = useState(1)
-  const dark = usePrefersDark()
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewRef = useRef<FoliateView | null>(null)
 
@@ -138,7 +122,7 @@ export function EpubBody({ content, t }: {
       }
       // 滚动模式适合侧栏窄幅：连续排版，靠原生滚动翻页。
       view.renderer.setAttribute('flow', 'scrolled')
-      view.renderer.setStyles?.(readingStyles(1, dark))
+      view.renderer.setStyles?.(readingStyles(1))
       await view.renderer.next()
       setToc(book.toc)
       setState('ready')
@@ -151,13 +135,32 @@ export function EpubBody({ content, t }: {
       view?.close()
       view?.remove()
     }
-  }, [data, dark])
+  }, [data])
 
-  // 重注入阅读样式实现字号档与主题切换（重排式内容的缩放即字号缩放）。
+  // 重注入阅读样式实现字号档（重排式内容的缩放即字号缩放）。
   useEffect(() => {
     if (state !== 'ready') return
-    viewRef.current?.renderer.setStyles?.(readingStyles(fontScale, dark))
-  }, [fontScale, dark, state])
+    viewRef.current?.renderer.setStyles?.(readingStyles(fontScale))
+  }, [fontScale, state])
+
+  // 目录抽屉失焦自动关闭：点击抽屉与"目录"按钮之外、或按 Esc。
+  useEffect(() => {
+    if (!drawerOpen) return
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Element | null
+      if (target?.closest('[data-toc-drawer]') !== null || target?.closest('[data-toc-toggle]') !== null) return
+      setDrawerOpen(false)
+    }
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setDrawerOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [drawerOpen])
 
   const turn = (direction: 'goLeft' | 'goRight'): void => {
     void viewRef.current?.[direction]()
@@ -170,7 +173,7 @@ export function EpubBody({ content, t }: {
     <div className={css.host}>
       {state === 'ready' && view !== null && toc !== undefined && toc.length > 0 && (
         <div className={css.bar}>
-          <button type="button" className={css.barButton} onClick={() => setDrawerOpen(open => !open)}>目录</button>
+          <button type="button" className={css.barButton} data-toc-toggle="" onClick={() => setDrawerOpen(open => !open)}>目录</button>
           <span className={css.barSpring} />
           <button type="button" className={css.barButton} aria-label="Previous page" title="上一页" onClick={() => turn('goLeft')}>
             <ChevronIcon direction="left" />

@@ -294,7 +294,6 @@ export function TextPreview({
         </div>
         <Menu
           open={menuOpen}
-          className={css.opaqueMenu}
           anchor={(
             <button type="button" className={clsx(css.tool, css.viewerTool)} aria-label={t('openWith')} title={selected.title()} data-document-viewer-menu onClick={() => { setMenuOpen(value => !value) }}>
               {selected.title()}
@@ -305,7 +304,6 @@ export function TextPreview({
           onSelect={(id) => { actions.selected(tab.id, id); setMenuOpen(false) }}
           onClose={() => { setMenuOpen(false) }}
           align="end"
-          portal
           dense
         />
         {selected.wrap === true && (
