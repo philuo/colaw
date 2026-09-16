@@ -239,6 +239,21 @@ describe('matchesFilter', () => {
     expect(matchesFilter('README.md', 'xyz')).toBe(false)
   })
 
+  it('walks directories while filtering and keeps the ancestor chain of a deep match', async () => {
+    const { view, script } = mountBody()
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    const input = view.container.querySelector('[class*="searchInput"]') as HTMLInputElement
+    await act(() => fireEvent.change(input, { target: { value: 'deep' } }))
+    // 搜索激活后应自动请求未列出的目录层级（递归下行）
+    expect(script.outstanding()).toEqual(['/work/app/src'])
+    await act(() => script.settleLatest({
+      ok: true,
+      value: { entries: [{ name: 'deep-file.md', type: 'file' }, { name: 'skipped.md', type: 'file' }], truncated: false },
+    }))
+    // 深层命中保留其祖先目录；未命中文件与非命中目录被裁掉
+    expect(names(view.container)).toEqual(['/work/app/src', '/work/app/src/deep-file.md'])
+  })
+
   it('filters the visible rows to the query and says when nothing matches', async () => {
     const { view, script } = mountBody()
     await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))

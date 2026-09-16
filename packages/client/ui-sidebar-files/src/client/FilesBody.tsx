@@ -10,7 +10,7 @@
  * ink, then the one control at its end, reload, which drops every listed level
  * and asks again for the expanded ones.
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
@@ -117,6 +117,8 @@ function usePathClipped(
 interface TreeContext {
   readonly state: FilesTabState
   readonly filter: string
+  /** 过滤激活时保留的路径集合（命中 + 命中后代的祖先）；null 表示未在过滤。 */
+  readonly visible: ReadonlySet<string> | null
   readonly onToggle: (path: string) => void
   readonly onOpen: (path: string) => void
   readonly t: TranslateNS<'sidebarFiles'>
@@ -125,8 +127,9 @@ interface TreeContext {
 /** One entry's row, and its children when it is an expanded directory. */
 function Entry({ parent, entry, tree }: { parent: string; entry: WorkspaceDirectoryEntry; tree: TreeContext }): ReactNode {
   const path = childPath(parent, entry.name)
+  const filtering = tree.filter !== ''
   if (entry.type === 'directory') {
-    const expanded = tree.state.expanded.includes(path)
+    const expanded = filtering || tree.state.expanded.includes(path)
     return (
       <li className={css.item} data-files-entry="directory" data-files-path={path}>
         <button type="button" className={css.row} aria-expanded={expanded} onClick={() => { tree.onToggle(path) }}>
@@ -170,12 +173,15 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
       </li>
     )
   }
-  const entries = orderEntries(level.level.entries).filter(entry => matchesFilter(entry.name, tree.filter))
+  const entries = orderEntries(level.level.entries)
   const filtering = tree.filter !== ''
+  const kept = filtering
+    ? entries.filter(entry => tree.visible?.has(childPath(path, entry.name)) === true)
+    : entries
   return (
     <>
-      {entries.length === 0 && <li className={css.note} data-files-row={filtering ? 'no-match' : 'empty'}>{filtering ? t('search.noMatches') : t('empty')}</li>}
-      {entries.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
+      {kept.length === 0 && <li className={css.note} data-files-row={filtering ? 'no-match' : 'empty'}>{filtering ? t('search.noMatches') : t('empty')}</li>}
+      {kept.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
       {level.level.truncated && <li className={css.note} data-files-row="truncated">{t('truncated')}</li>}
     </>
   )
@@ -195,6 +201,52 @@ export function FilesBody({
   const [query, setQuery] = useState('')
   const searchInput = useRef<HTMLInputElement>(null)
   usePathClipped(pathRef, pathTextRef, state?.root)
+
+  /**
+   * 过滤激活时保留的路径集合：命中文件、命中目录，以及含命中后代的
+   * 祖先目录。对已列出的层级做一次深度优先收集；未知层级按需由
+   * 下面的递归列举逐步补齐后再收敛。
+   */
+  const visiblePaths = useMemo(() => {
+    if (query === '' || state === undefined) return null
+    const out = new Set<string>()
+    const visit = (dirPath: string): number => {
+      const level = state.levels[dirPath]
+      if (level === undefined || level.kind !== 'ready') return 0
+      let kept = 0
+      for (const entry of level.level.entries) {
+        const child = childPath(dirPath, entry.name)
+        if (entry.type === 'directory') {
+          const before = out.size
+          kept += visit(child)
+          const hasKeptDescendant = out.size > before
+          if (matchesFilter(entry.name, query) || hasKeptDescendant) {
+            out.add(child)
+            kept += 1
+          }
+        } else if (matchesFilter(entry.name, query)) {
+          out.add(child)
+          kept += 1
+        }
+      }
+      return kept
+    }
+    visit(state.root)
+    return out
+  }, [query, state])
+
+  // 过滤激活时对已知目录按需递归列举，让深层路径也能被搜到。
+  useEffect(() => {
+    if (query === '' || state === undefined || signal.aborted) return
+    for (const [path, level] of Object.entries(state.levels)) {
+      if (level.kind !== 'ready') continue
+      for (const entry of level.level.entries) {
+        if (entry.type !== 'directory') continue
+        const child = childPath(path, entry.name)
+        if (state.levels[child] === undefined) load(tab.id, child, signal)
+      }
+    }
+  }, [query, state, load, signal, tab.id])
   useEffect(() => {
     // A bucket gone because the record aborted must not be re-seeded by a
     // component that has not unmounted yet.
@@ -213,6 +265,7 @@ export function FilesBody({
   const tree: TreeContext = {
     state,
     filter: query,
+    visible: visiblePaths,
     onToggle: (path) => { toggle(tab.id, path, state.levels[path] !== undefined, signal) },
     // Every row is under the tree's root, so its address is session-relative.
     onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) },
