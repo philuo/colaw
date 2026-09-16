@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import { dirname, join } from 'node:path'
+import { dirname, join, sep } from 'node:path'
 import type { UserConfig } from 'tsdown'
 import { clientBundle } from '../tsdown.client.ts'
 
@@ -83,12 +83,27 @@ const pdfWorker: NonNullable<UserConfig['plugins']> = [{
   },
 }]
 
+/**
+ * The vendored foliate-js modules are plain `.js`, which the composite tsc
+ * program never emits into `lib/types` — yet the client face bundles from
+ * there. Map those imports back onto the src copies.
+ */
+const epubFoliateVendor: NonNullable<UserConfig['plugins']> = [{
+  name: 'dsh-epub-foliate-vendor',
+  resolveId(source, importer) {
+    if (importer === undefined || importer.includes(join('lib', 'types')) === false) return null
+    if (/\/foliate\/[^/]+\.js$/.test(source) === false) return null
+    const resolved = join(dirname(importer), source)
+    return resolved.replace(`${join('lib', 'types')}${sep}`, `${join('src')}${sep}`)
+  },
+}]
+
 export default (options: Parameters<typeof bundle>[0]): UserConfig[] => bundle(options).map(config =>
   config.name?.endsWith('/client') === true ? {
     ...config,
     banner: [pdfLicenseBanner(), ooxmlLicenseBanner()].join('\n'),
     outputOptions: { ...config.outputOptions, inlineDynamicImports: true, chunkFileNames: 'client-chunk-[name]-[hash].cjs' },
-    plugins: [config.plugins, pdfWorker, ooxmlModuleUrl],
+    plugins: [config.plugins, pdfWorker, ooxmlModuleUrl, epubFoliateVendor],
     define: {
       ...config.define,
       __DSH_OOXML_WASM__: ooxmlAssets(),
