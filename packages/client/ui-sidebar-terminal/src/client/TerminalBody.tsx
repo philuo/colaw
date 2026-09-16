@@ -105,11 +105,9 @@ function TerminalScreen({ state, model, visible, label, theme }: {
         if (!current.current.visible || !current.current.state.writable) return
         xterm.resize(cols, rows)
         void model.resize(cols, rows)
-        // Full-screen TUIs (claude code, vim) redraw on SIGWINCH; some emit
-        // nothing when their frame fits the new size, leaving the pane on the
-        // old frame. A delayed refresh re-snapshots the host grid so the pane
-        // converges on the settled layout even without new program output.
-        window.setTimeout(() => { void model.refresh().catch(() => {}) }, 250)
+        // Full-screen TUIs (claude code, vim) may not redraw after SIGWINCH;
+        // the host re-snapshots its settled grid on resize and the render
+        // effect replays it, so the pane converges without any extra calls.
       }, 250)
     }
     const observer = new ResizeObserver(measure)

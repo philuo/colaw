@@ -477,7 +477,16 @@ class LinuxProcessInspector extends PosixProcessInspector {
 // `ps` exposes neither the session id nor a state column in this format, so a
 // macOS row can answer presence and parentage but never session membership.
 function macProcessTable(internals: ProcessInspectorInternals): ProcessRow[] {
-  return internals.exec('/bin/ps', ['-axo', 'pid=,ppid=,lstart=']).split('\n').flatMap((line) => {
+  let table: string
+  try {
+    table = internals.exec('/bin/ps', ['-axo', 'pid=,ppid=,lstart='])
+  } catch {
+    // Hardened environments (sandbox-exec profiles, some MDM policies) refuse
+    // posix_spawn of /bin/ps. An empty table degrades ancestry answers to
+    // "unknown" instead of failing terminal allocation outright.
+    return []
+  }
+  return table.split('\n').flatMap((line) => {
     const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line)
     if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) return []
     return [{

@@ -97,6 +97,11 @@ export class BrowserTerminal {
       await this.handle.resize(cols, rows)
       this.screen.resize(cols, rows)
       this.info = { ...this.info, cols, rows }
+      // Re-snapshot the settled grid: full-screen TUIs may not redraw after
+      // SIGWINCH when their frame fits the new size, and a follower that
+      // resized its local grid live would otherwise keep the stale frame.
+      // The render frame also resets the client's grid dimensions.
+      this.broadcast({ type: 'snapshot', sequence: ++this.sequence, screen: this.serializer.serialize(), info: this.info })
       this.broadcast({ type: 'state', info: this.info })
     })
   }
