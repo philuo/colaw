@@ -1,7 +1,12 @@
+/* 窗格贴合：`body:has([data-ofd-preview])` 把共享滚动口变成定界弹性格，
+   本视口撑满它——缩放/平移与右下角徽标都以侧栏可见边界为基准。 */
 .hifi {
   position: relative;
-  overflow: hidden;
-  /* 滚动与缩放全部走拖拽/手势（图片预览同款），不出现滚动条。 */
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  /* 滚动全部走手势与拖拽，滚动条不显示。 */
   scrollbar-width: none;
 }
 
@@ -9,31 +14,32 @@
   display: none;
 }
 
+.hifi[data-pannable] {
+  cursor: grab;
+}
+
+.hifi:active[data-pannable] {
+  cursor: grabbing;
+}
+
 .column {
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 16px;
-  transform-origin: 0 0;
 }
 
 .hifiPage {
   position: relative;
   flex: none;
+  width: 100%;
   background: #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 18%);
   /* 片段出血裁剪在页框内，与 PDF 查看器一致。 */
   overflow: clip;
   /* cqw 字号单位以页框宽度为查询容器。 */
   container-type: inline-size;
-}
-
-.hifi[data-panning] {
-  cursor: grabbing;
-}
-
-.hifi[data-panning] .selectionLayer {
-  pointer-events: none;
 }
 
 /* 片段定位框；SVG 在毫米 viewBox 内随宽度缩放，允许出血绘制。 */

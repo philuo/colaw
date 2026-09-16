@@ -1,8 +1,9 @@
 /**
  * OFD 高保真预览（版式）：毫米坐标以页面百分比定位；文本/路径片段用
- * SVG viewBox（毫米局部坐标系）随宽度等比缩放。交互与图片预览同款：
- * ⌘/Ctrl+滚轮锚点缩放、捏合、拖拽平移（带边缘回弹夹取）、双击 fit↔2×，
- * 右下角百分比徽标点击复位；文本经透明选择层可选中复制（PDF.js 模式）。
+ * SVG viewBox（毫米局部坐标系）随宽度等比缩放。缩放是布局式的——手势
+ * 只改列宽（百分比），内容按新尺寸原生重绘，任意倍率都保持清晰且无
+ * 闪烁；平移走原生滚动（隐藏滚动条）与拖拽。文本经透明选择层可选中
+ * 复制（PDF.js 模式），右下角百分比徽标点击复位。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
@@ -10,14 +11,6 @@ import { LoadingIndicator } from '../LoadingIndicator.tsx'
 import { readOfdLayout } from './ofd-layout.ts'
 import type { OfdLayoutPage, OfdImageFragment, OfdTextFragment, OfdPathFragment } from './ofd-layout.ts'
 import css from './OfdHifiBody.module.css'
-
-type Fragment = OfdTextFragment | OfdImageFragment | OfdPathFragment
-
-interface ZoomState {
-  readonly k: number
-  readonly tx: number
-  readonly ty: number
-}
 
 const WHEEL_ZOOM_SENSITIVITY = 0.007
 const GESTURE_FACTOR_MIN = 0.5
@@ -37,28 +30,12 @@ function matrixOf(ctm: readonly number[] | undefined): string | undefined {
   return ctm === undefined ? undefined : `matrix(${ctm.join(' ')})`
 }
 
-/** 平移夹取：缩放后不露白边。 */
-function clampPan(translate: number, scaled: number, pane: number): number {
-  const slack = pane < scaled ? (scaled - pane) / 2 : 0
-  return Math.min(Math.max(translate, -slack), slack)
-}
-
-/** 片段的公共定位框：页面百分比位置与尺寸。 */
-function boxStyle(fragment: Fragment, page: OfdLayoutPage): CSSProperties {
-  return {
-    left: percent(fragment.xMm, page.widthMm),
-    top: percent(fragment.yMm, page.heightMm),
-    width: percent(fragment.wMm, page.widthMm),
-    height: percent(fragment.hMm, page.heightMm),
-  }
-}
-
 /** 文本对象：SVG 视口即 TextObject 边界框（毫米），基线文本随视口缩放。 */
 function TextView({ fragment, page }: { fragment: OfdTextFragment; page: OfdLayoutPage }): ReactNode {
   const matrix = matrixOf(fragment.ctm)
   const hScale = fragment.hScale
   return (
-    <svg className={css.object} style={boxStyle(fragment, page)} viewBox={`0 0 ${fragment.wMm} ${fragment.hMm}`} aria-hidden="true">
+    <svg className={css.object} style={{ left: percent(fragment.xMm, page.widthMm), top: percent(fragment.yMm, page.heightMm), width: percent(fragment.wMm, page.widthMm), height: percent(fragment.hMm, page.heightMm) }} viewBox={`0 0 ${fragment.wMm} ${fragment.hMm}`} aria-hidden="true">
       {fragment.runs.map((run, at) => (
         <text
           key={at}
@@ -103,7 +80,7 @@ function SelectionLayer({ fragment, page }: { fragment: OfdTextFragment; page: O
 function PathView({ fragment, page }: { fragment: OfdPathFragment; page: OfdLayoutPage }): ReactNode {
   const stroke = fragment.stroke ?? (fragment.fill !== undefined ? undefined : '#000')
   return (
-    <svg className={css.object} style={boxStyle(fragment, page)} viewBox={`0 0 ${fragment.wMm} ${fragment.hMm}`}>
+    <svg className={css.object} style={{ left: percent(fragment.xMm, page.widthMm), top: percent(fragment.yMm, page.heightMm), width: percent(fragment.wMm, page.widthMm), height: percent(fragment.hMm, page.heightMm) }} viewBox={`0 0 ${fragment.wMm} ${fragment.hMm}`}>
       <path
         d={fragment.d}
         fill={fragment.fill ?? 'none'}
@@ -116,10 +93,26 @@ function PathView({ fragment, page }: { fragment: OfdPathFragment; page: OfdLayo
 
 /** 图片对象：资源解析失败的以虚线占位框标注；印章类图片用正片叠底。 */
 function ImageView({ fragment, page }: { fragment: OfdImageFragment; page: OfdLayoutPage }): ReactNode {
-  const style = { ...boxStyle(fragment, page), ...(fragment.blend !== undefined ? { mixBlendMode: fragment.blend } : {}) }
+  const style: CSSProperties = {
+    left: percent(fragment.xMm, page.widthMm),
+    top: percent(fragment.yMm, page.heightMm),
+    width: percent(fragment.wMm, page.widthMm),
+    height: percent(fragment.hMm, page.heightMm),
+    ...(fragment.blend !== undefined ? { mixBlendMode: fragment.blend } : {}),
+  }
   return fragment.url !== undefined
     ? <img className={css.image} style={style} src={fragment.url} alt="" />
-    : <span className={css.unresolvedImage} style={boxStyle(fragment, page)} />
+    : (
+      <span
+        className={css.unresolvedImage}
+        style={{
+          left: percent(fragment.xMm, page.widthMm),
+          top: percent(fragment.yMm, page.heightMm),
+          width: percent(fragment.wMm, page.widthMm),
+          height: percent(fragment.hMm, page.heightMm),
+        }}
+      />
+    )
 }
 
 /** 一页的渲染：白底页框内按文档顺序叠加的片段 + 选择层。 */
@@ -145,8 +138,8 @@ function PageView({ page, index }: { page: OfdLayoutPage; index: number }): Reac
 }
 
 /**
- * Present complete OFD bytes as a paged layout with image-style zoom,
- * drag pan, and a selectable text layer.
+ * Present complete OFD bytes as a paged layout with layout-based zoom
+ * (crisp at every scale), drag panning, and a selectable text layer.
  * @param props - document bytes and locale.
  * @returns the paged layout surface.
  */
@@ -157,13 +150,11 @@ export function OfdHifiBody({ content, t }: {
   const data = content.kind === 'bytes' ? content.data : undefined
   const [pages, setPages] = useState<readonly OfdLayoutPage[]>()
   const [failed, setFailed] = useState(false)
-  const [zoom, setZoom] = useState<ZoomState>({ k: 1, tx: 0, ty: 0 })
-  const [panning, setPanning] = useState(false)
+  const [zoom, setZoom] = useState(1)
+  const zoomRef = useRef(1)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
-  const columnHeight = useRef(0)
-  const drag = useRef<{ readonly x: number; readonly y: number; readonly tx: number; readonly ty: number } | undefined>()
-  const live = useRef<ZoomState | undefined>(undefined)
+  const drag = useRef<{ readonly x: number; readonly y: number } | undefined>()
   const settle = useRef<number | undefined>(undefined)
 
   useEffect(() => {
@@ -180,148 +171,82 @@ export function OfdHifiBody({ content, t }: {
     return () => { disposed = true }
   }, [data])
 
-  // 列高（未缩放布局高）随页数与栏宽变化。
-  useEffect(() => {
-    const column = columnRef.current
-    if (column === undefined || column === null) return
-    const measure = (): void => { columnHeight.current = column.offsetHeight }
-    measure()
-    const observer = new ResizeObserver(measure)
-    observer.observe(column)
-    return () => { observer.disconnect() }
-  }, [pages])
-
-  const atFit = zoom.k <= 1 && zoom.tx === 0 && zoom.ty === 0
-  const pannable = zoom.k > 1
-
-  /** 手势期间直写 DOM；提交后由 React 状态接管。 */
-  const paint = useCallback((value: ZoomState): void => {
-    const column = columnRef.current
-    if (column === null) return
-    if (value.k <= 1 && value.tx === 0 && value.ty === 0) {
-      column.style.removeProperty('will-change')
-      column.style.removeProperty('transform')
-    } else {
-      column.style.setProperty('will-change', 'transform')
-      column.style.setProperty('transform', `translate(${value.tx}px, ${value.ty}px) scale(${value.k})`)
-    }
-    const viewport = viewportRef.current
-    const badge = viewport?.querySelector<HTMLElement>(`.${css.zoomBadge}`)
-    if (badge !== null && badge !== undefined) badge.textContent = `${Math.round(value.k * 100)}%`
-  }, [])
-
-  const commitLive = useCallback((): void => {
-    const value = live.current
-    if (value !== undefined) {
-      live.current = undefined
-      setZoom(value)
-    }
-  }, [])
-
-  const zoomAt = useCallback((factor: number, anchorX: number, anchorY: number): void => {
-    const viewport = viewportRef.current
-    if (viewport === null || columnHeight.current <= 0) return
-    const paneWidth = viewport.clientWidth
-    const paneHeight = viewport.clientHeight
-    const current = live.current ?? zoom
-    const from = Math.max(current.k, 1)
-    const next = Math.min(Math.max(from * factor, 1), ZOOM_MAX)
-    if (next === from && current.tx === 0 && current.ty === 0 && live.current === undefined) return
-    // 列按左上对齐（transform-origin 0 0）：锚点保持指针下的内容不动。
-    const tx = anchorX - (anchorX - current.tx) * (next / from)
-    const ty = anchorY - (anchorY - current.ty) * (next / from)
-    const value = {
-      k: next,
-      tx: clampPan(tx, paneWidth * next, paneWidth),
-      ty: clampPan(ty, columnHeight.current * next, paneHeight),
-    }
-    live.current = value
-    paint(value)
-    window.clearTimeout(settle.current)
-    settle.current = window.setTimeout(commitLive, GESTURE_COMMIT_MS)
-  }, [commitLive, paint, zoom])
-
-  const panBy = useCallback((dx: number, dy: number): void => {
-    const viewport = viewportRef.current
-    if (viewport === null || columnHeight.current <= 0) return
-    const current = live.current ?? zoom
-    const value = {
-      ...current,
-      tx: clampPan(current.tx - dx, viewport.clientWidth * current.k, viewport.clientWidth),
-      ty: clampPan(current.ty - dy, columnHeight.current * current.k, viewport.clientHeight),
-    }
-    live.current = value
-    paint(value)
-    window.clearTimeout(settle.current)
-    settle.current = window.setTimeout(commitLive, GESTURE_COMMIT_MS)
-  }, [commitLive, paint, zoom])
-
-  // 提交后的静止姿态由状态重绘（复位、栏宽变化等）。
-  useEffect(() => {
-    if (live.current === undefined) paint(zoom)
-  }, [zoom, paint])
-
   useEffect(() => () => { window.clearTimeout(settle.current) }, [])
 
-  const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>): void => {
-    if (event.ctrlKey || event.metaKey) {
-      event.preventDefault()
-      const factor = Math.min(
-        Math.max(Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY), GESTURE_FACTOR_MIN),
-        GESTURE_FACTOR_MAX,
-      )
-      const bounds = event.currentTarget.getBoundingClientRect()
-      zoomAt(factor, event.clientX - bounds.left, event.clientY - bounds.top)
-      return
-    }
-    if (pannable) {
-      event.preventDefault()
-      panBy(event.deltaX, event.deltaY)
-    }
-  }, [panBy, pannable, zoomAt])
+  /**
+   * 布局式缩放：只改列宽，内容（百分比定位 + SVG viewBox + cqw 字号）
+   * 按新尺寸原生重绘——全程清晰。锚点：缩放后调整原生滚动，保持指针
+   * 下的内容不动。手势期间徽标文字直写 DOM，空闲后提交 React 状态。
+   */
+  const zoomAt = useCallback((factor: number, anchorX: number, anchorY: number): void => {
+    const viewport = viewportRef.current
+    const column = columnRef.current
+    if (viewport === null || column === null) return
+    const previous = zoomRef.current
+    const next = Math.min(Math.max(previous * factor, 1), ZOOM_MAX)
+    if (next === previous) return
+    const fitX = (viewport.scrollLeft + anchorX) / previous
+    const fitY = (viewport.scrollTop + anchorY) / previous
+    zoomRef.current = next
+    column.style.width = `${(next * 100).toFixed(2)}%`
+    viewport.scrollLeft = fitX * next - anchorX
+    viewport.scrollTop = fitY * next - anchorY
+    const badge = viewport.querySelector<HTMLElement>(`.${css.zoomBadge}`)
+    if (badge !== null && badge !== undefined) badge.textContent = `${Math.round(next * 100)}%`
+    window.clearTimeout(settle.current)
+    settle.current = window.setTimeout(() => { setZoom(zoomRef.current) }, GESTURE_COMMIT_MS)
+  }, [])
 
-  const onDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
-    // 文本上的双击保留原生选词。
-    if ((event.target as Element).closest('[data-selection-layer]') !== null) return
-    if (zoom.k > 1 + Number.EPSILON) {
-      live.current = undefined
-      setZoom({ k: 1, tx: 0, ty: 0 })
-    } else {
-      const bounds = event.currentTarget.getBoundingClientRect()
-      zoomAt(2, event.clientX - bounds.left, event.clientY - bounds.top)
-    }
-  }, [zoom.k, zoomAt])
+  const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>): void => {
+    // 触控板捏合与 Ctrl/⌘+滚轮缩放；普通滚轮交给原生滚动。
+    if (!event.ctrlKey && !event.metaKey) return
+    event.preventDefault()
+    const factor = Math.min(
+      Math.max(Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY), GESTURE_FACTOR_MIN),
+      GESTURE_FACTOR_MAX,
+    )
+    const bounds = event.currentTarget.getBoundingClientRect()
+    zoomAt(factor, event.clientX - bounds.left, event.clientY - bounds.top)
+  }, [zoomAt])
+
+  // 放大后拖拽平移（原生滚动）；fit 态不拦截，让文本可正常选中。
+  const scrollable = (): boolean => {
+    const viewport = viewportRef.current
+    return viewport !== null && zoomRef.current > 1
+      && (viewport.scrollWidth > viewport.clientWidth + 1 || viewport.scrollHeight > viewport.clientHeight + 1)
+  }
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
-    if (event.button !== 0 || !pannable) return
+    if (event.button !== 0 || !scrollable()) return
     try {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch { /* capture refused; the drag continues on shared handlers */ }
-    const current = live.current ?? zoom
-    drag.current = { x: event.clientX, y: event.clientY, tx: current.tx, ty: current.ty }
-    live.current = current
-    setPanning(true)
-  }, [pannable, zoom])
+    drag.current = { x: event.clientX, y: event.clientY }
+  }, [])
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
     const held = drag.current
     const viewport = viewportRef.current
-    if (held === undefined || viewport === null || columnHeight.current <= 0) return
-    const current = live.current ?? zoom
-    const value = {
-      ...current,
-      tx: clampPan(held.tx + (event.clientX - held.x), viewport.clientWidth * current.k, viewport.clientWidth),
-      ty: clampPan(held.ty + (event.clientY - held.y), columnHeight.current * current.k, viewport.clientHeight),
-    }
-    live.current = value
-    paint(value)
-  }, [paint, zoom])
+    if (held === undefined || viewport === null) return
+    viewport.scrollLeft -= event.clientX - held.x
+    viewport.scrollTop -= event.clientY - held.y
+    drag.current = { x: event.clientX, y: event.clientY }
+  }, [])
 
   const onPointerUp = useCallback((): void => {
     drag.current = undefined
-    setPanning(false)
-    commitLive()
-  }, [commitLive])
+  }, [])
+
+  const onDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
+    // 文本上的双击保留原生选词。
+    if ((event.target as Element).closest('[data-selection-layer]') !== null) return
+    if (zoomRef.current > 1 + Number.EPSILON) {
+      zoomAt(1 / zoomRef.current, 0, 0)
+    } else {
+      const bounds = event.currentTarget.getBoundingClientRect()
+      zoomAt(2, event.clientX - bounds.left, event.clientY - bounds.top)
+    }
+  }, [zoomAt])
 
   const body = useMemo(() => {
     if (failed) return <p className={css.status} role="alert">{t('failed')}</p>
@@ -333,7 +258,8 @@ export function OfdHifiBody({ content, t }: {
     <div
       ref={viewportRef}
       className={css.hifi}
-      data-panning={panning || undefined}
+      data-ofd-preview=""
+      data-pannable={zoom > 1 || undefined}
       onWheel={onWheel}
       onDoubleClick={onDoubleClick}
       onPointerDown={onPointerDown}
@@ -344,16 +270,13 @@ export function OfdHifiBody({ content, t }: {
       <div ref={columnRef} className={css.column}>
         {body}
       </div>
-      {!atFit && (
+      {zoom > 1 && (
         <button
           type="button"
           className={css.zoomBadge}
-          onClick={() => {
-            live.current = undefined
-            setZoom({ k: 1, tx: 0, ty: 0 })
-          }}
+          onClick={() => { zoomAt(1 / zoomRef.current, 0, 0) }}
         >
-          {`${Math.round(zoom.k * 100)}%`}
+          {`${Math.round(zoom * 100)}%`}
         </button>
       )}
     </div>

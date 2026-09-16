@@ -109,8 +109,10 @@
 
 /* The zoomable image fills the body cell the same way the code preview does:
    its natural-pixel layout must not stretch this scroller, or the fitted
-   scale is measured against a grown pane and long images open cropped. */
-.body:has([data-image-preview]) {
+   scale is measured against a grown pane and long images open cropped. The
+   OFD layout viewer opts into the same pane-bounded cell. */
+.body:has([data-image-preview]),
+.body:has([data-ofd-preview]) {
   display: flex;
   flex-direction: column;
   overflow: hidden;
