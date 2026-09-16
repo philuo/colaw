@@ -1,0 +1,29 @@
+.host {
+  position: relative;
+  height: 100%;
+  min-height: 360px;
+  overflow: hidden;
+}
+
+.reader {
+  height: 100%;
+}
+
+/* 加载中的占位层压在阅读器下方，foliate 挂载完成后再露出。 */
+.readerBehind {
+  height: 100%;
+  visibility: hidden;
+}
+
+/* foliate 挂载的是自定义元素，用子元素通配让它撑满阅读器容器。 */
+.reader > *,
+.readerBehind > * {
+  display: block;
+  height: 100%;
+}
+
+.status {
+  padding: 16px;
+  font-size: 13px;
+  color: var(--dsh-text-secondary, inherit);
+}

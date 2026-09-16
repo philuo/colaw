@@ -36,6 +36,7 @@ import { apply as registerHtml } from './html/index.ts'
 import { apply as registerImage } from './image/index.ts'
 import { apply as registerMedia } from './media/index.ts'
 import { apply as registerOfd } from './ofd/index.ts'
+import { apply as registerEpub } from './epub/index.ts'
 import { apply as registerPdf } from './pdf/index.ts'
 import { apply as registerOffice } from './office/index.ts'
 import { apply as registerCode } from './code/index.ts'
@@ -118,6 +119,7 @@ export function apply(ctx: ClientContext): void {
   registerImage(ctx)
   registerMedia(ctx)
   registerOfd(ctx)
+  registerEpub(ctx)
   registerPdf(ctx)
   registerCode(ctx)
   registerOffice(ctx)
