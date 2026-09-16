@@ -69,7 +69,7 @@ function TerminalScreen({ state, model, visible, label, theme }: {
 
   useLayoutEffect(() => {
     const node = element.current!
-    const xterm = new Terminal({ minimumContrastRatio: 4.5, cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
+    const xterm = new Terminal({ minimumContrastRatio: 4.5, cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, PingFang SC, Hiragino Sans GB, Microsoft YaHei Mono, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
     const addon = new FitAddon()
     xterm.loadAddon(addon)
     xterm.open(node)
@@ -81,14 +81,32 @@ function TerminalScreen({ state, model, visible, label, theme }: {
     fit.current = addon
     lastRevision.current = 0
     const input = xterm.onData((data) => { model.write(data) })
+    // A pane resize or sidebar drag fires the observer continuously; resizing
+    // the PTY per event floods TUI programs with SIGWINCH redraws and interleaves
+    // local grid changes with recovery snapshots (garbled screens). Resize the
+    // local grid live for responsiveness, but let the host-side resize settle
+    // until the storm pauses.
+    let resizeTimer: number | undefined
     const measure = (): void => {
       if (!current.current.visible || !current.current.state.writable || node.clientWidth === 0 || node.clientHeight === 0) return
-      fitScreen(xterm, addon, current.current.state, model)
+      const dimensions = addon.proposeDimensions()
+      const environment = current.current.state.environment
+      if (dimensions === undefined || environment === undefined) return
+      const cols = Math.min(dimensions.cols, environment.maxCols)
+      const rows = Math.min(dimensions.rows, environment.maxRows)
+      if (cols < 2 || rows < 1) return
+      if (xterm.cols !== cols || xterm.rows !== rows) xterm.resize(cols, rows)
+      window.clearTimeout(resizeTimer)
+      resizeTimer = window.setTimeout(() => {
+        if (!current.current.visible || !current.current.state.writable) return
+        model.resize(cols, rows)
+      }, 150)
     }
     const observer = new ResizeObserver(measure)
     observer.observe(node)
     return () => {
       observer.disconnect()
+      window.clearTimeout(resizeTimer)
       input.dispose()
       cursor.dispose()
       palette.dispose()

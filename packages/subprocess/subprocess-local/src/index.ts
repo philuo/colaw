@@ -192,12 +192,29 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
     }
     spec.signal?.throwIfAborted()
     const env = targetEnvironment(spec)
+    // A GUI-launched parent carries no LANG, so children default to "C":
+    // programs that switch output on locale (ls -w, git, man) emit ASCII-only
+    // text and CJK breaks the column grid. Pin a UTF-8 locale unless the
+    // caller (or the user shell profile) already set one.
+    const locale = {
+      LANG: env.LANG === undefined || env.LANG === '' || env.LANG === 'C'
+        ? 'en_US.UTF-8'
+        : env.LANG,
+      LC_ALL: env.LC_ALL === undefined || env.LC_ALL === '' || env.LC_ALL === 'C'
+        ? undefined
+        : env.LC_ALL,
+    }
     const options: IPtyForkOptions = {
       name: spec.terminalType,
       rows: spec.rows,
       cols: spec.cols,
       cwd: spec.cwd,
-      env: { ...env, TERM: spec.terminalType },
+      env: {
+        ...env,
+        TERM: spec.terminalType,
+        LANG: locale.LANG,
+        ...(locale.LC_ALL !== undefined ? { LC_ALL: locale.LC_ALL } : {}),
+      },
     }
     const inspector = this.terminalInspector ?? createProcessInspector()
     const terminal = getPtyModule().spawn(file, [...spec.argv.slice(1)], options)

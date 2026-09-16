@@ -237,7 +237,7 @@ it('reads the current theme on xterm render and releases the cursor listener on 
   expect(terminal.renderFrame).toBeUndefined()
 })
 
-it('fits only visible writable terminals with measurable dimensions and clamps the provider limits', () => {
+it('fits only visible writable terminals with measurable dimensions and clamps the provider limits', async () => {
   const state: TerminalViewState = { ...idle, info, phase: 'connected', writable: true }
   const h = mount(state)
   const terminal = fake.terminals[0]!
@@ -245,6 +245,10 @@ it('fits only visible writable terminals with measurable dimensions and clamps t
   h.model.resize.mockClear()
   fake.dimensions = { cols: 500, rows: 300 }
   measure?.()
+  // Resize-storm debounce: the local grid resized live above; the host-side
+  // resize lands once the observer storm pauses.
+  expect(h.model.resize).not.toHaveBeenCalled()
+  await new Promise(resolve => setTimeout(resolve, 200))
   expect(h.model.resize).toHaveBeenCalledWith(200, 100)
   h.model.resize.mockClear()
   h.update(state, false)
