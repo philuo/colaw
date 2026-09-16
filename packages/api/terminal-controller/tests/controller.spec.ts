@@ -289,7 +289,16 @@ describe('TerminalController', () => {
     ctx.provide('sandbox', { confine } as never)
     await controller.create(agent, request, signal())
     expect(confine).toHaveBeenCalledWith(['/bin/bash', '--noprofile', '--norc', '-i'], policy, expect.any(AbortSignal))
-    expect(subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({ argv: ['sandbox-runner', '/bin/bash', '--noprofile', '--norc', '-i'], env: { DSH_SESSION_ID: agent.id }, graceMs: 100 }))
+    expect(subprocess.spawnTerminal).toHaveBeenCalledWith(expect.objectContaining({
+      argv: ['sandbox-runner', '/bin/bash', '--noprofile', '--norc', '-i'],
+      env: expect.objectContaining({
+        DSH_SESSION_ID: agent.id,
+        LANG: 'en_US.UTF-8',
+        PS1: 'dsh> ',
+        PROMPT_COMMAND: "precmd() { PS1='dsh> ' }; precmd",
+      }),
+      graceMs: 100,
+    }))
   })
 
   it('rejects a confined Session without a sandbox provider before spawning', async () => {

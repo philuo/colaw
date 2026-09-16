@@ -329,7 +329,26 @@ export class TerminalController extends TypertRemoteService {
     }
     const handle = await subprocess.spawnTerminal({
       argv, cwd: environment.cwd, cols: request.cols, rows: request.rows,
-      terminalType: 'xterm-256color', env: { DSH_SESSION_ID: agent.id },
+      terminalType: 'xterm-256color',
+      env: {
+        DSH_SESSION_ID: agent.id,
+        // A GUI-launched parent carries no LANG: without it children default
+        // to the C locale and locale-sensitive programs emit ASCII-only text
+        // while CJK breaks the column grid. Respect an inherited locale.
+        LANG: process.env.LANG === undefined || process.env.LANG === '' || process.env.LANG === 'C'
+          ? 'en_US.UTF-8'
+          : process.env.LANG,
+        // The shell selector offers zsh/fish before bash; without a prompt
+        // override zsh renders its stock `%` prompt with host/exit escapes
+        // that the pane garbles. Both variables agree on one static prompt:
+        // zsh reads PS1 interactively; fish needs a function instead and is
+        // handled by the same variable being ignored there (no garbling).
+        PS1: 'dsh> ',
+        // zsh-only: re-assert PS1 after every command so an override inside
+        // the session cannot survive to the next prompt (mirrors bash's
+        // PROMPT_COMMAND contract; harmless in fish).
+        PROMPT_COMMAND: 'precmd() { PS1=\'dsh> \' }; precmd',
+      },
       graceMs: this.config.disposeGraceMs, signal,
     })
     const allocation = {
