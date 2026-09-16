@@ -10,13 +10,14 @@
  * ink, then the one control at its end, reload, which drops every listed level
  * and asks again for the expanded ones.
  */
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode, RefObject } from 'react'
 import clsx from 'clsx'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type { PropsLocale, PropsRuntime, PropsStore, TranslateNS } from '@deepseek-ai/dsh-client-ui-slots'
 import {
-  FileTypeIcon, IconFolderClose16, IconFolderOpen16, IconRefreshOutline16, classifyFileType,
+  FileTypeIcon, IconCloseFill14, IconFolderClose16, IconFolderOpen16, IconRefreshOutline16,
+  IconSearchOutline16, classifyFileType,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import { fileAddressFor, pathPartsOf } from '@deepseek-ai/dsh-util-workspace-path'
 import type { WorkspaceDirectoryEntry } from '@deepseek-ai/dsh-api-workspace-files/types'
@@ -35,6 +36,18 @@ export type FilesBodyProps =
 
 /** Natural, case-insensitive name order, so `file2` precedes `file10`. */
 const byName = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' })
+
+/**
+ * Whether one entry's name passes the search filter: an empty query matches
+ * everything, otherwise a case-insensitive substring of the name.
+ * @param name - the entry's name as listed.
+ * @param query - the search text, already as typed.
+ * @returns true when the entry should stay visible.
+ */
+export function matchesFilter(name: string, query: string): boolean {
+  if (query === '') return true
+  return name.toLowerCase().includes(query.toLowerCase())
+}
 
 /**
  * Order one level's entries for display: directories first, then everything
@@ -100,9 +113,10 @@ function usePathClipped(
 }
 /* jscpd:ignore-end */
 
-/** What every level shares: the tab's tree and the two gestures. */
+/** What every level shares: the tab's tree, the search filter, and the gestures. */
 interface TreeContext {
   readonly state: FilesTabState
+  readonly filter: string
   readonly onToggle: (path: string) => void
   readonly onOpen: (path: string) => void
   readonly t: TranslateNS<'sidebarFiles'>
@@ -156,10 +170,11 @@ function Level({ path, tree }: { path: string; tree: TreeContext }): ReactNode {
       </li>
     )
   }
-  const entries = orderEntries(level.level.entries)
+  const entries = orderEntries(level.level.entries).filter(entry => matchesFilter(entry.name, tree.filter))
+  const filtering = tree.filter !== ''
   return (
     <>
-      {entries.length === 0 && <li className={css.note} data-files-row="empty">{t('empty')}</li>}
+      {entries.length === 0 && <li className={css.note} data-files-row={filtering ? 'no-match' : 'empty'}>{filtering ? t('search.noMatches') : t('empty')}</li>}
       {entries.map(entry => <Entry key={entry.name} parent={path} entry={entry} tree={tree} />)}
       {level.level.truncated && <li className={css.note} data-files-row="truncated">{t('truncated')}</li>}
     </>
@@ -176,6 +191,9 @@ export function FilesBody({
   const state = useStore(store => store.byTab[tab.id])
   const pathRef = useRef<HTMLDivElement>(null)
   const pathTextRef = useRef<HTMLSpanElement>(null)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [query, setQuery] = useState('')
+  const searchInput = useRef<HTMLInputElement>(null)
   usePathClipped(pathRef, pathTextRef, state?.root)
   useEffect(() => {
     // A bucket gone because the record aborted must not be re-seeded by a
@@ -194,6 +212,7 @@ export function FilesBody({
   if (state === undefined) return null
   const tree: TreeContext = {
     state,
+    filter: query,
     onToggle: (path) => { toggle(tab.id, path, state.levels[path] !== undefined, signal) },
     // Every row is under the tree's root, so its address is session-relative.
     onOpen: (path) => { tabActions.openResource(fileAddressFor(sessionId, state.root, path)) },
@@ -215,6 +234,56 @@ export function FilesBody({
             {directory !== '' && <span className={css.pathDirectory}>{directory}</span>}
             <span className={css.pathName}>{name}</span>
           </span>
+        </div>
+        <div className={clsx(css.searchSlot, searchOpen && css.searchOpen)}>
+          <div
+            className={clsx(css.search, searchOpen && css.searchOpenPill)}
+            onClick={() => { setSearchOpen(true); searchInput.current?.focus() }}
+          >
+            <button
+              type="button"
+              className={css.searchButton}
+              aria-label={t('search.aria')}
+              aria-expanded={searchOpen}
+              title={t('search.aria')}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (searchOpen) {
+                  setQuery('')
+                  setSearchOpen(false)
+                } else {
+                  setSearchOpen(true)
+                  searchInput.current?.focus()
+                }
+              }}
+            >
+              <IconSearchOutline16 size={searchOpen ? 12 : 15} />
+            </button>
+            <input
+              ref={searchInput}
+              className={css.searchInput}
+              type="text"
+              placeholder={t('search.placeholder')}
+              value={query}
+              tabIndex={searchOpen ? 0 : -1}
+              onChange={e => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key !== 'Escape') return
+                setQuery('')
+                setSearchOpen(false)
+              }}
+            />
+            {searchOpen && query !== '' && (
+              <button
+                type="button"
+                className={css.searchClear}
+                aria-label={t('search.clear')}
+                onClick={(e) => { e.stopPropagation(); setQuery('') }}
+              >
+                <IconCloseFill14 />
+              </button>
+            )}
+          </div>
         </div>
         <button
           type="button"

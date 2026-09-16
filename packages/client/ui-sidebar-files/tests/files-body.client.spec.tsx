@@ -14,7 +14,7 @@ import { act, cleanup, fireEvent } from '@testing-library/react'
 import { makeTranslate, RemoteError } from '@deepseek-ai/dsh-client-test-runtime'
 import type { RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import { fileAddressFor } from '@deepseek-ai/dsh-util-workspace-path'
-import { failureLine, orderEntries } from '../src/client/FilesBody.tsx'
+import { failureLine, matchesFilter, orderEntries } from '../src/client/FilesBody.tsx'
 import type { DirLevel } from '../src/client/store.ts'
 import { zh } from '../src/client/locales.ts'
 import { mountBody, ROOT, SESSION, TAB } from './mount.client.tsx'
@@ -228,5 +228,28 @@ describe('failureLine', () => {
   it('carries an unclassified failure\'s own message', () => {
     const failure = { code: 'remote/transport', message: 'socket closed' } as unknown as RemoteFailure
     expect(failureLine(t, failure)).toBe('读取失败：socket closed')
+  })
+})
+
+describe('matchesFilter', () => {
+  it('matches case-insensitively and treats an empty query as match-all', () => {
+    expect(matchesFilter('README.md', '')).toBe(true)
+    expect(matchesFilter('README.md', 'read')).toBe(true)
+    expect(matchesFilter('README.md', 'MD')).toBe(true)
+    expect(matchesFilter('README.md', 'xyz')).toBe(false)
+  })
+
+  it('filters the visible rows to the query and says when nothing matches', async () => {
+    const { view, script } = mountBody()
+    await act(() => script.settle({ ok: true, value: ROOT_LEVEL }))
+    expect(names(view.container)).toEqual(['/work/app/src', '/work/app/.env', '/work/app/pipe', '/work/app/README.md'])
+    const input = view.container.querySelector('[class*="searchInput"]') as HTMLInputElement
+    expect(input).not.toBeNull()
+    await act(() => fireEvent.change(input, { target: { value: 'read' } }))
+    expect(names(view.container)).toEqual(['/work/app/README.md'])
+    await act(() => fireEvent.change(input, { target: { value: '没有这个文件' } }))
+    expect(view.container.querySelector('[data-files-row="no-match"]')?.textContent).toBe(zh['search.noMatches'])
+    await act(() => fireEvent.change(input, { target: { value: '' } }))
+    expect(names(view.container)).toEqual(['/work/app/src', '/work/app/.env', '/work/app/pipe', '/work/app/README.md'])
   })
 })
