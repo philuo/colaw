@@ -348,6 +348,10 @@ export class TerminalController extends TypertRemoteService {
         // the session cannot survive to the next prompt (mirrors bash's
         // PROMPT_COMMAND contract; harmless in fish).
         PROMPT_COMMAND: 'precmd() { PS1=\'dsh> \' }; precmd',
+        // Zsh paints a reverse-video % before a prompt that follows output
+        // with no trailing newline; the pane renders that mark as a stray
+        // glyph, so clear it.
+        PROMPT_EOL_MARK: '',
       },
       graceMs: this.config.disposeGraceMs, signal,
     })

@@ -83,9 +83,13 @@ function TerminalScreen({ state, model, visible, label, theme }: {
     const input = xterm.onData((data) => { model.write(data) })
     // A pane resize or sidebar drag fires the observer continuously; resizing
     // the PTY per event floods TUI programs with SIGWINCH redraws and interleaves
-    // local grid changes with recovery snapshots (garbled screens). Resize the
-    // local grid live for responsiveness, but let the host-side resize settle
-    // until the storm pauses.
+    // local grid changes with recovery snapshots (garbled screens). The local
+    // grid and the PTY must also never disagree: a shell line editor redraws
+    // by addressing cells at the PTY's width, so pasting and deleting while
+    // the two widths differ smears stale characters across the pane. Both
+    // sides therefore resize together in one settled callback — during the
+    // storm the pane keeps the previous frame, which reads as stable rather
+    // than broken.
     let resizeTimer: number | undefined
     const measure = (): void => {
       if (!current.current.visible || !current.current.state.writable || node.clientWidth === 0 || node.clientHeight === 0) return
@@ -95,10 +99,11 @@ function TerminalScreen({ state, model, visible, label, theme }: {
       const cols = Math.min(dimensions.cols, environment.maxCols)
       const rows = Math.min(dimensions.rows, environment.maxRows)
       if (cols < 2 || rows < 1) return
-      if (xterm.cols !== cols || xterm.rows !== rows) xterm.resize(cols, rows)
+      if (xterm.cols === cols && xterm.rows === rows) return
       window.clearTimeout(resizeTimer)
       resizeTimer = window.setTimeout(() => {
         if (!current.current.visible || !current.current.state.writable) return
+        xterm.resize(cols, rows)
         void model.resize(cols, rows)
         // Full-screen TUIs (claude code, vim) redraw on SIGWINCH; some emit
         // nothing when their frame fits the new size, leaving the pane on the
