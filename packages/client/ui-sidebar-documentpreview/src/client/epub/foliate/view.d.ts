@@ -25,6 +25,8 @@ export declare class FoliateView extends HTMLElement {
   open(book: unknown): Promise<void>
   init(options?: { readonly lastLocation?: string; readonly showTextStart?: boolean }): Promise<void>
   goTo(target: string | number): Promise<unknown>
+  goLeft(): Promise<unknown>
+  goRight(): Promise<unknown>
   prev(): Promise<unknown>
   next(): Promise<unknown>
   close(): void

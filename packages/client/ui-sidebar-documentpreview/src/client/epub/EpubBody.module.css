@@ -22,6 +22,118 @@
   height: 100%;
 }
 
+/* 阅读器上方的细工具条：目录、翻页、字号。 */
+.bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, Canvas 88%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, CanvasText 12%, transparent);
+}
+
+.barButton {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 13px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.barButton:hover {
+  background: color-mix(in srgb, CanvasText 10%, transparent);
+}
+
+.barSpring {
+  flex: 1;
+}
+
+/* 目录抽屉：浮在阅读器上方，可滚动。 */
+.drawer {
+  position: absolute;
+  top: 32px;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  width: min(320px, 100%);
+  display: flex;
+  flex-direction: column;
+  background: Canvas;
+  color: CanvasText;
+  border-right: 1px solid color-mix(in srgb, CanvasText 14%, transparent);
+  box-shadow: 4px 0 12px rgb(0 0 0 / 12%);
+}
+
+.drawerTitle {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0.75;
+}
+
+.drawerBody {
+  flex: 1;
+  overflow: auto;
+  padding: 0 8px 16px;
+}
+
+/* 官方 tree 的展开箭头与条目形态。 */
+.drawerBody svg {
+  width: 13px;
+  height: 13px;
+  margin-right: 4px;
+  transition: transform 0.12s;
+}
+
+.drawerBody a[aria-expanded='true'] > svg {
+  transform: rotate(0deg);
+}
+
+.drawerBody a {
+  display: block;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.drawerBody a:hover {
+  background: color-mix(in srgb, CanvasText 8%, transparent);
+}
+
+.drawerBody a[aria-current='page'] {
+  background: color-mix(in srgb, CanvasText 12%, transparent);
+  font-weight: 600;
+}
+
+.drawerBody ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* 子目录默认收起，aria-expanded 展开。 */
+.drawerBody a[aria-expanded='false'] + ol {
+  display: none;
+}
+
+.drawerBody a[aria-expanded='true'] + ol {
+  display: block;
+}
+
+.drawerBody a[aria-expanded='false'] > svg {
+  transform: rotate(-90deg);
+}
+
 .status {
   padding: 16px;
   font-size: 13px;
