@@ -322,3 +322,18 @@
 .body:focus {
   outline: none;
 }
+
+/* “打开方式”下拉在本文档预览内不透明：暗色主题的共享液态玻璃变体
+   （5% 白 + blur）压在白色内容上不可辨。菜单就地渲染在头部子树，
+   选择器只命中这一份菜单实例，不影响其他任何面板的菜单。 */
+.header [role='menu'] {
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+body[data-ds-dark-theme] .header [role='menu']::before {
+  display: none;
+}
+
+body[data-ds-dark-theme] .header [role='menu'] .submenu::before {
+  display: none;
+}
