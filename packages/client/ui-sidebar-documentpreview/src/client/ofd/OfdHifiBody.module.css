@@ -8,10 +8,14 @@
   overflow: hidden;
 }
 
-/* 滚动容器只包内容；徽标是外壳的兄弟，不随滚动/缩放移动。 */
+/* 滚动容器只包内容；徽标是外壳的兄弟，不随滚动/缩放移动。
+   内边距放在滚动容器上（border-box）：列宽百分比与内容缩放才严格线性，
+   锚点换算不产生漂移。 */
 .hifi {
   position: absolute;
   inset: 0;
+  box-sizing: border-box;
+  padding: 16px;
   overflow: auto;
   /* 滚动全部走手势与拖拽，滚动条不显示。 */
   scrollbar-width: none;
@@ -21,20 +25,16 @@
   display: none;
 }
 
-.hifi[data-pannable] {
-  cursor: grab;
-}
-
-.hifi:active[data-pannable] {
+.hifi[data-panning] {
   cursor: grabbing;
 }
 
 .column {
-  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 16px;
+  /* 手势帧的 transform 相对列左上放大。 */
+  transform-origin: 0 0;
 }
 
 .hifiPage {
@@ -55,10 +55,6 @@
   overflow: visible;
 }
 
-.fragment {
-  display: contents;
-}
-
 .image {
   position: absolute;
   object-fit: fill;
@@ -68,26 +64,6 @@
   position: absolute;
   border: 1px dashed rgb(0 0 0 / 25%);
   background: rgb(0 0 0 / 4%);
-}
-
-/* 透明文本选择层：与 SVG 字形重合，仅承担选中与复制。 */
-.selectionLayer {
-  position: absolute;
-  inset: 0;
-  user-select: text;
-  -webkit-user-select: text;
-}
-
-.selectionRun {
-  position: absolute;
-  line-height: 1;
-  color: transparent;
-  white-space: pre;
-  cursor: text;
-}
-
-.selectionRun::selection {
-  background: rgb(112 146 255 / 40%);
 }
 
 /* 缩放徽标（样式对齐图片预览）：非 100% 时浮在右下角，点击复位。 */

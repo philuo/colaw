@@ -1,9 +1,10 @@
 /**
  * OFD 高保真预览（版式）：毫米坐标以页面百分比定位；文本/路径片段用
- * SVG viewBox（毫米局部坐标系）随宽度等比缩放。缩放是布局式的——手势
- * 只改列宽（百分比），内容按新尺寸原生重绘，任意倍率都保持清晰且无
- * 闪烁；平移走原生滚动（隐藏滚动条）与拖拽。文本经透明选择层可选中
- * 复制（PDF.js 模式），右下角百分比徽标点击复位。
+ * SVG viewBox（毫米局部坐标系）随宽度等比缩放。缩放采用两段式：手势
+ * 期间走 GPU transform（不重排、不卡顿），空闲后一次性落到真实布局
+ * （列宽按倍率变化，矢量按新尺寸重绘，结果清晰）。文本选中交给
+ * WebKit 对 SVG <text> 的原生支持，无需自建文本层。平移为原生滚动
+ * （隐藏滚动条）+ 放大后拖拽；右下角百分比徽标点击复位。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
@@ -17,8 +18,16 @@ const GESTURE_FACTOR_MIN = 0.5
 const GESTURE_FACTOR_MAX = 2
 const GESTURE_COMMIT_MS = 160
 const ZOOM_MAX = 8
-/** 字形基线到 em 框顶部的近似比例（中文字体 ascent）。 */
-const BASELINE_ASCENT = 0.86
+/** 与 .hifi 的 padding 保持一致（锚点换算要扣掉它）。 */
+const COLUMN_PADDING = 16
+
+/** 手势锚点：fit 空间内容点 + 指针的视口位置。 */
+interface GestureAnchor {
+  readonly anchorFitX: number
+  readonly anchorFitY: number
+  readonly anchorX: number
+  readonly anchorY: number
+}
 
 /** 毫米坐标换算为页面宽/高的百分比样式。 */
 function percent(valueMm: number, totalMm: number): string {
@@ -34,8 +43,14 @@ function matrixOf(ctm: readonly number[] | undefined): string | undefined {
 function TextView({ fragment, page }: { fragment: OfdTextFragment; page: OfdLayoutPage }): ReactNode {
   const matrix = matrixOf(fragment.ctm)
   const hScale = fragment.hScale
+  const box = {
+    left: percent(fragment.xMm, page.widthMm),
+    top: percent(fragment.yMm, page.heightMm),
+    width: percent(fragment.wMm, page.widthMm),
+    height: percent(fragment.hMm, page.heightMm),
+  }
   return (
-    <svg className={css.object} style={{ left: percent(fragment.xMm, page.widthMm), top: percent(fragment.yMm, page.heightMm), width: percent(fragment.wMm, page.widthMm), height: percent(fragment.hMm, page.heightMm) }} viewBox={`0 0 ${fragment.wMm} ${fragment.hMm}`} aria-hidden="true">
+    <svg className={css.object} style={box} viewBox={`0 0 ${fragment.wMm} ${fragment.hMm}`}>
       {fragment.runs.map((run, at) => (
         <text
           key={at}
@@ -48,31 +63,6 @@ function TextView({ fragment, page }: { fragment: OfdTextFragment; page: OfdLayo
         >{run.text}</text>
       ))}
     </svg>
-  )
-}
-
-/**
- * 透明选择层：与 SVG 字形重合的 HTML 文本（PDF.js 文本层模式），
- * 供鼠标选中复制；命中高亮交给 ::selection。带 CTM/HScale 的文本
- * 不参与（变换后选择框会错位）。
- */
-function SelectionLayer({ fragment, page }: { fragment: OfdTextFragment; page: OfdLayoutPage }): ReactNode {
-  if (fragment.ctm !== undefined || fragment.hScale !== undefined) return null
-  return (
-    <span className={css.selectionLayer} data-selection-layer="">
-      {fragment.runs.map((run, at) => (
-        <span
-          key={at}
-          className={css.selectionRun}
-          style={{
-            left: percent(run.xMm, page.widthMm),
-            top: percent(run.yMm - fragment.sizeMm * BASELINE_ASCENT, page.heightMm),
-            fontSize: `${(fragment.sizeMm / page.widthMm * 100).toFixed(3)}cqw`,
-            fontFamily: fragment.family,
-          }}
-        >{run.text}</span>
-      ))}
-    </span>
   )
 }
 
@@ -115,7 +105,7 @@ function ImageView({ fragment, page }: { fragment: OfdImageFragment; page: OfdLa
     )
 }
 
-/** 一页的渲染：白底页框内按文档顺序叠加的片段 + 选择层。 */
+/** 一页的渲染：白底页框内按文档顺序叠加的片段。 */
 function PageView({ page, index }: { page: OfdLayoutPage; index: number }): ReactNode {
   return (
     <section
@@ -124,12 +114,7 @@ function PageView({ page, index }: { page: OfdLayoutPage; index: number }): Reac
       aria-label={`P${index + 1}`}
     >
       {page.fragments.map((fragment, at) => fragment.kind === 'text'
-        ? (
-          <span key={at} className={css.fragment}>
-            <TextView fragment={fragment} page={page} />
-            <SelectionLayer fragment={fragment} page={page} />
-          </span>
-        )
+        ? <TextView key={at} fragment={fragment} page={page} />
         : fragment.kind === 'path'
           ? <PathView key={at} fragment={fragment} page={page} />
           : <ImageView key={at} fragment={fragment} page={page} />)}
@@ -138,8 +123,9 @@ function PageView({ page, index }: { page: OfdLayoutPage; index: number }): Reac
 }
 
 /**
- * Present complete OFD bytes as a paged layout with layout-based zoom
- * (crisp at every scale), drag panning, and a selectable text layer.
+ * Present complete OFD bytes as a paged layout: hybrid zoom (transform
+ * during the gesture, real layout at rest), native-scroll panning, and
+ * natively selectable SVG text.
  * @param props - document bytes and locale.
  * @returns the paged layout surface.
  */
@@ -151,7 +137,13 @@ export function OfdHifiBody({ content, t }: {
   const [pages, setPages] = useState<readonly OfdLayoutPage[]>()
   const [failed, setFailed] = useState(false)
   const [zoom, setZoom] = useState(1)
+  const [panning, setPanning] = useState(false)
   const zoomRef = useRef(1)
+  // 手势期间的实时倍率（相对已提交布局）；存在即表示手势未落地。
+  const live = useRef<number | undefined>()
+  // 手势锚点：第一跳捕获指针下的内容点（fit 空间 = k=1 像素），
+  // 之后每一跳与落地提交都让这个点保持在指针下/原位置，全程无跳变。
+  const gesture = useRef<GestureAnchor | undefined>()
   const hostRef = useRef<HTMLDivElement | null>(null)
   const viewportRef = useRef<HTMLDivElement | null>(null)
   const columnRef = useRef<HTMLDivElement | null>(null)
@@ -174,33 +166,69 @@ export function OfdHifiBody({ content, t }: {
 
   useEffect(() => () => { window.clearTimeout(settle.current) }, [])
 
-  /**
-   * 布局式缩放：只改列宽，内容（百分比定位 + SVG viewBox + cqw 字号）
-   * 按新尺寸原生重绘——全程清晰。锚点：缩放后调整原生滚动，保持指针
-   * 下的内容不动。手势期间徽标文字直写 DOM，空闲后提交 React 状态。
-   */
-  const zoomAt = useCallback((factor: number, anchorX: number, anchorY: number): void => {
+  /** 手势帧：transform 直写（GPU，无重排），徽标直更。 */
+  const applyGesture = useCallback((target: number): void => {
+    const column = columnRef.current
+    if (column === null) return
+    const scale = target / zoomRef.current
+    if (scale === 1) {
+      column.style.removeProperty('will-change')
+      column.style.removeProperty('transform')
+    } else {
+      column.style.setProperty('will-change', 'transform')
+      column.style.setProperty('transform', `scale(${scale})`)
+    }
+    const badge = hostRef.current?.querySelector<HTMLElement>(`.${css.zoomBadge}`)
+    if (badge !== null && badge !== undefined) {
+      badge.hidden = false
+      badge.textContent = `${Math.round(target * 100)}%`
+    }
+  }, [])
+
+  /** 空闲落地：列宽改到目标倍率（真实布局，清晰）；锚点内容保持在原位置。 */
+  const commitTo = useCallback((target: number): void => {
     const viewport = viewportRef.current
     const column = columnRef.current
     if (viewport === null || column === null) return
-    const previous = zoomRef.current
+    const g = gesture.current
+    live.current = undefined
+    window.clearTimeout(settle.current)
+    zoomRef.current = target
+    column.style.width = `${(target * 100).toFixed(2)}%`
+    column.style.removeProperty('will-change')
+    column.style.removeProperty('transform')
+    if (g !== undefined) {
+      viewport.scrollLeft = COLUMN_PADDING + g.anchorFitX * target - g.anchorX
+      viewport.scrollTop = COLUMN_PADDING + g.anchorFitY * target - g.anchorY
+      gesture.current = undefined
+    }
+    setZoom(target)
+  }, [])
+
+  const zoomBy = useCallback((factor: number, anchorX: number, anchorY: number): void => {
+    const viewport = viewportRef.current
+    if (viewport === null) return
+    const k0 = zoomRef.current
+    const previous = k0 * (live.current ?? 1)
     const next = Math.min(Math.max(previous * factor, 1), ZOOM_MAX)
     if (next === previous) return
-    const fitX = (viewport.scrollLeft + anchorX) / previous
-    const fitY = (viewport.scrollTop + anchorY) / previous
-    zoomRef.current = next
-    column.style.width = `${(next * 100).toFixed(2)}%`
-    viewport.scrollLeft = fitX * next - anchorX
-    viewport.scrollTop = fitY * next - anchorY
-    const badge = hostRef.current?.querySelector<HTMLElement>(`.${css.zoomBadge}`)
-    if (badge !== null && badge !== undefined) {
-      // 首段手势时徽标还在 fit 隐藏态：立即露出并写百分比，不等提交。
-      badge.hidden = false
-      badge.textContent = `${Math.round(next * 100)}%`
+    if (gesture.current === undefined) {
+      // 手势第一跳：记录指针下的内容点（fit 空间，扣除列内边距）。
+      gesture.current = {
+        anchorFitX: (viewport.scrollLeft + anchorX - COLUMN_PADDING) / k0,
+        anchorFitY: (viewport.scrollTop + anchorY - COLUMN_PADDING) / k0,
+        anchorX,
+        anchorY,
+      }
     }
+    live.current = next / k0
+    applyGesture(next)
+    const g = gesture.current
+    viewport.scrollLeft = COLUMN_PADDING + g.anchorFitX * next - g.anchorX
+    viewport.scrollTop = COLUMN_PADDING + g.anchorFitY * next - g.anchorY
     window.clearTimeout(settle.current)
-    settle.current = window.setTimeout(() => { setZoom(zoomRef.current) }, GESTURE_COMMIT_MS)
-  }, [])
+    settle.current = window.setTimeout(() => { commitTo(next) }, GESTURE_COMMIT_MS)
+  }, [applyGesture, commitTo])
 
   const onWheel = useCallback((event: React.WheelEvent<HTMLDivElement>): void => {
     // 触控板捏合与 Ctrl/⌘+滚轮缩放；普通滚轮交给原生滚动。
@@ -211,10 +239,10 @@ export function OfdHifiBody({ content, t }: {
       GESTURE_FACTOR_MAX,
     )
     const bounds = event.currentTarget.getBoundingClientRect()
-    zoomAt(factor, event.clientX - bounds.left, event.clientY - bounds.top)
-  }, [zoomAt])
+    zoomBy(factor, event.clientX - bounds.left, event.clientY - bounds.top)
+  }, [zoomBy])
 
-  // 放大后拖拽平移（原生滚动）；fit 态不拦截，让文本可正常选中。
+  // 放大后拖拽平移（原生滚动）；fit 态不拦截，SVG 文本可原生选中。
   const scrollable = (): boolean => {
     const viewport = viewportRef.current
     return viewport !== null && zoomRef.current > 1
@@ -227,6 +255,7 @@ export function OfdHifiBody({ content, t }: {
       event.currentTarget.setPointerCapture(event.pointerId)
     } catch { /* capture refused; the drag continues on shared handlers */ }
     drag.current = { x: event.clientX, y: event.clientY }
+    setPanning(true)
   }, [])
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>): void => {
@@ -240,18 +269,17 @@ export function OfdHifiBody({ content, t }: {
 
   const onPointerUp = useCallback((): void => {
     drag.current = undefined
+    setPanning(false)
   }, [])
 
   const onDoubleClick = useCallback((event: React.MouseEvent<HTMLDivElement>): void => {
-    // 文本上的双击保留原生选词。
-    if ((event.target as Element).closest('[data-selection-layer]') !== null) return
-    if (zoomRef.current > 1 + Number.EPSILON) {
-      zoomAt(1 / zoomRef.current, 0, 0)
+    if (zoomRef.current > 1 + Number.EPSILON || (live.current ?? 1) * zoomRef.current > 1 + Number.EPSILON) {
+      commitTo(1)
     } else {
       const bounds = event.currentTarget.getBoundingClientRect()
-      zoomAt(2, event.clientX - bounds.left, event.clientY - bounds.top)
+      zoomBy(2, event.clientX - bounds.left, event.clientY - bounds.top)
     }
-  }, [zoomAt])
+  }, [commitTo, zoomBy])
 
   const body = useMemo(() => {
     if (failed) return <p className={css.status} role="alert">{t('failed')}</p>
@@ -265,7 +293,7 @@ export function OfdHifiBody({ content, t }: {
       <div
         ref={viewportRef}
         className={css.hifi}
-        data-pannable={zoom > 1 || undefined}
+        data-panning={panning || undefined}
         onWheel={onWheel}
         onDoubleClick={onDoubleClick}
         onPointerDown={onPointerDown}
@@ -281,8 +309,8 @@ export function OfdHifiBody({ content, t }: {
       <button
         type="button"
         className={css.zoomBadge}
-        hidden={zoom <= 1}
-        onClick={() => { zoomAt(1 / zoomRef.current, 0, 0) }}
+        hidden={zoom <= 1 && live.current === undefined}
+        onClick={() => { commitTo(1) }}
       >
         {`${Math.round(zoom * 100)}%`}
       </button>
