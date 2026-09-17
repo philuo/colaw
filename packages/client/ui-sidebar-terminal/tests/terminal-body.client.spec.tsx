@@ -247,10 +247,9 @@ it('fits only visible writable terminals with measurable dimensions and clamps t
   h.model.resize.mockClear()
   fake.dimensions = { cols: 500, rows: 300 }
   measure?.()
-  // Resize-storm debounce: the local grid resized live above; the host-side
-  // resize lands once the observer storm pauses.
-  expect(h.model.resize).not.toHaveBeenCalled()
-  await new Promise(resolve => setTimeout(resolve, 200))
+  // The first observation of a resize reaches the PTY at once — clamped to what
+  // the Host environment allows — so the program re-lays-out while the pane
+  // changes instead of waiting for it to settle.
   expect(h.model.resize).toHaveBeenCalledWith(200, 100)
   h.model.resize.mockClear()
   h.update(state, false)
@@ -272,6 +271,7 @@ it('fits only visible writable terminals with measurable dimensions and clamps t
   h.update({ ...state, environment: undefined })
   fake.dimensions = { cols: 40, rows: 20 }
   measure?.()
+  h.model.resize.mockClear()
   h.update(state)
   for (const dimensions of [{ cols: 1, rows: 20 }, { cols: 40, rows: 0 }]) { fake.dimensions = dimensions; measure?.() }
   expect(h.model.resize).not.toHaveBeenCalled()
@@ -383,7 +383,7 @@ it.each([en, zh])('translates known terminal failures while retaining unknown Ho
   expect(h.view.getByRole('alert').textContent).toContain('Host permission denied')
 })
 
-it('tracks a sidebar drag with the local grid and sends one PTY resize for the settled width', () => {
+it('tracks a sidebar drag with the local grid and throttles the PTY resize', () => {
   const h = mount({ ...idle, info, phase: 'connected', writable: true })
   const terminal = fake.terminals[0]!
   expect(terminal.resize).toHaveBeenLastCalledWith(120, 40)
@@ -391,24 +391,33 @@ it('tracks a sidebar drag with the local grid and sends one PTY resize for the s
   h.model.resize.mockClear()
   vi.useFakeTimers()
   try {
-    // A divider drag delivers a stream of widths; the pane must reflow for
-    // every one of them, while the PTY waits for the drag to settle.
-    for (const cols of [110, 90, 70]) {
+    // The first event of a drag reflows the pane and reaches the PTY at once,
+    // so the program starts re-laying-out while the divider is still moving.
+    fake.dimensions = { cols: 110, rows: 40 }
+    measure!()
+    expect(terminal.resize).toHaveBeenLastCalledWith(110, 40)
+    expect(h.model.resize).toHaveBeenCalledExactlyOnceWith(110, 40)
+    // Further events inside the interval keep reflowing the grid but coalesce
+    // into one PTY resize — each one makes the program redraw.
+    for (const cols of [100, 90]) {
       fake.dimensions = { cols, rows: 40 }
       measure!()
       expect(terminal.resize).toHaveBeenLastCalledWith(cols, 40)
-      expect(h.model.resize).not.toHaveBeenCalled()
     }
-    vi.advanceTimersByTime(120)
-    expect(h.model.resize).toHaveBeenCalledExactlyOnceWith(70, 40)
-    // A step that changes nothing must not re-resize the grid or re-send a PTY
-    // request for a size the Host already has.
-    h.model.resize.mockClear()
+    expect(h.model.resize).toHaveBeenCalledTimes(1)
+    vi.advanceTimersByTime(80)
+    expect(h.model.resize).toHaveBeenCalledTimes(2)
+    expect(h.model.resize).toHaveBeenLastCalledWith(90, 40)
+    // The trailing edge always lands the size the drag ended on.
+    fake.dimensions = { cols: 70, rows: 40 }
+    measure!()
+    vi.advanceTimersByTime(80)
+    expect(h.model.resize).toHaveBeenLastCalledWith(70, 40)
+    // A step that changes nothing still confirms the size to the Host, which
+    // deduplicates it, and must not re-resize the grid.
     terminal.resize.mockClear()
     measure!()
     expect(terminal.resize).not.toHaveBeenCalled()
-    vi.advanceTimersByTime(120)
-    expect(h.model.resize).toHaveBeenCalledExactlyOnceWith(70, 40)
   } finally { vi.useRealTimers() }
 })
 
@@ -422,7 +431,6 @@ it('clamps a drag to the Host environment limits', () => {
     fake.dimensions = { cols: 250, rows: 150 }
     measure!()
     expect(terminal.resize).toHaveBeenLastCalledWith(environment.maxCols, environment.maxRows)
-    vi.advanceTimersByTime(120)
     expect(h.model.resize).toHaveBeenCalledExactlyOnceWith(environment.maxCols, environment.maxRows)
   } finally { vi.useRealTimers() }
 })
@@ -437,7 +445,7 @@ it('leaves a read-only pane at the Host width', () => {
   try {
     fake.dimensions = { cols: 90, rows: 40 }
     measure!()
-    vi.advanceTimersByTime(120)
+    vi.advanceTimersByTime(200)
     expect(terminal.resize).not.toHaveBeenCalled()
     expect(h.model.resize).not.toHaveBeenCalled()
   } finally { vi.useRealTimers() }
@@ -454,7 +462,7 @@ it('keeps a hidden pane in step without resizing the shared PTY', () => {
     fake.dimensions = { cols: 90, rows: 40 }
     measure!()
     expect(terminal.resize).toHaveBeenLastCalledWith(90, 40)
-    vi.advanceTimersByTime(120)
+    vi.advanceTimersByTime(200)
     expect(h.model.resize).not.toHaveBeenCalled()
   } finally { vi.useRealTimers() }
 })

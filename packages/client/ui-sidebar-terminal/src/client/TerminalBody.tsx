@@ -16,6 +16,14 @@ import { observeTerminalCursor } from './terminal-cursor.ts'
 export type TerminalBodyProps = PropsRuntime<'sidebar.right.pane.tab'> & PropsLocale<'sidebarTerminal'> & InjectFace<TerminalBodyInjected>
 
 /**
+ * Minimum gap between PTY resizes while a drag is in flight. Every resize makes
+ * the running program redraw, so this bounds the redraw rate during a drag
+ * without making the pane wait for the drag to end; the trailing edge always
+ * delivers the final size.
+ */
+const ptyResizeInterval = 80
+
+/**
  * Render the retained terminal with the application theme.
  * @param props - sidebar occurrence, model lookup and translated copy.
  * @returns the terminal screen and any pending or exceptional state.
@@ -86,15 +94,25 @@ function TerminalScreen({ state, model, visible, label, theme }: {
     lastRevision.current = 0
     const input = xterm.onData((data) => { model.write(data) })
     // A pane resize or sidebar drag fires the observer continuously, and the
-    // two sides of a resize want opposite timing:
-    //   - the local grid must track the pointer, because reflowing the rows we
-    //     already have is what makes the pane visually follow the drag;
-    //   - the PTY must not, because a resize per event floods a full-screen
-    //     TUI with SIGWINCH redraws while the pane is still moving.
-    // So the grid resizes now and only the PTY resize waits for the drag to
-    // settle. Deferring both leaves the pane frozen at its old width for the
-    // whole drag, which reads as "the terminal ignores the sidebar".
+    // two halves of a resize want different timing:
+    //   - the local grid must follow every event, because reflowing the rows we
+    //     already have is what makes the pane track the pointer;
+    //   - the PTY must be throttled, because each resize makes the program
+    //     redraw and one resize per event is one redraw per frame.
+    // The first event fires immediately and the last size always lands, so a
+    // drag re-lays-out the program while it happens — the way a native terminal
+    // behaves — instead of snapping into place only after the drag ends.
     let resizeTimer: number | undefined
+    let sentAt = 0
+    let pending: { cols: number; rows: number } | undefined
+    const settle = (): void => {
+      const next = pending
+      pending = undefined
+      resizeTimer = undefined
+      if (next === undefined || !current.current.visible || !current.current.state.writable) return
+      sentAt = Date.now()
+      void model.resize(next.cols, next.rows)
+    }
     const measure = (): void => {
       if (!current.current.state.writable || node.clientWidth === 0 || node.clientHeight === 0) return
       const dimensions = addon.proposeDimensions()
@@ -104,11 +122,11 @@ function TerminalScreen({ state, model, visible, label, theme }: {
       const rows = Math.min(dimensions.rows, environment.maxRows)
       if (cols < 2 || rows < 1) return
       if (xterm.cols !== cols || xterm.rows !== rows) xterm.resize(cols, rows)
-      window.clearTimeout(resizeTimer)
-      resizeTimer = window.setTimeout(() => {
-        if (!current.current.visible || !current.current.state.writable) return
-        void model.resize(cols, rows)
-      }, 120)
+      pending = { cols, rows }
+      if (resizeTimer !== undefined) return
+      const wait = ptyResizeInterval - (Date.now() - sentAt)
+      if (wait > 0) resizeTimer = window.setTimeout(settle, wait)
+      else settle()
     }
     const observer = new ResizeObserver(measure)
     observer.observe(node)

@@ -109,6 +109,21 @@ export function spawn(
     stderr: 'inherit',
   })
 
+  /**
+   * Deliver a signal the way a tty driver would: to the child's process group
+   * first, so the shell's foreground job sees it too, then to the child itself
+   * for a caller that never became a group leader. A reaped child's pid may
+   * already belong to someone else, so nothing is sent once it has exited.
+   *
+   * @param name - signal name.
+   */
+  const signalGroup = (name: string): void => {
+    if (exited) return
+    for (const target of [-proc.pid, proc.pid]) {
+      try { process.kill(target, name) } catch { /* already reaped, or not a leader */ }
+    }
+  }
+
   // Listen for process exit
   proc.exited.then((exitCode: number) => {
     if (exited) return
@@ -177,6 +192,16 @@ export function spawn(
     },
     resize(cols: number, rows: number) {
       terminal.resize(cols, rows)
+      // Bun.Terminal.resize applies the new winsize (TIOCSWINSZ lands — the
+      // child's `stty size` reports it), but the pty has no controlling
+      // terminal, so the kernel has no foreground process group to hand
+      // SIGWINCH to and the signal is never sent. A full-screen TUI only
+      // redraws when it arrives, so the pane reflowed while the program kept
+      // painting at its old width — the reported "terminal ignores the width it
+      // is given", with the leftover cells reading as garbled text. The child
+      // leads its own process group and the shell's jobs share it, so signalling
+      // the group is what the tty driver would have done.
+      signalGroup('SIGWINCH')
     },
   }
 }
