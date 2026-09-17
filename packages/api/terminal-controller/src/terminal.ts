@@ -98,10 +98,16 @@ export class BrowserTerminal {
       this.screen.resize(cols, rows)
       this.info = { ...this.info, cols, rows }
       this.broadcast({ type: 'state', info: this.info })
-      // No snapshot replay here: the PTY's SIGWINCH makes full-screen TUIs
-      // repaint at the new width through ordinary output frames, which both
-      // grids consume. Re-serializing immediately would instead freeze the
-      // pre-repaint (misaligned) rows into a snapshot.
+      // Deliberately no snapshot replay here. The follower contract is one
+      // snapshot per stream generation followed by a contiguous output
+      // sequence, and the client enforces it: a snapshot arriving mid-stream
+      // throws 'Unexpected terminal screen snapshot' and fails the pane, so
+      // replaying the reflowed grid on resize kills every attached view (and
+      // reproduces as "the terminal will not connect"). It is also unnecessary
+      // — a full-screen TUI repaints on its own SIGWINCH, which the PTY resize
+      // above has already delivered (measured against Claude Code: a width
+      // change clears and redraws the frame with absolute column addressing
+      // within milliseconds).
     })
   }
 

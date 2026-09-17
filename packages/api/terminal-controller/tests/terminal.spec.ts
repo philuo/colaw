@@ -74,6 +74,20 @@ describe('BrowserTerminal', () => {
     expect(terminal.info.controllerId).toBeUndefined()
   })
 
+  it('answers a resize with a state frame alone, never a mid-stream snapshot', async () => {
+    // The client validates one snapshot per stream generation followed by a
+    // contiguous output sequence: a snapshot pushed mid-stream reads as a
+    // protocol violation and fails the whole pane. Replaying the reflowed grid
+    // on resize therefore has to stay a state-only announcement.
+    const { terminal, output, handle } = fixture()
+    const follower = await attach(terminal)
+    output.write(Buffer.from('ready\r\n'))
+    expect(await readFrame(follower.iterator)).toMatchObject({ type: 'output' })
+    await terminal.resize(attachment('first'), 100, 30)
+    expect(handle.resize).toHaveBeenCalledWith(100, 30)
+    expect(await readFrame(follower.iterator)).toMatchObject({ type: 'state', info: { cols: 100, rows: 30 } })
+  })
+
   it('keeps exit facts and screen until explicit cleanup and never starts a replacement process', async () => {
     const { terminal, output, outcome, handle } = fixture()
     const first = await attach(terminal)
