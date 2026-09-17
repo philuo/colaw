@@ -28,7 +28,9 @@ class FakeTerminal {
     this.renderFrame = listener
     return { dispose: this.disposeRender }
   })
-  readonly resize = vi.fn()
+  cols = 0
+  rows = 0
+  readonly resize = vi.fn((cols: number, rows: number) => { this.cols = cols; this.rows = rows })
   readonly reset = vi.fn()
   readonly focus = vi.fn()
   readonly dispose = vi.fn()
@@ -379,4 +381,80 @@ it.each([en, zh])('translates known terminal failures while retaining unknown Ho
   }
   h.update({ ...idle, phase: 'failed', error: 'Host permission denied' })
   expect(h.view.getByRole('alert').textContent).toContain('Host permission denied')
+})
+
+it('tracks a sidebar drag with the local grid and sends one PTY resize for the settled width', () => {
+  const h = mount({ ...idle, info, phase: 'connected', writable: true })
+  const terminal = fake.terminals[0]!
+  expect(terminal.resize).toHaveBeenLastCalledWith(120, 40)
+  terminal.resize.mockClear()
+  h.model.resize.mockClear()
+  vi.useFakeTimers()
+  try {
+    // A divider drag delivers a stream of widths; the pane must reflow for
+    // every one of them, while the PTY waits for the drag to settle.
+    for (const cols of [110, 90, 70]) {
+      fake.dimensions = { cols, rows: 40 }
+      measure!()
+      expect(terminal.resize).toHaveBeenLastCalledWith(cols, 40)
+      expect(h.model.resize).not.toHaveBeenCalled()
+    }
+    vi.advanceTimersByTime(120)
+    expect(h.model.resize).toHaveBeenCalledExactlyOnceWith(70, 40)
+    // A step that changes nothing must not re-resize the grid or re-send a PTY
+    // request for a size the Host already has.
+    h.model.resize.mockClear()
+    terminal.resize.mockClear()
+    measure!()
+    expect(terminal.resize).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(120)
+    expect(h.model.resize).toHaveBeenCalledExactlyOnceWith(70, 40)
+  } finally { vi.useRealTimers() }
+})
+
+it('clamps a drag to the Host environment limits', () => {
+  const h = mount({ ...idle, info, phase: 'connected', writable: true })
+  const terminal = fake.terminals[0]!
+  terminal.resize.mockClear()
+  h.model.resize.mockClear()
+  vi.useFakeTimers()
+  try {
+    fake.dimensions = { cols: 250, rows: 150 }
+    measure!()
+    expect(terminal.resize).toHaveBeenLastCalledWith(environment.maxCols, environment.maxRows)
+    vi.advanceTimersByTime(120)
+    expect(h.model.resize).toHaveBeenCalledExactlyOnceWith(environment.maxCols, environment.maxRows)
+  } finally { vi.useRealTimers() }
+})
+
+it('leaves a read-only pane at the Host width', () => {
+  const h = mount({ ...idle, info, phase: 'connected', writable: false })
+  const terminal = fake.terminals[0]!
+  expect(terminal.resize).toHaveBeenLastCalledWith(80, 24)
+  terminal.resize.mockClear()
+  h.model.resize.mockClear()
+  vi.useFakeTimers()
+  try {
+    fake.dimensions = { cols: 90, rows: 40 }
+    measure!()
+    vi.advanceTimersByTime(120)
+    expect(terminal.resize).not.toHaveBeenCalled()
+    expect(h.model.resize).not.toHaveBeenCalled()
+  } finally { vi.useRealTimers() }
+})
+
+it('keeps a hidden pane in step without resizing the shared PTY', () => {
+  const h = mount({ ...idle, info, phase: 'connected', writable: true })
+  const terminal = fake.terminals[0]!
+  terminal.resize.mockClear()
+  h.model.resize.mockClear()
+  h.update({ ...idle, info, phase: 'connected', writable: true }, false)
+  vi.useFakeTimers()
+  try {
+    fake.dimensions = { cols: 90, rows: 40 }
+    measure!()
+    expect(terminal.resize).toHaveBeenLastCalledWith(90, 40)
+    vi.advanceTimersByTime(120)
+    expect(h.model.resize).not.toHaveBeenCalled()
+  } finally { vi.useRealTimers() }
 })

@@ -85,33 +85,29 @@ function TerminalScreen({ state, model, visible, label, theme }: {
     fit.current = addon
     lastRevision.current = 0
     const input = xterm.onData((data) => { model.write(data) })
-    // A pane resize or sidebar drag fires the observer continuously; resizing
-    // the PTY per event floods TUI programs with SIGWINCH redraws and interleaves
-    // local grid changes with recovery snapshots (garbled screens). The local
-    // grid and the PTY must also never disagree: a shell line editor redraws
-    // by addressing cells at the PTY's width, so pasting and deleting while
-    // the two widths differ smears stale characters across the pane. Both
-    // sides therefore resize together in one settled callback — during the
-    // storm the pane keeps the previous frame, which reads as stable rather
-    // than broken.
+    // A pane resize or sidebar drag fires the observer continuously, and the
+    // two sides of a resize want opposite timing:
+    //   - the local grid must track the pointer, because reflowing the rows we
+    //     already have is what makes the pane visually follow the drag;
+    //   - the PTY must not, because a resize per event floods a full-screen
+    //     TUI with SIGWINCH redraws while the pane is still moving.
+    // So the grid resizes now and only the PTY resize waits for the drag to
+    // settle. Deferring both leaves the pane frozen at its old width for the
+    // whole drag, which reads as "the terminal ignores the sidebar".
     let resizeTimer: number | undefined
     const measure = (): void => {
-      if (!current.current.visible || !current.current.state.writable || node.clientWidth === 0 || node.clientHeight === 0) return
+      if (!current.current.state.writable || node.clientWidth === 0 || node.clientHeight === 0) return
       const dimensions = addon.proposeDimensions()
       const environment = current.current.state.environment
       if (dimensions === undefined || environment === undefined) return
       const cols = Math.min(dimensions.cols, environment.maxCols)
       const rows = Math.min(dimensions.rows, environment.maxRows)
       if (cols < 2 || rows < 1) return
-      if (xterm.cols === cols && xterm.rows === rows) return
+      if (xterm.cols !== cols || xterm.rows !== rows) xterm.resize(cols, rows)
       window.clearTimeout(resizeTimer)
       resizeTimer = window.setTimeout(() => {
         if (!current.current.visible || !current.current.state.writable) return
-        xterm.resize(cols, rows)
         void model.resize(cols, rows)
-        // Full-screen TUIs (claude code, vim) may not redraw after SIGWINCH;
-        // the host re-snapshots its settled grid on resize and the render
-        // effect replays it, so the pane converges without any extra calls.
       }, 120)
     }
     const observer = new ResizeObserver(measure)
