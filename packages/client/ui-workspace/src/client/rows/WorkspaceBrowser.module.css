@@ -285,7 +285,8 @@
   display: flex;
   flex-direction: column;
   margin-left: -4px;
-  margin-right: calc(-1 * var(--dsh-session-list-edge-inset));
+  /* margin-right: calc(-1 * var(--dsh-session-list-edge-inset)); */
+  margin-right: -4px;
   padding-left: 4px;
   /* The list remains the scroll clip. This seat stays visible so the
      absolutely positioned first-boundary marker can occupy the header gap. */
