@@ -45,7 +45,11 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
           ? <button type="button" onClick={() => { void model.refresh() }}>{t('retry')}</button>
           : <button type="button" onClick={() => { model.connect() }}>{t('reconnect')}</button>)}
       </div>}
-      {state.info !== undefined && <TerminalScreen state={state} model={model} visible={tab.visible} label={t('title')} theme={theme} />}
+      {/* Keep the screen mounted across phase changes: unmounting it on every
+         loading/creating hop collapses the pane height (the status bar jumps)
+         and discards a retained terminal's rendered grid. The overlay status
+         bar paints over the retained screen instead. */}
+      {(state.info !== undefined || state.phase !== 'idle') && <TerminalScreen state={state} model={model} visible={tab.visible} label={t('title')} theme={theme} />}
       {error !== undefined && <p className={css.error} role="alert">{t('failed', { message: error })}</p>}
     </section>
   )
@@ -108,7 +112,7 @@ function TerminalScreen({ state, model, visible, label, theme }: {
         // Full-screen TUIs (claude code, vim) may not redraw after SIGWINCH;
         // the host re-snapshots its settled grid on resize and the render
         // effect replays it, so the pane converges without any extra calls.
-      }, 250)
+      }, 120)
     }
     const observer = new ResizeObserver(measure)
     observer.observe(node)
