@@ -97,11 +97,14 @@ export class BrowserTerminal {
       await this.handle.resize(cols, rows)
       this.screen.resize(cols, rows)
       this.info = { ...this.info, cols, rows }
+      // Re-serialize the resized host grid and push it: the follower's local
+      // grid just changed too, and a full-screen TUI only repaints when its
+      // next output lands — without this frame the pane would keep showing
+      // the old width's rows beside empty space until then. (The earlier
+      // smearing came from the live-resize width mismatch, already fixed by
+      // resizing both grids in one settled callback.)
+      this.broadcast({ type: 'snapshot', sequence: ++this.sequence, screen: this.serializer.serialize(), info: this.info })
       this.broadcast({ type: 'state', info: this.info })
-      // No snapshot replay here: the PTY's SIGWINCH makes full-screen TUIs
-      // repaint at the new width through ordinary output frames, which both
-      // grids consume. Re-serializing immediately would instead freeze the
-      // pre-repaint (misaligned) rows into a snapshot.
     })
   }
 
