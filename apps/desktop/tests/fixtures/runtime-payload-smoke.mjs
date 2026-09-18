@@ -1,7 +1,7 @@
 /** Exercise filtered Desktop native and HTML dependencies under its bundled Node. */
 
 import assert from 'node:assert/strict'
-import { closeSync, mkdtempSync, openSync, readFileSync, readSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
@@ -64,22 +64,6 @@ async function checkPty() {
   }
 }
 
-/** fs-ext implements seek on Windows through SetFilePointerEx and on POSIX through lseek. */
-function checkFsExt() {
-  const fsExt = requireRuntime('fs-ext')
-  const file = join(scratch, 'seek.txt')
-  writeFileSync(file, 'abcdef', { flag: 'wx', mode: 0o600 })
-  const fd = openSync(file, 'r')
-  try {
-    assert.equal(fsExt.seekSync(fd, 2, fsExt.constants.SEEK_SET), 2)
-    const bytes = Buffer.alloc(4)
-    assert.equal(readSync(fd, bytes, 0, bytes.length, null), 4)
-    assert.equal(bytes.toString(), 'cdef')
-  } finally {
-    closeSync(fd)
-  }
-}
-
 /** Resolve one system function through Koffi's packaged native module. */
 function checkKoffi() {
   const koffi = requireRuntime('koffi')
@@ -121,7 +105,9 @@ function checkHtml() {
 }
 
 try {
-  checkFsExt()
+  // fs-ext is no longer a dependency of this product — the file lease uses the
+  // runtime's own flock through Bun FFI — so the payload carries no such module
+  // and the smoke must not require one.
   checkKoffi()
   await checkSharp()
   checkHtml()
