@@ -18,6 +18,7 @@ import {
   setBundleIcon, systemIsDark, type AppearancePreference,
 } from './app-appearance.ts'
 import { spawn, spawnSync } from 'node:child_process'
+import { connect } from 'node:net'
 import { homedir } from 'node:os'
 
 /**
@@ -36,7 +37,7 @@ const bundleUrl = (): string => {
   if (main !== undefined) return pathToFileURL(main).href
   return typeof __filename === 'string' ? pathToFileURL(__filename).href : import.meta.url
 }
-import { dshHomePath, migrateLegacyDshHome } from '@deepseek-ai/dsh-home-paths'
+import { dshHomePath } from '@deepseek-ai/dsh-home-paths'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
@@ -545,14 +546,31 @@ function readOverlayWebserverPort(): number | undefined {
 
 /** Whether something already listens on the app's webserver port. */
 async function webserverAlive(port: number): Promise<boolean> {
-  try {
-    // Any HTTP answer (401/403 included) means an app is there. Bun throws a
-    // non-TypeError for a refused connection, so only a real response counts.
-    await fetch(`http://127.0.0.1:${String(port)}/`, { method: 'HEAD', signal: AbortSignal.timeout(500) })
-    return true
-  } catch {
-    return false
-  }
+  // A raw TCP connect, deliberately not a request. `fetch` would answer a
+  // different question: it honours the machine's HTTP proxy, and macOS's own
+  // loopback exemption list does not keep it off one. With a system proxy on —
+  // a local Clash on 7890 is the ordinary setup here — every probe returns the
+  // proxy's answer, so *every* port reads as occupied and a first launch finds
+  // "another instance", activates it, and exits before a window is ever
+  // created. Connecting to the port is the question actually being asked, and
+  // no proxy sits in front of a socket.
+  return await new Promise<boolean>((resolve) => {
+    const socket = connect({ host: '127.0.0.1', port })
+    let settled = false
+    const settle = (alive: boolean): void => {
+      if (settled) return
+      settled = true
+      socket.removeAllListeners()
+      socket.destroy()
+      resolve(alive)
+    }
+    // A listener accepts or refuses within microseconds on loopback; the bound
+    // only covers a socket that is up but not answering, which is no answer.
+    socket.setTimeout(500)
+    socket.once('connect', () => { settle(true) })
+    socket.once('error', () => { settle(false) })
+    socket.once('timeout', () => { settle(false) })
+  })
 }
 
 /**
@@ -811,7 +829,6 @@ async function main(): Promise<void> {
 
   // The splash is on screen: the profile-directory work the window never
   // needed runs now instead of ahead of it.
-  migrateLegacyDshHome()
   mkdirSync(projectDir, { recursive: true })
   // The agent's shells must run THIS package's Bun — never the host's node or
   // bun (a desktop app owes its own runtime; the ambient installs are not part
