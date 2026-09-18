@@ -265,14 +265,24 @@ describe('TrajectoryTable', () => {
     render(<TrajectoryTable turns={turns} {...FOLD_PROPS} />)
 
     fireEvent.click(screen.getByRole('row', { name: /ASSISTANT/ }))
+    // The disclosure belongs to the Preview tab and opens by default there; the
+    // Summary tab is the folded view, and the reader's own toggle is what the
+    // collapsed/expanded state follows from then on.
+    fireEvent.click(screen.getByRole('tab', { name: 'Preview' }))
     const toggle = screen.getByRole('button', { name: 'Thinking' })
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+    expect(toggle.parentElement?.textContent?.length).toBeGreaterThan(thinking.length)
+
+    fireEvent.click(toggle)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
     expect(screen.queryByText(thinking)).toBeNull()
 
-    fireEvent.click(toggle)
-    expect(screen.getByRole('button', { name: 'Thinking' })).toBe(toggle)
-    expect(toggle.getAttribute('aria-expanded')).toBe('true')
-    expect(toggle.parentElement?.textContent?.length).toBeGreaterThan(thinking.length)
+    // Switching tabs keeps that choice rather than re-deriving it.
+    fireEvent.click(screen.getByRole('tab', { name: 'Summary' }))
+    expect(screen.getByRole('button', { name: 'Thinking' }).getAttribute('aria-expanded')).toBe('false')
+    fireEvent.click(screen.getByRole('tab', { name: 'Preview' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Thinking' }))
+    expect(screen.getByRole('button', { name: 'Thinking' }).getAttribute('aria-expanded')).toBe('true')
   })
 
   it('keeps raw HTML tags in a Markdown-derived context preview', () => {

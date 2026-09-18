@@ -120,10 +120,10 @@ describe('the preset list', () => {
       ],
     })
 
-    const toggle = screen.getByRole('switch', { name: en.showPicker })
-    expect(toggle.getAttribute('aria-checked')).toBe('false')
-    fireEvent.click(toggle)
-    expect(actions.setPickerVisible).toHaveBeenCalledWith(true)
+    // The section no longer draws a control for `showPicker`: the setting is
+    // owned elsewhere, and the section's job here is to explain the disabled
+    // state and keep every preset action inert while it holds.
+    expect(screen.queryByRole('switch', { name: en.showPicker })).toBeNull()
     expect(screen.getByRole('alert').textContent).toBe('settings write disconnected')
 
     const creator = screen.getByRole('button', { name: en.creatorDraft })
