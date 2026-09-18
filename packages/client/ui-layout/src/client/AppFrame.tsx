@@ -19,7 +19,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import { computeColumns, RIGHTBAR_DEFAULT_RATIO, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
+import { computeColumns, RIGHTBAR_DEFAULT_RATIO, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_COLLAPSED, SIDEBAR_DEFAULT } from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
@@ -382,10 +382,13 @@ export function AppFrame({
   // (and a narrow re-widen) returns to the width the user chose.
   const sidebarPreference = sidebarCollapsed ? 0 : layoutInfo.sidebarWidth
   const rightbarPreference = layoutInfo.rightbar ?? viewport * RIGHTBAR_DEFAULT_RATIO
+  // Desktop reopen controls occupy the macOS session header or Windows caption row.
+  const collapsedWidth = document.documentElement.dataset.platform === 'darwin'
+    || document.documentElement.hasAttribute('data-windows-titlebar') ? 0 : SIDEBAR_COLLAPSED
   // Opening on a narrow frame collapses the left sidebar. Eligibility must
   // include that space before the occupant's first shown report arrives.
-  const normal = computeColumns(viewport, !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference)
-  const cols = computeColumns(viewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0)
+  const normal = computeColumns(viewport, !layoutInfo.rightbarShown && narrow ? 0 : sidebarPreference, rightbarPreference, collapsedWidth)
+  const cols = computeColumns(viewport, sidebarPreference, layoutInfo.rightbarTrack ? rightbarPreference : 0, collapsedWidth)
   // The desktop collapsed state drops the rail track entirely.
   const sidebarTrack = desktopHidden ? 0 : cols.sidebar
   // The sidebar slot stays mounted (its floating toggle is the reopen affordance).
@@ -454,6 +457,8 @@ export function AppFrame({
       ref={frameRef}
       className={css.frame}
       style={{
+        ...(document.documentElement.hasAttribute('data-windows-titlebar')
+          ? { '--dsh-windows-sidebar-width': `${cols.sidebar}px` } : {}),
         gridTemplateColumns:
           `${sidebarTrack}px minmax(0, 1fr) ${cols.rightbar}px`,
         ...(({
