@@ -18,6 +18,19 @@ async function start(
   return server
 }
 
+/**
+ * POST one chat-completions request to a mock server.
+ *
+ * `connection: close` is not incidental. Bun's pool keys a keep-alive
+ * connection by host alone, so two servers on `127.0.0.1` with different ports
+ * share one socket: once a suite has talked to one server, a request addressed
+ * to the next is delivered to the first, and the suite reads one server's
+ * answers off another. Asking for a fresh connection per request keeps each
+ * call pointed at the server its URL names.
+ * @param server - the mock server to call.
+ * @param options - path, bearer token, body override, and abort signal.
+ * @returns the response.
+ */
 function chat(
   server: MockLlmServer,
   options: { path?: string; key?: string; body?: string; signal?: AbortSignal } = {},
@@ -26,6 +39,7 @@ function chat(
     method: 'POST',
     headers: {
       'content-type': 'application/json',
+      connection: 'close',
       ...options.key === undefined ? {} : { authorization: `Bearer ${options.key}` },
     },
     body: options.body ?? JSON.stringify({ model: 'mock', messages: [], stream: true }),
