@@ -131,6 +131,28 @@ describe('virtualManifest', () => {
     }
   })
 
+  it('skips a store entry left empty for a platform that cannot materialize it', () => {
+    const root = mkdtempSync(join(tmpdir(), 'dsh-notices-empty-shell-'))
+    try {
+      const name = '@scope/pkg'
+      const store = join(root, 'store')
+      // An optional dependency this host cannot run (an x64 payload on arm64):
+      // pnpm creates the store entry and stops there, so the directory that a
+      // prefix match lands on holds no manifest at all. Reading it unguarded
+      // threw ENOENT and took the whole notices run down.
+      mkdirSync(join(store, `${name.replace('/', '+')}@1.0.0`, 'node_modules', '@scope'), { recursive: true })
+      expect(virtualManifest(store, name)).toBeUndefined()
+
+      // A materialized copy of the same package beside it still resolves.
+      const materialized = join(store, `${name.replace('/', '+')}@2.0.0`, 'node_modules', name)
+      mkdirSync(materialized, { recursive: true })
+      writeFileSync(join(materialized, 'package.json'), JSON.stringify({ name, version: '2.0.0', license: 'MIT' }))
+      expect(virtualManifest(store, name)).toMatchObject({ name, version: '2.0.0' })
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
+  })
+
   it('falls back to a content scan when pnpm 11 truncates the store directory name', () => {
     const root = mkdtempSync(join(tmpdir(), 'dsh-notices-truncated-'))
     try {

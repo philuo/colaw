@@ -253,7 +253,14 @@ export function virtualManifest(
   const prefix = `${name.replace('/', '+')}@`
   const entries = readdirSync(virtual)
   for (const entry of entries.filter(dir => dir.startsWith(prefix))) {
-    const manifest = JSON.parse(readFileSync(resolve(virtual, entry, 'node_modules', name, 'package.json'), 'utf8')) as VirtualManifest
+    const candidate = resolve(virtual, entry, 'node_modules', name, 'package.json')
+    // pnpm leaves a store entry for an optional dependency the current platform
+    // cannot materialize — every x64, Linux, and Windows payload on an arm64
+    // host, and so on. Such an entry exists with nothing inside it, so a prefix
+    // hit is not yet a manifest and reading it would throw ENOENT, taking the
+    // whole notices run down. The content scan below already guards this way.
+    if (!existsSync(candidate)) continue
+    const manifest = JSON.parse(readFileSync(candidate, 'utf8')) as VirtualManifest
     if (expectedVersion === undefined || manifest.version === expectedVersion) return manifest
   }
   for (const dir of entries) {
