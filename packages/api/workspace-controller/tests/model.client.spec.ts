@@ -368,6 +368,70 @@ describe('ClientWorkspaceModel', () => {
     expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
   })
 
+  it('keeps a pushed archive set when a delete reply lands later', async () => {
+    // Delete answers with a complete archive set too, so it has to lose the same
+    // race an archive reply does. Installing a set computed before the push drops
+    // the Session the push archived — which is the Session reappearing in the
+    // sidebar, and the trash list quietly losing an entry.
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first')])
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.deleteArchivedSession = () => gate.promise
+
+    const pending = model.deleteArchivedSession(sid('first'))
+    model.replaceArchived([sid('first'), sid('second')])
+    gate.resolve(remoteOk({ archivedSessionIds: [] }))
+    await expect(pending).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
+  })
+
+  it('keeps every archived id when a delete reply settles after a newer archive', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first')])
+    const deleteGate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.deleteArchivedSession = () => deleteGate.promise
+    remote.onArchiveSession = request =>
+      Promise.resolve(remoteOk({ archivedSessionIds: [sid('first'), request.sessionId] }))
+
+    const deleting = model.deleteArchivedSession(sid('first'))
+    const archiving = model.archiveSession(sid('second'))
+    await expect(archiving).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
+    // The delete was issued first, so its set antedates the archive: it must not
+    // be installed, or the second Session leaves the trash and returns to the tree.
+    deleteGate.resolve(remoteOk({ archivedSessionIds: [] }))
+    await expect(deleting).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first', 'second'])
+  })
+
+  it('keeps a pushed archive set when a clear reply lands later', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first')])
+    const gate = deferred<RemoteResult<WorkspaceArchiveValue>>()
+    remote.clearTrash = () => gate.promise
+
+    const pending = model.clearTrash()
+    model.replaceArchived([sid('first')])
+    gate.resolve(remoteOk({ archivedSessionIds: [] }))
+    await expect(pending).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual(['first'])
+  })
+
+  it('installs a clear reply that is still the newest archive request', async () => {
+    // The guard above must not turn into a refusal to install anything: a clear
+    // with nothing in flight still empties the trash.
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    baseline(model, [], [sid('first'), sid('second')])
+    remote.clearTrash = () => Promise.resolve(remoteOk({ archivedSessionIds: [] }))
+
+    await expect(model.clearTrash()).resolves.toMatchObject({ ok: true })
+    expect(model.getSnapshot().archivedSessionIds).toEqual([])
+  })
+
   it('keeps the latest archive reply when overlapping requests settle out of order', async () => {
     const remote = new FakeWorkspaceRemote()
     const model = modelFor(remote)

@@ -8,6 +8,22 @@ import { mathCompatibility } from '../src/markdown/mathCompatibility.ts'
 afterEach(cleanup)
 
 describe('MarkdownText', () => {
+  // A lone tilde is ordinary punctuation in this corpus — a home directory, an
+  // approximation, and in Chinese prose a common long-dash substitute — so the
+  // renderer keeps GFM's default `singleTilde` OFF: only the double tilde means
+  // strikethrough, and `~word~` reaches the model as the literal text it is.
+  it('leaves a single tilde alone and keeps the double tilde as strikethrough', () => {
+    const { container } = render(<MarkdownText text="注意~这里有坑~，删除用 ~~这段~~ 表示。" />)
+    expect(container.querySelector('del')?.textContent).toBe('这段')
+    expect(container.textContent).toContain('注意~这里有坑~')
+  })
+
+  it('does not turn a lone tilde into strikethrough across a line', () => {
+    const { container } = render(<MarkdownText text="PATH 里有 ~/.colaw 和 ~/bin" />)
+    expect(container.querySelector('del')).toBeNull()
+    expect(container.textContent).toContain('~/.colaw')
+  })
+
   it('renders CommonMark and GFM elements as semantic DOM', () => {
     const markdown = [
       '# Heading',

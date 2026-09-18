@@ -206,20 +206,37 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
 
   /**
    * Remove one archived session from disk for good.
+   *
+   * The reply carries a complete archive set, so it takes its place in the same
+   * ordering as every other archive request: a set computed before a later
+   * archive, unarchive, or push must not be installed over it. Without the
+   * ticket, a reply that lost that race writes an older set — the archived
+   * Session it dropped reappears in the sidebar, and the Session just deleted
+   * comes back with it.
    * @param sessionId - the archived session to delete permanently.
    */
   async deleteArchivedSession(sessionId: SessionId): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const requestSeq = ++this.archiveRequestSeq
     const result = await this.remote.deleteArchivedSession({ sessionId })
-    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    if (result.ok && requestSeq === this.archiveRequestSeq) {
+      this.installArchived(result.value.archivedSessionIds)
+    }
     return result
   }
 
   /**
    * Remove every archived session from disk for good.
+   *
+   * Ordered exactly as {@link deleteArchivedSession} is, and for the same
+   * reason: clearing the trash answers with a complete (empty) set, which an
+   * archive reply still in flight would otherwise overwrite.
    */
   async clearTrash(): Promise<RemoteResult<WorkspaceArchiveValue>> {
+    const requestSeq = ++this.archiveRequestSeq
     const result = await this.remote.clearTrash()
-    if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    if (result.ok && requestSeq === this.archiveRequestSeq) {
+      this.installArchived(result.value.archivedSessionIds)
+    }
     return result
   }
 
