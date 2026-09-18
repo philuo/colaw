@@ -394,12 +394,17 @@ export class HarnessClient {
   private async performClose(): Promise<void> {
     const child = this.child
     if (child === undefined) return
-    try {
-      await this.request('shutdown', undefined, this.runtime.shutdownTimeoutMs ?? 1_000)
-    } catch (error) {
-      // Diagnostic only: the dispose ladder below is the authoritative teardown
-      // for a runtime that cannot answer shutdown anymore.
-      this.appendStderr([`shutdown request failed: ${errorMessage(error)}`])
+    // A child that never came up has nothing to shut down or reap: asking it to
+    // shut down would spend the whole timeout on a process that does not exist,
+    // and the ladder below would spend every grace window after that.
+    if (child.pid !== undefined) {
+      try {
+        await this.request('shutdown', undefined, this.runtime.shutdownTimeoutMs ?? 1_000)
+      } catch (error) {
+        // Diagnostic only: the dispose ladder below is the authoritative teardown
+        // for a runtime that cannot answer shutdown anymore.
+        this.appendStderr([`shutdown request failed: ${errorMessage(error)}`])
+      }
     }
     await disposeRuntimeProcess(child, {
       disposeEofGraceMs: this.runtime.disposeEofGraceMs ?? 6_000,

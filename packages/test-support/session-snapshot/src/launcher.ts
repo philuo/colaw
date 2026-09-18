@@ -224,8 +224,15 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
     ))
   const connection = clientApp.connect(stream)
   const context = connection.agent
+  // The SDK's `closed` follows parser exhaustion, which needs a stream that was
+  // actually fed. A child that never spawned feeds nothing, so its client would
+  // never report itself closed; the spawn failure is the close in that case.
+  const clientClosed = Promise.race([
+    connection.closed,
+    childFailure.then(() => undefined),
+  ])
   const client: AcpTestClient = {
-    closed: connection.closed,
+    closed: clientClosed,
     initialize: params => context.request(methods.agent.initialize, params),
     newSession: params => context.request(methods.agent.session.new, params),
     /* v8 ignore next -- exercised by the real-process ACP control-surface conformance e2e. */
@@ -245,7 +252,13 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
   // `closed` follows parser exhaustion. Capture both eagerly so a caller that
   // invokes close after process exit still joins the complete drain boundary.
   const stdioClosed = new Promise<void>(resolve => child.once('close', () => { resolve() }))
-  const drained = Promise.all([stdioClosed, connection.closed]).then(async () => {
+  // `connection.closed` follows parser exhaustion and `stdioClosed` follows the
+  // child's stdio closing; a spawn failure produces neither, so the failure is
+  // itself the end of the drain boundary.
+  const drained = Promise.all([
+    Promise.race([stdioClosed, childFailure.then(() => undefined)]),
+    clientClosed,
+  ]).then(async () => {
     // The ACP SDK's readable loop dispatches client callbacks without awaiting
     // them. Once `closed` settles no new callbacks can start, but callbacks
     // already in flight still belong to this launch's teardown boundary.
@@ -273,7 +286,8 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
       try {
         await spawned
       } catch (error: unknown) {
-        await drained
+        // Nothing ever started, so there is no stdio closure or parser
+        // exhaustion to join: the drain boundary below can never be reached.
         closeUpdateStream()
         throw error
       }
@@ -459,7 +473,15 @@ function exitMarkerWithinGrace(exited: Promise<void>): Promise<boolean> {
   ])
 }
 
-/** Whether the child still lacks either OS termination marker. */
+/**
+ * Whether the child still lacks either OS termination marker.
+ *
+ * A failed spawn never produced a process, and Node reports that state exactly
+ * as it reports a live child: `exitCode` and `signalCode` both stay null. `pid`
+ * is the only field that separates the two, so without it a caller would try to
+ * signal a process that does not exist and then wait on a drain boundary that
+ * can never be reached.
+ */
 function isRunning(child: ChildProcessWithoutNullStreams): boolean {
-  return child.exitCode === null && child.signalCode === null
+  return child.pid !== undefined && child.exitCode === null && child.signalCode === null
 }

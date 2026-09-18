@@ -84,8 +84,12 @@ export async function disposeRuntimeProcess(
   graces: { disposeEofGraceMs: number; disposeGraceMs: number },
   platform: NodeJS.Platform = process.platform,
 ): Promise<void> {
-  // Already gone: nothing to reap.
-  if (child.exitCode !== null || child.signalCode !== null) return
+  // Already gone: nothing to reap. A failed spawn never produced a process at
+  // all, and Node reports it the same way it reports a live child — `exitCode`
+  // and `signalCode` stay null — so `pid` is the only field that tells the two
+  // apart. Without this the ladder below waits out every grace window for a
+  // process that was never there.
+  if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) return
   // 1. Close stdin and allow cooperative teardown and durable-state flush.
   child.stdin?.end()
   if (await exitsWithin(child, graces.disposeEofGraceMs)) return
