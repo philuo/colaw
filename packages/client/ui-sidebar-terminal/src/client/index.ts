@@ -1,6 +1,7 @@
 /** Register interactive terminal tabs and explicit process cleanup with the sidebar. */
 import type { Context } from '@deepseek-ai/cordis'
 import type { WebTerminalId } from '@deepseek-ai/dsh-api-terminal-controller/types'
+import type { TerminalView } from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type { SidebarRightTabParamsMap, TabId } from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type {} from '@deepseek-ai/dsh-api-terminal-controller/client'
@@ -28,6 +29,7 @@ export const inject = ['slots', 'locale', 'sidebarRight', 'sidebarRightTabs', 'w
 export function apply(ctx: Context): void {
   let disposed = false
   const recovered = new Map<SessionId, Promise<void>>()
+  const watched = new WeakSet<TerminalView>()
   ctx.effect(() => () => { disposed = true; recovered.clear() }, 'ui-sidebar-terminal.lifetime')
   const target = (sessionId: SessionId, key: string): SidebarRightTabParamsMap['terminal'] | undefined =>
     ctx.sidebarRight.tabDomain.occurrence(sessionId, { id: key as TabId }).navigation.getSnapshot().params
@@ -35,10 +37,41 @@ export function apply(ctx: Context): void {
     const params = target(sessionId, key)
     return params !== undefined && 'terminalId' in params ? params.terminalId : undefined
   }
+  /**
+   * Retire a terminal's tab when its Host process ends on its own.
+   *
+   * A shell that exits takes its terminal window with it everywhere else on the
+   * system; the pane used to stay behind showing a dead process. `ended` is the
+   * model's own signal for exactly that case — a close the user asked for is the
+   * sidebar's work in progress, not this one. The watcher is attached once per
+   * view, which is also once per tab, and detaches on the first end it sees (or
+   * with the view), so a tab can never be retired twice.
+   * @param sessionId - the session the tab belongs to.
+   * @param key - the sidebar occurrence key, which is the tab id.
+   * @param model - that occurrence's terminal.
+   */
+  const watchEnded = (sessionId: SessionId, key: string, model: TerminalView): void => {
+    if (watched.has(model)) return
+    watched.add(model)
+    let unsubscribe: () => void = () => { /* Replaced by the subscription below. */ }
+    const stop = (): void => {
+      unsubscribe()
+      model.signal.removeEventListener('abort', stop)
+    }
+    unsubscribe = model.state.subscribe(() => {
+      if (model.state.getSnapshot().ended !== true) return
+      stop()
+      try { ctx.sidebarRight.closeIn(sessionId, key as TabId) }
+      catch (error) { console.error('Terminal tab close failed:', error) }
+    })
+    model.signal.addEventListener('abort', stop, { once: true })
+  }
   const view = (sessionId: SessionId, key: string) => {
     const params = target(sessionId, key)
-    return ctx.webTerminals.view(sessionId, key, terminalId(sessionId, key),
+    const model = ctx.webTerminals.view(sessionId, key, terminalId(sessionId, key),
       params !== undefined && 'shellPath' in params ? params.shellPath : undefined)
+    watchEnded(sessionId, key, model)
+    return model
   }
   const namespace = 'sidebarTerminal'
   const id = '@deepseek-ai/dsh-client-ui-sidebar-terminal'

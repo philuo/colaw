@@ -560,3 +560,53 @@ it('exposes a localized quota error and clears it after a successful retry', asy
   await connected(model)
   expect(model.state.getSnapshot()).toMatchObject({ phase: 'connected', issue: undefined, error: undefined })
 })
+
+it('allocates the shell at the size the pane measured, and clamps it to the Host limits', async () => {
+  const { model, remote } = fixture()
+  // The body reports its measurement while startup is already in flight, so the
+  // size must be read when the allocation actually happens.
+  const detach = model.mount()
+  model.prefer(90, 40)
+  await model.refresh()
+  expect(remote.create).toHaveBeenCalledWith(sessionId, expect.objectContaining({ cols: 90, rows: 40 }), expect.anything())
+  detach()
+
+  const wide = fixture()
+  wide.model.prefer(1_000, 1_000)
+  await mount(wide.model)
+  expect(wide.remote.create).toHaveBeenCalledWith(
+    sessionId, expect.objectContaining({ cols: environment.maxCols, rows: environment.maxRows }), expect.anything(),
+  )
+})
+
+it('keeps the placeholder allocation for a measurement the pane could not use', async () => {
+  const { model, remote } = fixture()
+  model.prefer(1, 0)
+  await mount(model)
+  expect(remote.create).toHaveBeenCalledWith(sessionId, expect.objectContaining({ cols: 80, rows: 24 }), expect.anything())
+})
+
+it('flags a process that ended on its own, and not a close the view asked for', async () => {
+  const { model, remote } = fixture()
+  const exit = Promise.withResolvers<undefined>()
+  cleanups.push(() => { exit.resolve(undefined) })
+  vi.mocked(remote.follow).mockImplementation(async function* (_session, id, controllerId, signal) {
+    yield { type: 'snapshot', sequence: 0, screen: 'final screen', info: { ...info, id, controllerId } }
+    await exit.promise
+    yield { type: 'state', info: { ...info, id, state: 'exited', exitCode: 0 } }
+    await untilAborted(signal)
+  })
+  await connected(model)
+  expect(model.state.getSnapshot().ended).toBeUndefined()
+  exit.resolve(undefined)
+  await expect.poll(() => model.state.getSnapshot().ended).toBe(true)
+  expect(model.state.getSnapshot()).toMatchObject({ info: { state: 'exited' }, writable: false })
+
+  // A close the user asked for is the sidebar's own work in progress; reporting
+  // it as an end would retire the tab a second time.
+  const requested = fixture()
+  await connected(requested.model)
+  await requested.model.close()
+  expect(requested.model.state.getSnapshot()).toMatchObject({ phase: 'closed' })
+  expect(requested.model.state.getSnapshot().ended).toBeUndefined()
+})

@@ -66,6 +66,7 @@
     "@deepseek-ai/dsh-api-terminal-controller": "workspace:^",
     "@xterm/xterm": "^6.0.0",
     "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-webgl": "^0.19.0",
     "@deepseek-ai/dsh-client-ui-layout": "workspace:^",
     "@deepseek-ai/dsh-client-ui-conversation": "workspace:^",
     "@deepseek-ai/dsh-client-ui-theme": "workspace:^"

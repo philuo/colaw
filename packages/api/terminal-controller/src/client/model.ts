@@ -44,6 +44,14 @@ export interface TerminalViewState {
   readonly render?: TerminalRenderFrame | undefined
   readonly error?: string | undefined
   readonly issue?: TerminalViewIssue | undefined
+  /**
+   * The Host process ended on its own: it exited and this view never asked for
+   * the close. The sidebar retires the tab on this signal, the way a terminal
+   * window closes with its shell. Absent for a close the user asked for — the
+   * sidebar is already removing that tab, and for one that failed, which stays
+   * visible with its error and a retry.
+   */
+  readonly ended?: boolean | undefined
 }
 
 /** A view survives DOM unmount; its process only ends on explicit close. */
@@ -59,6 +67,7 @@ export class TerminalView {
   private creation: Promise<void> | undefined
   private loading: Promise<void> | undefined
   private closing: Promise<void> | undefined
+  private preferred: { cols: number; rows: number } | undefined
   private writes: Promise<void> = Promise.resolve()
   private queuedInput = 0
   private readonly detaching = new Set<Promise<void>>()
@@ -79,6 +88,25 @@ export class TerminalView {
     private readonly createWhenMissing = true,
     private readonly shellPath?: string,
   ) {}
+
+  /** Aborted when this view is disposed; a watcher's lifetime. */
+  get signal(): AbortSignal { return this.lifetime.signal }
+
+  /**
+   * Record the size the pane measured, before the shell exists.
+   *
+   * The DOM is measurable one commit before {@link mount} allocates the
+   * process, so the process can start at the size it will actually be drawn at.
+   * A placeholder size is not neutral: the shell lays its banner and prompt out
+   * for the box it is handed, and the fit that follows reflows that grid — the
+   * pane opened with re-wrapped text and its prompt pushed down the screen.
+   * @param cols - measured column count.
+   * @param rows - measured row count.
+   */
+  prefer(cols: number, rows: number): void {
+    if (!Number.isSafeInteger(cols) || !Number.isSafeInteger(rows) || cols < 2 || rows < 1) return
+    this.preferred = { cols, rows }
+  }
 
   /**
    * Attach the DOM lifetime, starting the chosen shell or reconnecting the saved process.
@@ -133,9 +161,12 @@ export class TerminalView {
   private async create(environment: TerminalEnvironment, shellPath?: string): Promise<void> {
     this.patch({ phase: 'creating', error: undefined, issue: undefined })
     this.creation = (async () => {
+      // Allocate at the pane's measured size when the body has reported one;
+      // the placeholder is only for a creation no DOM ever measured.
+      const initial = this.preferred ?? { cols: 80, rows: 24 }
       const info = valueOf(await this.remote.create(this.sessionId, {
         id: this.id, ...shellPath === undefined ? {} : { shellPath },
-        cols: Math.min(80, environment.maxCols), rows: Math.min(24, environment.maxRows),
+        cols: Math.min(initial.cols, environment.maxCols), rows: Math.min(initial.rows, environment.maxRows),
       }, this.lifetime.signal))
       if (!this.lifetime.signal.aborted) {
         this.adopt(info)
@@ -288,7 +319,14 @@ export class TerminalView {
           sequence = frame.sequence
         } else if (frame.type === 'snapshot') throw new TerminalViewError('invalidOutput', 'Unexpected terminal screen snapshot')
         if (frame.type !== 'output') {
-          this.patch({ info: frame.info, title: frame.info.title, phase: 'connected', writable: frame.info.state === 'running' && frame.info.controllerId === this.attachmentId })
+          this.patch({
+            info: frame.info, title: frame.info.title, phase: 'connected',
+            writable: frame.info.state === 'running' && frame.info.controllerId === this.attachmentId,
+            // An exit is the one terminal fact the sidebar acts on: it retires
+            // the tab. `closing` is this view's own close in flight, which the
+            // sidebar is already performing — it must not read as an end.
+            ...frame.info.state === 'exited' && this.closing === undefined ? { ended: true } : {},
+          })
         }
         if (frame.type !== 'state') {
           const revision = ++this.revision
@@ -304,8 +342,9 @@ export class TerminalView {
       }
     } catch (error) {
       if (this.stream === stream) {
-        if (this.state.getSnapshot().info?.state === 'exited') this.patch({ phase: 'closed', writable: false })
-        else this.fail(error)
+        if (this.state.getSnapshot().info?.state === 'exited') {
+          this.patch({ phase: 'closed', writable: false, ...this.closing === undefined ? { ended: true } : {} })
+        } else this.fail(error)
       }
     }
   }

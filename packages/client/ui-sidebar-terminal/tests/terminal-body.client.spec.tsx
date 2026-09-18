@@ -15,9 +15,18 @@ import { en, zh } from '../src/client/locales.ts'
 const fake = vi.hoisted(() => ({
   terminals: [] as FakeTerminal[],
   dimensions: { cols: 120, rows: 40 } as { cols: number; rows: number } | undefined,
+  webgl: [] as FakeWebgl[],
+  webglThrows: false,
 }))
 class FakeTerminal {
-  options: { disableStdin?: boolean; theme?: ITheme }
+  options: {
+    disableStdin?: boolean
+    theme?: ITheme
+    scrollback?: number
+    fontFamily?: string
+    fontSize?: number
+    minimumContrastRatio?: number
+  }
   textarea: HTMLTextAreaElement | undefined = document.createElement('textarea')
   input: ((data: string) => void) | undefined
   readonly disposeInput = vi.fn()
@@ -42,6 +51,21 @@ class FakeTerminal {
 }
 vi.mock('@xterm/xterm', () => ({ Terminal: vi.fn(function (options: object) { return new FakeTerminal(options) }) }))
 vi.mock('@xterm/addon-fit', () => ({ FitAddon: class { proposeDimensions() { return fake.dimensions } } }))
+/** Stands in for the WebGL renderer: records its loss handler and its disposal. */
+class FakeWebgl {
+  readonly dispose = vi.fn()
+  private loss: (() => void) | undefined
+  constructor() { fake.webgl.push(this) }
+  onContextLoss(listener: () => void) { this.loss = listener }
+  /** Simulate the platform reclaiming the context. */
+  loseContext() { this.loss?.() }
+}
+vi.mock('@xterm/addon-webgl', () => ({
+  WebglAddon: vi.fn(function () {
+    if (fake.webglThrows) throw new Error('no WebGL2 in this webview')
+    return new FakeWebgl()
+  }),
+}))
 
 let measure: (() => void) | undefined
 const disconnect = vi.fn()
@@ -50,6 +74,8 @@ let boxHeight = 600
 beforeEach(() => {
   fake.terminals.length = 0
   fake.dimensions = { cols: 120, rows: 40 }
+  fake.webgl.length = 0
+  fake.webglThrows = false
   boxWidth = 800
   boxHeight = 600
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => boxWidth)
@@ -77,7 +103,7 @@ function mount(initial: TerminalViewState | undefined = idle, dictionary = en) {
   let theme: ThemeSnapshot = { preference: 'light', fontSize: 14, active: { id: 'light', colorScheme: 'light', tokens: {} }, themes: [], revision: 0 }
   const detach = vi.fn()
   const model = {
-    mount: vi.fn(() => detach), refresh: vi.fn(async () => {}),
+    mount: vi.fn(() => detach), refresh: vi.fn(async () => {}), prefer: vi.fn(),
     rename: vi.fn(async () => {}), connect: vi.fn(), write: vi.fn(), resize: vi.fn(), acknowledge: vi.fn(),
   }
   const openTab = vi.fn()
@@ -366,9 +392,76 @@ it.each(titleSurfaces)('removes the native $name listener when its title unmount
   expect(h.model.rename).not.toHaveBeenCalled()
 })
 
-it('starts a recovered screen with no local history when environment discovery is unavailable', () => {
-  mount({ ...idle, info, environment: undefined })
-  expect(fake.terminals[0]!.options).toHaveProperty('scrollback', 0)
+it('mounts the pane terminal before any shell exists, and reports the size it measured', () => {
+  // The pane is the terminal from its first frame: the emulator has to exist
+  // before start-up so what it measures can size the shell, and it must stay
+  // mounted across phase changes or a retained grid is thrown away.
+  const measured = mount({ ...idle, phase: 'loading' })
+  expect(fake.terminals).toHaveLength(1)
+  expect(measured.model.prefer).toHaveBeenLastCalledWith(120, 40)
+  fake.dimensions = { cols: 500, rows: 300 }
+  expect(mount({ ...idle, phase: 'loading' }).model.prefer).toHaveBeenLastCalledWith(environment.maxCols, environment.maxRows)
+  fake.dimensions = undefined
+  expect(mount(idle).model.prefer).not.toHaveBeenCalled()
+  fake.dimensions = { cols: 1, rows: 20 }
+  expect(mount(idle).model.prefer).not.toHaveBeenCalled()
+})
+
+it('retains local history before the Host cap arrives and applies the cap when it does', () => {
+  const h = mount({ ...idle, info, environment: undefined })
+  // xterm's own default already retains history. An explicit `undefined` used to
+  // disable scrollback outright, which left the pane unable to scroll at all.
+  expect(fake.terminals[0]!.options).not.toHaveProperty('scrollback')
+  h.update({ ...idle, info, environment: { ...environment, scrollback: 500 } })
+  expect(fake.terminals[0]!.options.scrollback).toBe(500)
+})
+
+it('asks for the font the native terminal uses, at a cell that fills its pixels', () => {
+  // `ui-monospace` is what this WebView resolves to SF Mono (`.SF NS Mono`, a
+  // leading-dot system family that no name lookup can reach — `"SF Mono"` and
+  // `"SFMono-Regular"` both fall silently through to the generic monospace).
+  // Advance 0.618em matches only SF Mono among the installed monospace faces,
+  // and it measured 17% more ink than Andale Mono at a smaller size, which is
+  // what the terminal had been missing next to Terminal.app.
+  mount(idle)
+  const terminal = fake.terminals[0]!
+  expect(terminal.options.fontFamily?.split(',')[0]?.trim()).toBe('ui-monospace')
+  // The atlas renderers rasterise each glyph into a cell that is a whole number
+  // of device pixels, and the cell has to match the font's own advance or every
+  // glyph is resampled (measured: 1.71 antialiased pixels per inked pixel versus
+  // 1.58 when the geometry is exact). 8.000 CSS px is 16 device px at DPR 2, 8 at
+  // DPR 1 and 12 at DPR 1.5, so the size is 8 / 0.618em rather than a round 13.
+  expect((terminal.options.fontSize ?? 0) * 0.6181640625).toBeCloseTo(8, 2)
+})
+it('keeps the pane palette as the pane has always shipped it', () => {
+  // minimumContrastRatio rewrites the ANSI palette to reach the ratio, and on a
+  // light background that darkens most entries — measured cyan at rgb(25,117,117)
+  // with 4.5 against rgb(52,226,226) with 1. That is the look this pane has
+  // always had and it is deliberate; `1` is the value to use if a program's own
+  // colours should pass through untouched.
+  mount(idle)
+  expect(fake.terminals[0]!.options.minimumContrastRatio).toBe(4.5)
+})
+
+it('draws through the WebGL renderer and falls back when its context is lost', () => {
+  // The WebGL renderer blits glyphs from a texture atlas at integer cell
+  // positions, which is what makes a block-art logo one solid shape instead of
+  // per-column stripes. A context can be reclaimed by the platform, and a lost
+  // one leaves a dead canvas behind, so losing it must drop the addon and let
+  // xterm return to the DOM renderer.
+  mount(idle)
+  expect(fake.webgl).toHaveLength(1)
+  expect(fake.terminals[0]!.loadAddon).toHaveBeenCalledWith(fake.webgl[0])
+  expect(fake.webgl[0]!.dispose).not.toHaveBeenCalled()
+  fake.webgl[0]!.loseContext()
+  expect(fake.webgl[0]!.dispose).toHaveBeenCalledTimes(1)
+})
+
+it('keeps the DOM renderer when the webview has no WebGL2', () => {
+  fake.webglThrows = true
+  expect(() => mount(idle)).not.toThrow()
+  expect(fake.webgl).toHaveLength(0)
+  expect(fake.terminals).toHaveLength(1)
 })
 
 

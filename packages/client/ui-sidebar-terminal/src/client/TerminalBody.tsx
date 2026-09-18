@@ -2,6 +2,7 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
+import { WebglAddon } from '@xterm/addon-webgl'
 import type { TerminalViewState, TerminalView } from '@deepseek-ai/dsh-api-terminal-controller/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { ThemeSnapshot } from '@deepseek-ai/dsh-client-ui-theme/client'
@@ -46,18 +47,20 @@ export function TerminalBody({ useTabInfo, useTerminal, useTheme, view, t }: Ter
   const readOnly = state.phase === 'connected' && state.info?.state === 'running' && !state.writable
   return (
     <section className={css.root} data-sidebar-terminal>
+      {/* The pane is the terminal from its first frame, so the emulator is
+         mounted unconditionally: it is what the pane measures itself against
+         before the shell is allocated, and unmounting it on a phase change would
+         discard a retained grid and collapse the pane height. */}
+      <TerminalScreen state={state} model={model} visible={tab.visible} label={t('title')} theme={theme} />
       {(status !== undefined || retry || readOnly) && <div className={css.status} role="status">
-        {status}
-        {readOnly && <>{t('readonly')} <button type="button" onClick={() => { model.connect() }}>{t('control')}</button></>}
-        {retry && (state.info === undefined
-          ? <button type="button" onClick={() => { void model.refresh() }}>{t('retry')}</button>
-          : <button type="button" onClick={() => { model.connect() }}>{t('reconnect')}</button>)}
+        <div className={css.notice}>
+          {status}
+          {readOnly && <>{t('readonly')} <button type="button" onClick={() => { model.connect() }}>{t('control')}</button></>}
+          {retry && (state.info === undefined
+            ? <button type="button" onClick={() => { void model.refresh() }}>{t('retry')}</button>
+            : <button type="button" onClick={() => { model.connect() }}>{t('reconnect')}</button>)}
+        </div>
       </div>}
-      {/* Keep the screen mounted across phase changes: unmounting it on every
-         loading/creating hop collapses the pane height (the status bar jumps)
-         and discards a retained terminal's rendered grid. The overlay status
-         bar paints over the retained screen instead. */}
-      {(state.info !== undefined || state.phase !== 'idle') && <TerminalScreen state={state} model={model} visible={tab.visible} label={t('title')} theme={theme} />}
       {error !== undefined && <p className={css.error} role="alert">{t('failed', { message: error })}</p>}
     </section>
   )
@@ -81,10 +84,73 @@ function TerminalScreen({ state, model, visible, label, theme }: {
 
   useLayoutEffect(() => {
     const node = element.current!
-    const xterm = new Terminal({ minimumContrastRatio: 4.5, cursorBlink: true, fontSize: 13, fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, PingFang SC, Hiragino Sans GB, Microsoft YaHei Mono, monospace', scrollback: current.current.state.environment?.scrollback ?? 0 })
+    const environment = current.current.state.environment
+    const xterm = new Terminal({
+      // Kept at the value this pane has always shipped. It rewrites the ANSI
+      // palette to reach the ratio on a light background, which darkens most
+      // entries, so it is a deliberate look rather than an oversight.
+      minimumContrastRatio: 4.5, cursorBlink: true, fontSize: 12.942,
+      // `ui-monospace` — the same font macOS Terminal.app uses. WebKit resolves
+      // it to SF Mono (`.SF NS Mono`, a leading-dot system family that no name
+      // lookup can reach: `"SF Mono"` and `"SFMono-Regular"` both fall through to
+      // the generic monospace). Measured advance 8.036px at 13px = 0.618em, which
+      // matches `.SF NS Mono`'s 0.618 and no other installed monospace (Menlo and
+      // Andale are 0.600, Menlo 0.602), so the glyphs match the native terminal's.
+      // The block art does not depend on the font: the canvas and WebGL renderers
+      // draw U+2580-259F themselves (blockElementDefinitions, with customGlyphs
+      // defaulting to true), which is why the mascot stays solid in every font —
+      // verified against Menlo, Andale and a fallback face.
+      //
+      // 12.941px, and the fraction is load-bearing. The atlas renderers rasterise
+      // glyphs into a cell sized in whole device pixels; SF Mono advances 0.618em,
+      // so an 8.000 CSS px advance (16 device px at DPR 2, 8 at DPR 1, 12 at 1.5)
+      // needs exactly this size. Get it wrong and every glyph is drawn into a cell
+      // narrower or wider than itself — 0.90 antialiased pixels per inked pixel
+      // against 0.74 when the geometry is exact, i.e. visibly soft text.
+      fontFamily: 'ui-monospace, "SF Mono", Menlo, Consolas, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei Mono", monospace',
+      // The Host's scrollback cap arrives with the environment request, which
+      // is after this emulator exists. xterm's own default already retains
+      // history, so the option is only set when the answer is known — passing
+      // an explicit `undefined` would disable scrollback outright, which is
+      // what made the pane unable to scroll at all.
+      ...environment === undefined ? {} : { scrollback: environment.scrollback },
+    })
     const addon = new FitAddon()
     xterm.loadAddon(addon)
     xterm.open(node)
+    // Draw with the WebGL renderer: it rasterises each glyph once into a texture
+    // atlas and blits it at integer cell positions, so a block-art TUI (Claude
+    // Code's mascot is a grid of █ with a ▄ eye row) is one solid shape. The DOM
+    // renderer lays each cell out on its own at a fractional x, so every column
+    // gets its own antialiasing — next to a native terminal the same logo showed
+    // vertical seams and a slightly different tint per column.
+    //
+    // A WebGL context can be lost — the platform reclaims them and a page may
+    // only hold a handful — and a lost one leaves a dead canvas in place, so the
+    // handler drops the addon and lets xterm fall back to the DOM renderer.
+    // Measured here: after `dispose()` the canvases are gone and the DOM rows are
+    // back, with the buffer untouched. The addon itself is also optional: a
+    // webview without WebGL2 throws on load and keeps the DOM renderer.
+    try {
+      const webgl = new WebglAddon()
+      webgl.onContextLoss(() => { webgl.dispose() })
+      xterm.loadAddon(webgl)
+    } catch (error) {
+      console.warn('Terminal WebGL renderer unavailable, using the DOM renderer:', error)
+    }
+    // Report the pane's size before the view's mount effect allocates the
+    // process, so the shell starts at the box it will be drawn in. A terminal
+    // created at a placeholder size lays its banner and prompt out for that
+    // wrong box, and the fit that follows reflows the grid — re-wrapped text
+    // and a prompt pushed down the pane, at the moment a tab is opened.
+    const measured = addon.proposeDimensions()
+    if (measured !== undefined && Number.isFinite(measured.cols) && Number.isFinite(measured.rows)
+      && measured.cols >= 2 && measured.rows >= 1) {
+      model.prefer(
+        Math.min(measured.cols, environment?.maxCols ?? measured.cols),
+        Math.min(measured.rows, environment?.maxRows ?? measured.rows),
+      )
+    }
     const palette = new TerminalTheme(xterm)
     colors.current = palette
     const cursor = observeTerminalCursor(xterm, node, () => palette.cursor)
@@ -146,6 +212,12 @@ function TerminalScreen({ state, model, visible, label, theme }: {
     const style = getComputedStyle(element.current!)
     colors.current!.update(style.backgroundColor, style.color)
   }, [theme, model])
+
+  useLayoutEffect(() => {
+    const xterm = terminal.current!
+    const scrollback = state.environment?.scrollback
+    if (scrollback !== undefined && xterm.options.scrollback !== scrollback) xterm.options.scrollback = scrollback
+  }, [state.environment?.scrollback, model])
 
   useLayoutEffect(() => {
     const xterm = terminal.current!

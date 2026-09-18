@@ -36,7 +36,17 @@ async function mountPlugin() {
   }[] = []
   const dictionaries = new Map<string, unknown>()
   let closeHandler: SidebarRightCloseHandler | undefined
-  const model = { state: {} }
+  let terminalState: { phase: string; writable: boolean; ended?: boolean } = { phase: 'idle', writable: false }
+  const endListeners = new Set<() => void>()
+  const lifetime = new AbortController()
+  const model = {
+    state: {
+      getSnapshot: () => terminalState,
+      subscribe: (listener: () => void) => { endListeners.add(listener); return () => { endListeners.delete(listener) } },
+    },
+    signal: lifetime.signal,
+  }
+  const closeIn = vi.fn()
   const terminals = {
     view: vi.fn(() => model), close: vi.fn(), closeFailures: {}, retryClose: vi.fn(),
     launchShells: vi.fn(async () => ({ shells: [], selectedShell: undefined })), selectShell: vi.fn(),
@@ -47,7 +57,7 @@ async function mountPlugin() {
   const openTabIn = vi.fn()
   ctx.provide('webTerminals', terminals as never)
   ctx.provide('sidebarRight', {
-    tabDomain: { occurrence }, openTabIn,
+    tabDomain: { occurrence }, openTabIn, closeIn,
     registerCloseHandler: (kind: string, handler: SidebarRightCloseHandler) => { expect(kind).toBe('terminal'); closeHandler = handler; return () => { closeHandler = undefined } },
   } as never)
   ctx.provide('slots', {
@@ -62,8 +72,12 @@ async function mountPlugin() {
   ctx.provide('theme', { getTheme: () => theme } as never)
   const fiber = await ctx.plugin({ inject, apply })
   return {
-    tabs, entries, dictionaries, terminals, model, occurrence, openTabIn, theme,
+    tabs, entries, dictionaries, terminals, model, occurrence, openTabIn, theme, closeIn,
+    get endWatchers() { return endListeners.size },
     emitTheme() { ctx.emit('theme/change', theme) },
+    /** Report the Host process ending on its own, the way the model publishes it. */
+    endTerminal() { terminalState = { ...terminalState, ended: true }; for (const listener of [...endListeners]) listener() },
+    abortLifetime() { lifetime.abort() },
     get closeHandler() { return closeHandler },
     setParams(next: typeof params) { params = next },
     async dispose() { await fiber.dispose(); await ctx.fiber.dispose() },
@@ -134,6 +148,44 @@ it('registers terminal views, recovery and cleanup, then releases every contribu
   expect(h.tabs.get('terminal')).toBeUndefined()
   expect(h.entries).toEqual([])
   expect(h.dictionaries.size).toBe(0)
+})
+
+it('retires a terminal tab once, when its Host process ends on its own', async () => {
+  const h = await mountPlugin()
+  const sessionId = 'session' as SessionId
+  try {
+    const face = h.entries[1]!.inject(sessionId) as TerminalBodyInjected
+    face.view('tab')
+    face.view('tab')
+    // One watcher per view, however often a body asks for it.
+    expect(h.endWatchers).toBe(1)
+    expect(h.closeIn).not.toHaveBeenCalled()
+    h.endTerminal()
+    expect(h.closeIn).toHaveBeenCalledExactlyOnceWith(sessionId, 'tab')
+    // The watcher detaches on the end it reports, so a repeated notification —
+    // or a repeated end — can never retire the same tab twice.
+    expect(h.endWatchers).toBe(0)
+    h.endTerminal()
+    expect(h.closeIn).toHaveBeenCalledOnce()
+  } finally {
+    await h.dispose()
+  }
+})
+
+it('detaches a terminal end watcher with the view that owns it', async () => {
+  const h = await mountPlugin()
+  const sessionId = 'session' as SessionId
+  try {
+    const face = h.entries[1]!.inject(sessionId) as TerminalBodyInjected
+    face.view('tab')
+    expect(h.endWatchers).toBe(1)
+    h.abortLifetime()
+    expect(h.endWatchers).toBe(0)
+    h.endTerminal()
+    expect(h.closeIn).not.toHaveBeenCalled()
+  } finally {
+    await h.dispose()
+  }
 })
 
 it('shares pending and completed recovery across Session headers and opens each returned terminal once', async () => {
