@@ -605,7 +605,10 @@ describe('client bundle activation', () => {
     expect(script).not.toContain('//# sourceURL=')
     expect(script).toContain(`//# sourceMappingURL=${mapUrl(batch.url)}`)
     const payload = JSON.parse((await routeRequest(route, mapUrl(batch.url))).body.toString('utf8')) as {
-      sections: { map: { mappings: string; sources: string[]; sourcesContent: string[] } }[]
+      sections: {
+        offset: { line: number }
+        map: ConstructorParameters<typeof SourceMap>[0]
+      }[]
     }
     expect(payload.sections.map(section => section.map)).toEqual([
       {
@@ -623,13 +626,17 @@ describe('client bundle activation', () => {
         sourcesContent: ['window.generation = 1\n'],
       },
     ])
-    const consumer = new SourceMap(payload as unknown as ConstructorParameters<typeof SourceMap>[0])
-    expect(consumer.findEntry(0, 0)).toMatchObject({
-      originalSource: '/packages/client/generated-0/lib/client.js',
-    })
-    expect(consumer.findEntry(2, 0)).toMatchObject({
-      originalSource: '/packages/client/generated-1/lib/client.js',
-    })
+    // The payload is an indexed map: each section carries its own self-contained
+    // `map` (line numbers starting at 0) plus the `offset` saying where that
+    // section's lines land in the combined file. `node:module`'s SourceMap only
+    // consumes a flat map, so each section is read through one on its own terms.
+    for (const [index, section] of payload.sections.entries()) {
+      expect(section.offset.line).toBe(index * 2)
+      const consumer = new SourceMap(section.map)
+      expect(consumer.findEntry(0, 0)).toMatchObject({
+        originalSource: `/packages/client/generated-${String(index)}/lib/client.js`,
+      })
+    }
   })
 
   it('retains one prior immutable batch generation across rebuild recomposition', async () => {
@@ -824,17 +831,19 @@ describe('client bundle activation', () => {
     }
     const { service, route } = constructWithRoute([firstName, secondName])
     const response = await routeRequest(route, mapUrl(service.graph().batches[0]!.url))
-    const payload = JSON.parse(response.body.toString('utf8')) as ConstructorParameters<typeof SourceMap>[0]
-    const sections = (payload as unknown as {
-      sections: { offset: { line: number; column: number } }[]
-    }).sections
-    expect(sections.map(section => section.offset)).toEqual([
+    const payload = JSON.parse(response.body.toString('utf8')) as {
+      sections: { offset: { line: number; column: number }; map: ConstructorParameters<typeof SourceMap>[0] }[]
+    }
+    expect(payload.sections.map(section => section.offset)).toEqual([
       { line: 0, column: 0 },
       { line: 3, column: 0 },
     ])
-    const consumer = new SourceMap(payload)
-    expect(consumer.findEntry(0, 0)).toMatchObject({ originalSource: '/packages/demo/first.ts' })
-    expect(consumer.findEntry(3, 0)).toMatchObject({ originalSource: '/packages/demo/second.ts' })
+    // Each section is self-contained, so the authored map is the one to read
+    // for the second bundle's lines — the offsets are what place it in the file.
+    expect(new SourceMap(payload.sections[0]!.map).findEntry(0, 0))
+      .toMatchObject({ originalSource: '/packages/demo/first.ts' })
+    expect(new SourceMap(payload.sections[1]!.map).findEntry(0, 0))
+      .toMatchObject({ originalSource: '/packages/demo/second.ts' })
   })
 
   it('combines a generated-file fallback with a later authored map', async () => {
@@ -856,12 +865,17 @@ describe('client bundle activation', () => {
 
     const { service, route } = constructWithRoute([unmappedName, mappedName])
     const response = await routeRequest(route, mapUrl(service.graph().batches[0]!.url))
-    const payload = JSON.parse(response.body.toString('utf8')) as ConstructorParameters<typeof SourceMap>[0]
-    const consumer = new SourceMap(payload)
-    expect(consumer.findEntry(0, 0)).toMatchObject({
-      originalSource: `/plugins/${unmappedName}/client.js`,
-    })
-    expect(consumer.findEntry(2, 0)).toMatchObject({ originalSource: '/packages/demo/mapped.ts' })
+    const payload = JSON.parse(response.body.toString('utf8')) as {
+      sections: { offset: { line: number }; map: ConstructorParameters<typeof SourceMap>[0] }[]
+    }
+    // Line 0 is the generated file with no authored map, line 2 is the one that
+    // carries `mappedPath.map`; each is read from its own section's map, which is
+    // where the offsets place them in the combined file.
+    expect(payload.sections.map(section => section.offset.line)).toEqual([0, 2])
+    expect(new SourceMap(payload.sections[0]!.map).findEntry(0, 0))
+      .toMatchObject({ originalSource: `/plugins/${unmappedName}/client.js` })
+    expect(new SourceMap(payload.sections[1]!.map).findEntry(0, 0))
+      .toMatchObject({ originalSource: '/packages/demo/mapped.ts' })
   })
 })
 

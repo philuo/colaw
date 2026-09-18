@@ -181,7 +181,7 @@ describe('MessageItem arms', () => {
     expect(writeText).toHaveBeenCalledWith('hello bubble')
   })
 
-  it('user copy falls back to execCommand when clipboard.writeText is unavailable', () => {
+  it('user copy falls back to execCommand when clipboard.writeText is unavailable', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: undefined,
@@ -200,13 +200,29 @@ describe('MessageItem arms', () => {
       />,
     )
     fireEvent.click(screen.getByRole('button', { name: '复制' }))
+    // The write is a promise chain — the async Clipboard API, then the desktop
+    // bridge, then this legacy path — so the fallback is reached on a later
+    // microtask rather than inside the click handler.
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
     expect(exec).toHaveBeenCalledWith('copy')
   })
 
-  it('user copy never claims success when the host rejects the write', async () => {
+  it('user copy never claims success when every write path fails', async () => {
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,
       value: { writeText: vi.fn().mockRejectedValue(new Error('denied')) },
+    })
+    // A denied async write is not the end of the chain: the desktop bridge and
+    // the legacy command are still tried, and only a path that reports success
+    // earns the check chrome. Close both so this case can assert the failure
+    // branch — with a bare jsdom document the legacy command answers true.
+    Object.defineProperty(document, 'execCommand', {
+      configurable: true,
+      value: vi.fn().mockReturnValue(false),
     })
     render(
       <MessageItem t={t} node={{
@@ -218,6 +234,7 @@ describe('MessageItem arms', () => {
     )
     fireEvent.click(screen.getByRole('button', { name: '复制' }))
     await act(async () => {
+      await Promise.resolve()
       await Promise.resolve()
       await Promise.resolve()
     })

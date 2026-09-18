@@ -50,7 +50,11 @@ describe('WorkspaceBrowser.module.css list', () => {
     expect(root?.get('padding-right')).toBe('var(--dsh-session-list-edge-inset)')
     expect(listArea?.get('margin-left')).toBe('-4px')
     expect(listArea?.get('padding-left')).toBe('4px')
-    expect(listArea?.get('margin-right')).toBe('calc(-1 * var(--dsh-session-list-edge-inset))')
+    // The seat reaches out by the same 4px it pads back on the left, so the
+    // rows sit symmetric. The trailing shell inset stays owned by `.root`'s
+    // `padding-right` and by `.fade`, which is what puts the themed scrollbar
+    // inside that inset — this seat no longer cancels it.
+    expect(listArea?.get('margin-right')).toBe('-4px')
     expect(declarations('.fade')?.get('right')).toBe('var(--dsh-session-list-edge-inset)')
     expect(list?.get('margin-right')).toBe('var(--dsh-session-list-scrollbar-offset)')
     expect(list?.get('margin-left')).toBe('-4px')
