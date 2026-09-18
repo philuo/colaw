@@ -617,7 +617,7 @@ describe('workspace context instruction discovery', () => {
     const root = await tempRepo()
     const emptyHome = await tempRepo()
     // Isolate the default-home fallback: blank DSH_HOME is treated as unset, and
-    // the home dirs point at an empty dir so the default ~/.dsh holds no global
+    // the home dirs point at an empty dir so the default ~/.colaw holds no global
     // scope. Windows homedir() reads USERPROFILE (not HOME), so both must be
     // stubbed or a real ~/.colaw/AGENTS.md would otherwise leak in.
     vi.stubEnv('DSH_HOME', '')
@@ -657,7 +657,7 @@ describe('workspace context instruction discovery', () => {
     }
   })
 
-  it('labels the default DSH home as ~/.dsh when HOME points at the configured default', async () => {
+  it('labels the default DSH home as ~/.colaw when HOME points at the configured default', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
     try {
@@ -2491,7 +2491,7 @@ describe('workspace context request injection', () => {
     }
   })
 
-  it('labels a custom dshHome as DSH_HOME instead of pretending it is ~/.dsh', async () => {
+  it('labels a custom dshHome as DSH_HOME instead of pretending it is ~/.colaw', async () => {
     const root = await tempRepo()
     const home = await tempRepo()
     try {

@@ -65,7 +65,7 @@ async function bootWeb(
     // below pins `includeUserRoot` off.
     { id: 'settings', config: { path: settingsFile, watch: false } },
     // storage-json's root is anchored to the real $DSH_HOME. Unpinned, this
-    // file writes the developer's own `~/.dsh/storages/` — and then reads it
+    // file writes the developer's own `~/.colaw/storages/` — and then reads it
     // back on the next run, so a stored document from any other build decides
     // this test's boot. Same reason the settings row above is pinned.
     { id: 'storage-json', config: { root: storageRoot } },
@@ -112,7 +112,7 @@ async function bootWeb(
       { id: 'ui-directory-picker-browse', name: '@deepseek-ai/dsh-client-ui-directory-picker-browse' },
     ] },
     // Pin the roster away from the developer's machine: `includeUserRoot`
-    // false keeps `~/.dsh/.agent-presets` from changing a test's outcome.
+    // false keeps `~/.colaw/.agent-presets` from changing a test's outcome.
     // `default` here is the COMPOSITION default — the base layer the settings
     // document overrides. No `roots` entry: the plugin bundles the shipped
     // presets itself and prepends their root.

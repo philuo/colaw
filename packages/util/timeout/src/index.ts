@@ -118,17 +118,31 @@ export function deadline(
  * not count as provider idle time. The returned signal is stable for the whole
  * call and only notifies; the iterator must observe it to terminate its work.
  *
+ * `pulse` may extend one outstanding demand, but never without bound: a
+ * transport that emits activity without ever yielding a value — SSE comments
+ * are exactly that, since they never enter the payload stream — would otherwise
+ * hold a stuck request open forever, because every comment re-arms the timer.
+ * `pulseCeilingMs` caps how long one `next` may be extended in total.
+ *
  * @param upstream - caller cancellation fused into the stable signal.
  * @param timeoutMs - positive finite idle interval in milliseconds.
  * @param code - capability-owned code carried by the timeout reason.
+ * @param options - `pulseCeilingMs` caps total extension of one demand
+ *   (default four idle intervals); it must be at least `timeoutMs`.
  * @returns a stable signal, guarded next operation, and timer disposer.
  */
 export function idleWatchdog(
   upstream: AbortSignal | undefined,
   timeoutMs: number,
   code: string,
+  options: { readonly pulseCeilingMs?: number } = {},
 ): IdleWatchdog {
   assertTimerDelay(timeoutMs, 'idleWatchdog timeoutMs')
+  const pulseCeilingMs = options.pulseCeilingMs ?? timeoutMs * 4
+  assertTimerDelay(pulseCeilingMs, 'idleWatchdog pulseCeilingMs')
+  if (pulseCeilingMs < timeoutMs) {
+    throw new Error('idleWatchdog pulseCeilingMs must be at least timeoutMs')
+  }
   const timeout = new AbortController()
   const signal = upstream === undefined
     ? timeout.signal
@@ -137,12 +151,14 @@ export function idleWatchdog(
   let outstanding = false
   let disposed = false
 
-  const arm = (): void => {
+  const arm = (delayMs: number): void => {
     if (timer !== undefined) clearTimeout(timer)
     timer = setTimeout(() => {
       timeout.abort(new TimeoutReason(code, timeoutMs))
-    }, timeoutMs)
+    }, delayMs)
   }
+  // When the current demand armed, so `pulse` can measure the ceiling from it.
+  let demandStartedAt = 0
 
   return {
     signal,
@@ -150,7 +166,8 @@ export function idleWatchdog(
       if (disposed) throw new Error('idleWatchdog is disposed')
       if (outstanding) throw new Error('idleWatchdog next is already outstanding')
       outstanding = true
-      arm()
+      demandStartedAt = Date.now()
+      arm(timeoutMs)
       try {
         return await iterator.next()
       } finally {
@@ -161,7 +178,13 @@ export function idleWatchdog(
     },
     pulse(): void {
       if (disposed || !outstanding) return
-      arm()
+      const remaining = pulseCeilingMs - (Date.now() - demandStartedAt)
+      if (remaining <= 0) {
+        // The ceiling is spent: stop extending and let the timeout stand.
+        timeout.abort(new TimeoutReason(code, timeoutMs))
+        return
+      }
+      arm(Math.min(timeoutMs, remaining))
     },
     [Symbol.dispose](): void {
       if (disposed) return

@@ -251,6 +251,39 @@ describe('idleWatchdog', () => {
     watchdog.pulse()
   })
 
+  it('stops extending one demand once the pulse ceiling is spent', async () => {
+    // SSE comments never enter the payload stream, so a transport that only
+    // emits comments leaves `next` outstanding while every comment re-arms the
+    // timer. Unbounded re-arming would hold that stuck request open forever —
+    // the ceiling is what makes the idle timeout mean something.
+    vi.useFakeTimers()
+    const pending = Promise.withResolvers<IteratorResult<number>>()
+    const watchdog = idleWatchdog(undefined, 100, 'LLM_STREAM_IDLE_TIMEOUT', { pulseCeilingMs: 250 })
+    const next = watchdog.next({ next: () => pending.promise })
+
+    // Comments arriving inside each idle interval keep the demand alive at
+    // first: two pulses over 180 ms, each before the 100 ms timer is due.
+    for (let round = 0; round < 2; round++) {
+      watchdog.pulse()
+      await vi.advanceTimersByTimeAsync(90)
+    }
+    expect(watchdog.signal.aborted).toBe(false)
+
+    // The ceiling (250 ms) is nearly spent, so the next pulse can only re-arm
+    // what is left of it (70 ms) instead of another full idle interval — and
+    // the timeout that is already due fires rather than being pushed out again.
+    watchdog.pulse()
+    await vi.advanceTimersByTimeAsync(90)
+    expect(timeoutOf(watchdog.signal, 'LLM_STREAM_IDLE_TIMEOUT')).toMatchObject({ timeoutMs: 100 })
+    pending.reject(watchdog.signal.reason)
+    await expect(next).rejects.toBe(watchdog.signal.reason)
+  })
+
+  it('refuses a pulse ceiling below the idle interval', () => {
+    expect(() => idleWatchdog(undefined, 100, 'IDLE', { pulseCeilingMs: 99 }))
+      .toThrow(/at least timeoutMs/)
+  })
+
   it('keeps an earlier upstream abort distinct from its own timeout', async () => {
     vi.useFakeTimers()
     const upstream = new AbortController()

@@ -4,57 +4,27 @@
  * @module @deepseek-ai/dsh-home-paths
  */
 
-import { existsSync, renameSync } from 'node:fs'
 import { opendir, realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 
 export { watch, type Watcher, type WatchOptions, type WatchEvent } from './chokidar-adapter'
 
-/** Directory name for the default Colaw home under the OS home. */
+/**
+ * Directory name for the default Colaw home under the OS home.
+ *
+ * This is the only home this product reads. A pre-rename `~/.dsh` tree is
+ * neither consulted nor moved into place: a home that lives elsewhere is
+ * reached by pointing `$DSH_HOME` at it, and anything under `~/.dsh` is the
+ * user's to keep or discard.
+ */
 export const DSH_HOME_DIR_NAME = '.colaw'
-
-/** Directory name the product shipped under before the Colaw rename. */
-export const LEGACY_DSH_HOME_DIR_NAME = '.dsh'
 
 /** Stable user-facing display form for the default Colaw home. */
 export const DEFAULT_DSH_HOME_DISPLAY = `~/${DSH_HOME_DIR_NAME}`
 
 /** Environment variable that overrides the default Colaw home. */
 export const DSH_HOME_ENV = 'DSH_HOME'
-
-/**
- * Move a pre-rename `~/.dsh` under the default `~/.colaw` once, in place.
- *
- * The rename is a same-volume `rename`, so it is atomic: either the whole
- * legacy tree moves or nothing does. An explicit `$DSH_HOME` (or configured
- * path) means the user owns the location and no migration runs; a legacy home
- * beside an existing current one is left untouched for the user to reconcile.
- * @param env - environment mapping used to read `DSH_HOME`.
- * @param home - OS home directory the two candidate paths hang off; callers
- * with a non-process home (tests) pass it explicitly so migration can never
- * reach outside an isolated root.
- * @returns the absolute legacy path that was moved, or undefined when nothing migrated.
- */
-export function migrateLegacyDshHome(
-  env: Record<string, string | undefined> = process.env,
-  home: string = homedir(),
-): string | undefined {
-  const fromEnv = env[DSH_HOME_ENV]
-  if (fromEnv !== undefined && fromEnv.trim().length > 0) return undefined
-  const legacy = join(home, LEGACY_DSH_HOME_DIR_NAME)
-  const current = join(home, DSH_HOME_DIR_NAME)
-  if (legacy === current) return undefined
-  try {
-    if (!existsSync(legacy) || existsSync(current)) return undefined
-    renameSync(legacy, current)
-    return legacy
-  } catch {
-    // A migration that cannot complete must never block the boot that would
-    // create the new home fresh; the legacy tree stays where it was.
-    return undefined
-  }
-}
 
 /**
  * Give a native filesystem watcher one canonical spelling of a path, even

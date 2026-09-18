@@ -6,14 +6,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   DEFAULT_DSH_HOME_DISPLAY,
   DSH_HOME_DIR_NAME,
-  LEGACY_DSH_HOME_DIR_NAME,
   canonicalizeWatchPath,
   defaultDshHome,
   dshCachePath,
   dshHomeDisplay,
   dshHomePath,
   expandHomePath,
-  migrateLegacyDshHome,
   resolveDshHome,
 } from '@deepseek-ai/dsh-home-paths'
 
@@ -26,15 +24,14 @@ describe('dsh path helpers', () => {
     expect(DSH_HOME_DIR_NAME).toBe('.colaw')
     expect(DEFAULT_DSH_HOME_DISPLAY).toBe('~/.colaw')
     expect(defaultDshHome()).toBe(join(homedir(), '.colaw'))
-    expect(LEGACY_DSH_HOME_DIR_NAME).toBe('.dsh')
   })
 
   it('expands tilde paths without changing non-tilde paths', () => {
     expect(expandHomePath('~')).toBe(homedir())
-    expect(expandHomePath('~/.dsh')).toBe(join(homedir(), '.dsh'))
-    expect(expandHomePath('~\\.dsh')).toBe(join(homedir(), '.dsh'))
-    expect(expandHomePath('/tmp/.dsh')).toBe('/tmp/.dsh')
-    expect(expandHomePath('~other/.dsh')).toBe('~other/.dsh')
+    expect(expandHomePath('~/.colaw')).toBe(join(homedir(), '.colaw'))
+    expect(expandHomePath('~\\.colaw')).toBe(join(homedir(), '.colaw'))
+    expect(expandHomePath('/tmp/.colaw')).toBe('/tmp/.colaw')
+    expect(expandHomePath('~other/.colaw')).toBe('~other/.colaw')
   })
 
   it('resolves explicit path before DSH_HOME and the default', () => {
@@ -61,51 +58,39 @@ describe('dsh path helpers', () => {
     expect(dshHomeDisplay('/some/other/root')).toBe('$DSH_HOME')
   })
 
-  describe('legacy home migration', () => {
-    // Every case passes an explicit temp home. The function reads `homedir()`
-    // by default, so a test that relies on the ambient home would create,
-    // rename, and — in the legacy-absent/current-present case — delete the
-    // real `~/.colaw`. That happened once; injecting the root keeps the suite
-    // physically incapable of repeating it (stubbing HOME is not enough:
-    // `os.homedir()` ignores it under Bun).
+  describe('the home this product reads', () => {
     let home: string
 
     beforeEach(async () => {
-      home = await mkdtemp(join(tmpdir(), 'dsh-legacy-home-'))
-      vi.spyOn(console, 'warn').mockImplementation(() => {})
+      home = await mkdtemp(join(tmpdir(), 'dsh-home-'))
     })
 
     afterEach(async () => {
-      vi.restoreAllMocks()
       await rm(home, { recursive: true, force: true })
     })
 
-    it('moves a legacy ~/.dsh to the current home when the current one is absent', () => {
-      const legacy = join(home, LEGACY_DSH_HOME_DIR_NAME)
-      const current = join(home, DSH_HOME_DIR_NAME)
+    it('reads ~/.colaw and leaves a ~/.dsh tree exactly where it is', () => {
+      // A pre-rename `~/.dsh` is not a fallback and not a migration source: the
+      // product reads `~/.colaw` and nothing else, so a home left under the old
+      // name must survive untouched rather than be renamed out from under the
+      // user. A home that lives elsewhere is reached with an explicit `$DSH_HOME`.
+      const legacy = join(home, '.dsh')
       mkdirSync(legacy, { recursive: true })
+      writeFileSync(join(legacy, 'settings.yaml'), 'legacy\n')
 
-      expect(migrateLegacyDshHome({}, home)).toBe(legacy)
-      expect(existsSync(current)).toBe(true)
-      expect(existsSync(legacy)).toBe(false)
-      expect(migrateLegacyDshHome({}, home)).toBeUndefined()
+      expect(resolveDshHome(undefined, { HOME: home })).toBe(defaultDshHome())
+      expect(readFileSync(join(legacy, 'settings.yaml'), 'utf8')).toBe('legacy\n')
+      expect(existsSync(join(home, DSH_HOME_DIR_NAME))).toBe(false)
     })
 
-    it('leaves both homes alone when the current one already exists', () => {
-      const legacy = join(home, LEGACY_DSH_HOME_DIR_NAME)
-      const current = join(home, DSH_HOME_DIR_NAME)
-      mkdirSync(legacy, { recursive: true })
-      mkdirSync(current, { recursive: true })
-      const marker = join(current, 'settings.yaml')
-      writeFileSync(marker, 'kept\n')
+    it('resolves an explicit $DSH_HOME instead of the old name', () => {
+      // The supported way to point at a home that is not the default: the
+      // environment names it outright, so no directory is moved or inferred.
+      const elsewhere = join(home, 'env-home')
+      mkdirSync(elsewhere, { recursive: true })
 
-      expect(migrateLegacyDshHome({}, home)).toBeUndefined()
-      expect(existsSync(legacy)).toBe(true)
-      expect(readFileSync(marker, 'utf8')).toBe('kept\n')
-    })
-
-    it('never migrates when the environment owns the home location', () => {
-      expect(migrateLegacyDshHome({ DSH_HOME: '~/env-dsh' }, home)).toBeUndefined()
+      expect(resolveDshHome(undefined, { DSH_HOME: elsewhere })).toBe(resolve(elsewhere))
+      expect(existsSync(join(home, '.dsh'))).toBe(false)
     })
   })
 

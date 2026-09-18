@@ -47,7 +47,7 @@ interface OtlpLogsRequest {
 const servers: Server[] = []
 
 // The backend resolves the harness home's anonymous user id at construction;
-// pin DSH_HOME to a temp dir so the suite never touches the ambient ~/.dsh.
+// pin DSH_HOME to a temp dir so the suite never touches the ambient ~/.colaw.
 let tempHome: string
 let previousDshHome: string | undefined
 beforeAll(() => {
