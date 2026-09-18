@@ -135,6 +135,19 @@ export interface ProviderProfile {
    */
   api?: 'openai-completions' | 'openai-responses' | 'anthropic-messages'
   /**
+   * Vendor deviations from the standard wire this route needs honored.
+   *
+   * The wires above are standards; a vendor can implement one of them and still
+   * differ where the standard does not cover it. `'deepseek'` names the
+   * documented DeepSeek differences on the Messages wire — it reads reasoning
+   * effort from `output_config.effort` and ignores `thinking.budget_tokens`,
+   * rejects `document` content blocks, and accepts `temperature` while thinking
+   * is on. No other deviation is inferred from a hostname: omission means the
+   * standard wire, and a route pointed at a compatible gateway names its vendor
+   * here.
+   */
+  compat?: 'deepseek'
+  /**
    * Endpoint base; the protocol's request path is appended. Defaults per
    * protocol to $OPENAI_BASE_URL / $ANTHROPIC_BASE_URL from a trusted layer,
    * then the public API.
@@ -196,6 +209,7 @@ const profile: z<ProviderProfile> = z.object({
   displayName: z.string(),
   apiKeyEnv: z.string().role('credential-ref'),
   api: z.union(['openai-completions', 'openai-responses', 'anthropic-messages']),
+  compat: z.union(['deepseek']),
   baseURL: z.string(),
   reasoningEffort: z.union(['off', 'low', 'high', 'max']),
   maxTokensField: z.union(['max_tokens', 'max_completion_tokens']),
@@ -358,6 +372,7 @@ export function resolveProfiles(
           defaults: {
             reasoningEffort: source.reasoningEffort,
             thinkingBudgetTokens: source.thinkingBudgetTokens,
+            ...source.compat === undefined ? {} : { compat: source.compat },
           },
           // The Messages wire requires the output-cap field, so the route
           // carries the protocol default when the profile declares none.

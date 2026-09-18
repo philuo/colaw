@@ -269,7 +269,7 @@ describe('Cordis provider composition', () => {
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n',
       'data: [DONE]\n\n',
     ].join('')))
-    await ctx.settings.update('llm-deepseek', { protocol: 'chat-completions', baseURL: http.url, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
+    await ctx.settings.update('llm-deepseek', { protocol: 'openai-completions', baseURL: http.url, models: [{ id: MODEL, systemPromptUpdate: 'in-history' }] })
     let prompt = 'old prompt'
     ctx.on('system-prompt/assemble', async (_assembly, _context, next) => ({
       ...await next(), sections: [{ name: 'test', text: prompt, order: 0 }],
@@ -284,7 +284,7 @@ describe('Cordis provider composition', () => {
     const seed = [...agent.session.snapshotEvents()]
     const saved = JSON.stringify(seed)
     messagesProtocol = true
-    await ctx.settings.update(Messages.name, { protocol: 'messages', models: [{ id: MODEL, ...inHistory ? { systemPromptUpdate: 'in-history' } : {} }] })
+    await ctx.settings.update(Messages.name, { protocol: 'anthropic-messages', models: [{ id: MODEL, ...inHistory ? { systemPromptUpdate: 'in-history' } : {} }] })
     selection.current = { provider: 'deepseek-official', model: MODEL }
     await send(agent, 'switch')
     const { agent: resumed } = await ctx.agents.create({ sessionId: SessionId('switch-resume'), agentOptions: selection.current, seed })

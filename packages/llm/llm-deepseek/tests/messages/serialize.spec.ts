@@ -237,8 +237,15 @@ describe('validated configuration', () => {
     { thinking: 'disabled', reasoningEffort: 'high' }, { models: [{ id: '' }] },
     { models: [{ id: 'a' }, { id: 'a' }] }, { models: [{ id: 'a', name: '' }] },
     { maxInlineRequestImageBytes: 1 }, { maxImagesPerRequest: 1 },
-    { baseURL: 'ftp://example.com' }, { baseURL: 'https://user:pass@example.com' },
-    { baseURL: 'https://example.com/?key=x' }, { baseURL: 'https://example.com/#x' },
+    // The URL constraints belong to Messages alone, which addresses
+    // `<baseURL>/v1/messages` with credentials in headers: it needs an HTTP(S)
+    // root carrying no credentials, query, or fragment. Chat completions posts
+    // to `<baseURL>/chat/completions` and imposes none of them, so a case that
+    // asserts a rejection has to name the protocol it is asserting about.
+    { protocol: 'messages', baseURL: 'ftp://example.com' },
+    { protocol: 'messages', baseURL: 'https://user:pass@example.com' },
+    { protocol: 'messages', baseURL: 'https://example.com/?key=x' },
+    { protocol: 'messages', baseURL: 'https://example.com/#x' },
     { maxTokens: 0 }, { streamIdleTimeoutMs: 0 },
     { models: [{ id: MODEL, systemPromptUpdate: 'unsupported' }] },
   ])('rejects invalid composition input %#', (value) => {

@@ -53,7 +53,7 @@ async function loadComposition(
     enableSessionLog?: boolean
     /** Omit the credentials entry and document: the no-seam composition. */
     withoutCredentials?: boolean
-    protocol?: 'chat-completions' | 'messages'
+    protocol?: 'openai-completions' | 'anthropic-messages'
   },
 ): Promise<{ ctx: Context; settingsPath: string; credentialsPath: string }> {
   // A reused root is the restart case: the same harness home, its documents
@@ -106,7 +106,7 @@ async function loadComposition(
     '- id: llm-deepseek',
     "  name: '@deepseek-ai/dsh-llm-deepseek'",
     '  config:',
-    `    protocol: ${options.protocol ?? 'chat-completions'}`,
+    `    protocol: ${options.protocol ?? 'openai-completions'}`,
     `    baseURL: ${JSON.stringify(options.baseURL)}`,
     '    apiKeyEnv: DEEPSEEK_API_KEY',
     '',

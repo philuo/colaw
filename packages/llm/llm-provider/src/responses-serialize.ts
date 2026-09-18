@@ -1,9 +1,9 @@
 /**
  * Serialize harness messages into OpenAI Responses input items. The system
- * prompt rides in as a leading `developer` message for reasoning models and
- * `system` elsewhere; user text and images become ordered input parts;
- * assistant turns replay as completed `message` items and `function_call`
- * items; tool results return as `function_call_output` items.
+ * prompt rides in as a leading `system` message — the one role every vendor
+ * of this wire reads as instructions — user text and images become ordered
+ * input parts; assistant turns replay as completed `message` items and
+ * `function_call` items; tool results return as `function_call_output` items.
  *
  * Replay-id conventions follow pi-ai 0.85.1 (the reference this wire
  * replaces): a streamed tool call joins its two provider ids as
@@ -310,20 +310,29 @@ function requestWithInput(
   }
 }
 
-/** The leading role a system prompt takes: `developer` for reasoning models. */
-function systemRole(model: ModelWireFacts | undefined): 'developer' | 'system' {
-  return model?.reasoning === true ? 'developer' : 'system'
+/**
+ * The leading role a system prompt takes: always `system`.
+ *
+ * OpenAI prefers `developer` for reasoning models, and this wire was written
+ * that way first. It is not the safe intersection: DeepSeek's Responses
+ * endpoint documents `developer` as equivalent to **user**, so on that route a
+ * `developer` system prompt is delivered as user speech and loses its
+ * authority. `system` is accepted by both — OpenAI keeps it valid, and
+ * DeepSeek lists it as a supported message role — so the one spelling that
+ * means "instructions" everywhere is the one to send.
+ */
+function systemRole(): 'system' {
+  return 'system'
 }
 
 /** Prepend the one-shot system prompt as a leading input message. */
 function withSystemPrompt(
   input: ResponsesInputItem[],
   options: GenerateOptions,
-  model: ModelWireFacts | undefined,
 ): ResponsesInputItem[] {
   return options.system === undefined
     ? input
-    : [{ role: systemRole(model), content: options.system }, ...input]
+    : [{ role: systemRole(), content: options.system }, ...input]
 }
 
 /**
@@ -340,7 +349,7 @@ export function serializeResponsesRequest(
   model: ModelWireFacts | undefined = undefined,
 ): ResponsesRequest {
   const input = serializeResponsesMessagesSync(options.messages)
-  return requestWithInput(options, withSystemPrompt(input, options, model), defaults, model)
+  return requestWithInput(options, withSystemPrompt(input, options), defaults, model)
 }
 
 /** Synchronous conversion for a request already known to be text-only. */
@@ -415,5 +424,5 @@ export async function serializeResponsesRequestWithImages(
     placeholder: ref => offloadedImageText(ref, images.resolveImageAccess?.(ref)),
   })
   const input = await serializeResponsesMessages(requestMessages, images, modelAcceptsImages, native)
-  return requestWithInput(options, withSystemPrompt(input, options, model), defaults, model)
+  return requestWithInput(options, withSystemPrompt(input, options), defaults, model)
 }

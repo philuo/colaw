@@ -26,8 +26,26 @@ const MODEL_MODALITIES = ['text', 'image', 'video', 'file'] as const satisfies r
  * reasoning effort resolves to `high`.
  */
 export interface Config {
-  /** Wire protocol; defaults to messages. Configure through Cordis YAML. */
-  protocol?: DeepSeekProtocol
+  /**
+   * Wire protocol, named with the same vocabulary the multi-protocol provider
+   * uses. Defaults to `openai-completions`. Configure through Cordis YAML.
+   *
+   * The default is OpenAI-compatible chat completions, not the Messages wire:
+   * this provider's whole configuration surface is a user-supplied `baseURL`
+   * plus a model catalog. An OpenAI-compatible gateway entered there is
+   * addressed at `<baseURL>/v1`, which chat completions appends
+   * `/chat/completions` to and Messages would append `/v1/messages` to — the
+   * latter resolving to `<baseURL>/v1/v1/messages` and failing every request.
+   * `anthropic-messages` stays available for the official Anthropic-compatible
+   * root by naming it explicitly.
+   *
+   * The pre-alignment spellings (`chat-completions`, `messages`) are still
+   * resolved but are no longer offered, so an existing settings document keeps
+   * working without being rewritten. They are deliberately outside this type:
+   * the schema is what the page offers, and only the resolver — which reads
+   * stored documents that never passed the schema — sees the wider vocabulary.
+   */
+  protocol?: (typeof PUBLIC_PROTOCOLS)[number]
   /** Credential reference (environment-variable name) resolved per request; defaults to `DEEPSEEK_API_KEY`. */
   apiKeyEnv?: string
   /** Endpoint base; falls back to $DEEPSEEK_BASE_URL from a trusted environment layer, then the public API. */
@@ -80,8 +98,41 @@ const catalogModel: z<DeepSeekCatalogModel> = z.object({
   systemPromptUpdate: z.const('in-history'),
 })
 
+/**
+ * Public protocol names, shared with the multi-protocol provider's vocabulary,
+ * mapped onto the wire implementation each one selects.
+ *
+ * The names are the public contract and the selector's own values; the right
+ * side is this package's implementation detail, so a rename inside never
+ * reaches a user's settings. The last two entries are the spellings this
+ * section shipped before the names were aligned: they are not offered any more
+ * but are still read, because a stored `settings.yaml` bypasses schema
+ * validation when it reaches the resolver.
+ */
+export const PROTOCOL_IMPLEMENTATIONS = {
+  'openai-completions': 'chat-completions',
+  'openai-responses': 'responses',
+  'anthropic-messages': 'messages',
+  'chat-completions': 'chat-completions',
+  'messages': 'messages',
+} as const satisfies Record<string, DeepSeekProtocol>
+
+/** The names the Models page offers; the aliases above are read, not shown. */
+export const PUBLIC_PROTOCOLS = ['openai-completions', 'openai-responses', 'anthropic-messages'] as const
+
+/**
+ * A protocol name as the resolver receives it.
+ *
+ * Wider than {@link Config.protocol} on purpose. `Config` is what the schema
+ * validates and therefore what the page offers; the resolver also consumes
+ * stored `settings.yaml` documents, which never passed that schema and may still
+ * carry a pre-alignment spelling. Typing the resolver's input this way keeps the
+ * selector honest without pretending those documents cannot exist.
+ */
+export type ProtocolInput = (typeof PUBLIC_PROTOCOLS)[number] | DeepSeekProtocol
+
 export const Config: z<Config> = z.object({
-  protocol: z.union(['chat-completions', 'messages']).default('messages'),
+  protocol: z.union([...PUBLIC_PROTOCOLS]).default('openai-completions'),
   apiKeyEnv: z.string().role('credential-ref').default(DEFAULT_API_KEY_ENV),
   baseURL: z.string(),
   thinking: z.union(['enabled', 'disabled']),
@@ -205,11 +256,18 @@ function resolveModels(models: readonly DeepSeekCatalogModel[] | undefined): Dee
  * gateway that checkout is meant to use.
  * @returns validated connection facts plus the credential reference.
  */
-export function resolveAdapterOptions(config: Config, environment?: LaunchEnvironmentSnapshot): ResolvedDeepSeekOptions {
-  // Settings updates can reach this resolver without schema validation.
-  const protocol: string = config.protocol ?? 'messages'
-  if (protocol !== 'chat-completions' && protocol !== 'messages') {
-    throw new Error('llm-deepseek: protocol must be chat-completions or messages')
+export function resolveAdapterOptions(
+  config: Omit<Config, 'protocol'> & { protocol?: ProtocolInput },
+  environment?: LaunchEnvironmentSnapshot,
+): ResolvedDeepSeekOptions {
+  // Settings updates can reach this resolver without schema validation, which
+  // is also why the pre-alignment spellings still resolve: `PROTOCOL_IMPLEMENTATIONS`
+  // is the whole vocabulary, and the schema is only the subset on offer.
+  const requested: string = config.protocol ?? 'openai-completions'
+  const implementation: DeepSeekProtocol | undefined
+    = PROTOCOL_IMPLEMENTATIONS[requested as keyof typeof PROTOCOL_IMPLEMENTATIONS]
+  if (implementation === undefined) {
+    throw new Error(`llm-deepseek: protocol must be one of ${PUBLIC_PROTOCOLS.join(', ')}`)
   }
   if (config.thinking === 'disabled'
     && config.reasoningEffort !== undefined
@@ -293,15 +351,15 @@ export function resolveAdapterOptions(config: Config, environment?: LaunchEnviro
     throw new Error('llm-deepseek: fileQuotaCleanupBatch must be an integer from 1 through 1000')
   }
   const baseURL = config.baseURL ?? environment?.get(BASE_URL_ENV)?.value
-    ?? (protocol === 'messages' ? MESSAGES_BASE_URL : PUBLIC_BASE_URL)
-  if (protocol === 'messages') {
+    ?? (implementation === 'messages' ? MESSAGES_BASE_URL : PUBLIC_BASE_URL)
+  if (implementation === 'messages') {
     const parsed = new URL(baseURL)
     if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || parsed.search || parsed.hash) {
       throw new Error('llm-deepseek: Messages baseURL must be an HTTP(S) root without credentials, query, or fragment')
     }
   }
   return {
-    protocol,
+    protocol: implementation,
     apiKeyEnv: credentialRef(config.apiKeyEnv ?? DEFAULT_API_KEY_ENV),
     baseURL,
     defaults: {

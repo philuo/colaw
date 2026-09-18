@@ -34,6 +34,21 @@ export interface RequestDefaults {
    * effort. `budget_tokens` must be ≥1024 and below `max_tokens`.
    */
   thinkingBudgetTokens?: number | undefined
+  /**
+   * Vendor deviations this route needs honored, from the route's own profile.
+   *
+   * `'deepseek'` implements this wire but not all of it: reasoning depth comes
+   * from `output_config.effort` (`thinking.budget_tokens` is documented as
+   * ignored), `document` blocks are unsupported, and `temperature` stays
+   * accepted while thinking is on. Without the flag the standard behaviour —
+   * what Anthropic's own API requires — is what goes on the wire.
+   */
+  compat?: 'deepseek' | undefined
+}
+
+/** Whether this route needs DeepSeek's documented Messages deviations. */
+function isDeepSeek(defaults: RequestDefaults): boolean {
+  return defaults.compat === 'deepseek'
 }
 
 /** Wire-relevant facts of the catalog model this request targets. */
@@ -101,25 +116,44 @@ function reasoningEffort(effort: NonNullable<GenerateOptions['reasoningEffort']>
 }
 
 /**
- * Resolve the extended-thinking budget. Harness `off` (and auxiliary
- * one-shot purposes) omit thinking entirely; the budget ladder is adapter
- * policy over the wire fact `{type: 'enabled', budget_tokens}`.
- * @returns the budget in tokens, or `undefined` to omit thinking.
+ * What the request says about extended thinking.
+ *
+ * `omit` and `disabled` are deliberately different: omitting the field leaves
+ * the vendor's own default in force, which for a reasoning model is usually
+ * "thinking on". A user who turned thinking off asked for it to be off, so the
+ * request says `{type: 'disabled'}` — the spelling both Anthropic and DeepSeek
+ * document for that instruction — instead of hoping the absence is read that
+ * way. The budget ladder is adapter policy over the wire fact
+ * `{type: 'enabled', budget_tokens}`.
  */
-function resolveThinkingBudget(
+type ThinkingSetting =
+  | { readonly kind: 'omit' }
+  | { readonly kind: 'disabled' }
+  | { readonly kind: 'enabled'; readonly budget: number; readonly effort: 'low' | 'high' | 'max' }
+
+/**
+ * Resolve the extended-thinking instruction for one request.
+ * @returns `omit` for a model that cannot reason or a request that names no
+ *   policy, `disabled` for an explicit `off`, otherwise the wire budget.
+ */
+function resolveThinking(
   options: GenerateOptions,
   defaults: RequestDefaults,
   model: ModelWireFacts | undefined,
-): number | undefined {
-  if (model?.reasoning !== true) return undefined
-  if (options.purpose === 'session-title') return undefined
-  const effort = options.reasoningEffort === undefined
+): ThinkingSetting {
+  // A non-reasoning model: putting the field on the wire at all is not
+  // meaningful, and Anthropic rejects the request for models without it.
+  if (model?.reasoning !== true) return { kind: 'omit' }
+  // Auxiliary one-shot purposes never pay for thinking.
+  if (options.purpose === 'session-title') return { kind: 'disabled' }
+  const requested = options.reasoningEffort === undefined
     ? defaults.reasoningEffort
     : reasoningEffort(options.reasoningEffort)
-  if (effort === undefined || effort === 'off') return undefined
+  if (requested === undefined) return { kind: 'omit' }
+  if (requested === 'off') return { kind: 'disabled' }
   const budget = defaults.thinkingBudgetTokens ?? 16_384
-  if (effort === 'low') return Math.max(1024, Math.floor(budget / 4))
-  return budget
+  if (requested === 'low') return { kind: 'enabled', budget: Math.max(1024, Math.floor(budget / 4)), effort: 'low' }
+  return { kind: 'enabled', budget, effort: requested }
 }
 
 /** Join the text blocks of a message. */
@@ -198,7 +232,8 @@ function imageBlocks(
 async function contentBlocks(
   blocks: readonly ContentBlock[],
   images: ImageSerializationOptions,
-  native?: NativeAttachmentOptions,
+  native: NativeAttachmentOptions | undefined,
+  deepseek: boolean,
 ): Promise<WireUserContentBlock[]> {
   const parts: WireUserContentBlock[] = []
   for (const block of blocks) {
@@ -220,6 +255,18 @@ async function contentBlocks(
           parts.push({ type: 'text', text: Buffer.from(attachment.bytes).toString('utf8') })
           break
         }
+        if (deepseek) {
+          // DeepSeek's Messages wire documents `document` as unsupported, so
+          // sending the block would either be rejected or silently dropped —
+          // and a dropped attachment is worse than a refusal. Text-extractable
+          // files already took the text branch above; anything left here is
+          // binary and has to travel a wire that carries it.
+          throw new LlmError(
+            'This Messages route declares DeepSeek compatibility, which has no document input; '
+            + 'send the file through an OpenAI-compatible route or as text',
+            'UNSUPPORTED_CONTENT',
+          )
+        }
         parts.push({
           type: 'document',
           source: { type: 'base64', media_type: attachment.mediaType, data: Buffer.from(attachment.bytes).toString('base64') },
@@ -230,7 +277,7 @@ async function contentBlocks(
         parts.push(...imageBlocks(block, images))
         break
       case 'tool-result':
-        parts.push(...await contentBlocks(block.content, images, native))
+        parts.push(...await contentBlocks(block.content, images, native, deepseek))
         break
       default:
         break
@@ -337,11 +384,16 @@ export function serializeMessages(messages: Message[]): { systemParts: string[];
  * following user message after their `tool_result` blocks (evidence: pi-ai).
  * @param messages - transient request history after request-size offloading.
  * @param images - prepared request versions and the request budget.
+ * @param native - inline-attachment limits for this route, when it has any.
+ * @param deepseek - whether the route declared DeepSeek compatibility, which
+ *   has no `document` input; a binary file then fails loudly instead of
+ *   travelling as a block the endpoint would reject or drop.
  */
 export async function serializeMessagesWithImages(
   messages: readonly Message[],
   images: ImageSerializationOptions,
   native?: NativeAttachmentOptions,
+  deepseek = false,
 ): Promise<{ systemParts: string[]; messages: WireMessage[] }> {
   assertSupportedImageRoles(messages)
   const systemParts: string[] = []
@@ -373,7 +425,7 @@ export async function serializeMessagesWithImages(
     const toolResults = message.content.filter(
       (block): block is Extract<ContentBlock, { type: 'tool-result' }> => block.type === 'tool-result',
     )
-    const parts = await contentBlocks(regular, images, native)
+    const parts = await contentBlocks(regular, images, native, deepseek)
     // Any non-text part (image or document) needs the structured content form.
     const hasMedia = parts.some(part => part.type !== 'text')
     const text = parts.filter((part): part is WireTextBlock => part.type === 'text').map(part => part.text).join('')
@@ -385,7 +437,7 @@ export async function serializeMessagesWithImages(
       })
     }
     for (const result of toolResults) {
-      const resultParts = await contentBlocks(result.content, images, native)
+      const resultParts = await contentBlocks(result.content, images, native, deepseek)
       const imageBlocks = resultParts.filter((part): part is WireImageBlock => part.type === 'image')
       const resultText = resultParts.filter((part): part is WireTextBlock => part.type === 'text').map(part => part.text).join('')
       wire.push({
@@ -412,7 +464,15 @@ function requestWithMessages(
     description: tool.description,
     input_schema: tool.parameters,
   }))
-  const budget = resolveThinkingBudget(options, defaults, model)
+  const thinking = resolveThinking(options, defaults, model)
+  const thinkingBudget = thinking.kind === 'enabled' ? thinking.budget : undefined
+  // The Messages API requires the default temperature while thinking is on;
+  // DeepSeek accepts temperature in thinking mode, so only the standard vendor
+  // drops it.
+  const temperature = options.temperature !== undefined
+      && (isDeepSeek(defaults) || thinkingBudget === undefined)
+    ? options.temperature
+    : undefined
   const maxTokens = options.maxTokens
     ?? model?.maxTokens
     // The Messages API requires max_tokens on every request; the shipped
@@ -421,13 +481,22 @@ function requestWithMessages(
   return {
     model: options.model,
     messages,
-    max_tokens: Math.max(maxTokens, budget !== undefined ? budget + 1024 : 0),
+    max_tokens: Math.max(maxTokens, thinkingBudget !== undefined ? thinkingBudget + 1024 : 0),
     stream: true,
     ...system !== undefined && system.length > 0 ? { system } : {},
-    ...budget !== undefined ? { thinking: { type: 'enabled' as const, budget_tokens: budget } } : {},
+    ...thinking.kind === 'omit'
+      ? {}
+      : thinking.kind === 'disabled'
+        ? { thinking: { type: 'disabled' as const } }
+        : { thinking: { type: 'enabled' as const, budget_tokens: thinking.budget } },
+    // DeepSeek documents `thinking.budget_tokens` as ignored and takes the
+    // depth from `output_config.effort` instead, so the budget alone would
+    // leave the user's chosen effort unsent. Anthropic's own API has no
+    // `output_config` and rejects unknown top-level fields, which is why this
+    // rides the route's `compat` declaration rather than every Messages route.
+    ...isDeepSeek(defaults) && thinking.kind === 'enabled' ? { output_config: { effort: thinking.effort } } : {},
     ...tools !== undefined && tools.length > 0 ? { tools } : {},
-    // The Messages API requires the default temperature while thinking is on.
-    ...(budget === undefined && options.temperature !== undefined ? { temperature: options.temperature } : {}),
+    ...temperature === undefined ? {} : { temperature },
     ...options.stop !== undefined ? { stop_sequences: options.stop } : {},
   }
 }
@@ -484,7 +553,7 @@ export async function serializeRequestWithImages(
     ...images.countQuantum === undefined ? {} : { countQuantum: images.countQuantum },
     placeholder: ref => offloadedImageText(ref, images.resolveImageAccess?.(ref)),
   })
-  const { systemParts, messages } = await serializeMessagesWithImages(requestMessages, images, native)
+  const { systemParts, messages } = await serializeMessagesWithImages(requestMessages, images, native, isDeepSeek(defaults))
   const system = joinSystem(options.system, systemParts)
   return requestWithMessages(options, system, messages, defaults, model)
 }

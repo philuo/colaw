@@ -1,0 +1,60 @@
+event: response.created
+data: {"response":{"id":"resp_e16e9ed94b604a929987422b296a5d92","created_at":1789711360,"error":null,"incomplete_details":null,"instructions":"Answer with one word only.","metadata":{},"model":"deepseek-v4-flash-0731","object":"response","output":[],"parallel_tool_calls":true,"temperature":1,"tool_choice":"auto","tools":[],"top_p":1,"background":false,"conversation":null,"max_output_tokens":24,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"queued","text":null,"top_logprobs":0,"truncation":"disabled","usage":null,"user":null,"completed_at":1789711361,"frequency_penalty":0,"presence_penalty":0,"store":true,"moderation":null,"billing":null,"trace_id":"trace_891b31c7-ddd4-4171-9d64-116beaa288c6"},"sequence_number":0,"type":"response.created"}
+
+event: response.in_progress
+data: {"response":{"id":"resp_e16e9ed94b604a929987422b296a5d92","created_at":1789711360,"error":null,"incomplete_details":null,"instructions":"Answer with one word only.","metadata":{},"model":"deepseek-v4-flash-0731","object":"response","output":[],"parallel_tool_calls":true,"temperature":1,"tool_choice":"auto","tools":[],"top_p":1,"background":false,"conversation":null,"max_output_tokens":24,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"in_progress","text":null,"top_logprobs":0,"truncation":"disabled","usage":null,"user":null,"completed_at":1789711361,"frequency_penalty":0,"presence_penalty":0,"store":true,"moderation":null,"billing":null,"trace_id":"trace_891b31c7-ddd4-4171-9d64-116beaa288c6"},"sequence_number":1,"type":"response.in_progress"}
+
+event: response.output_item.added
+data: {"item":{"id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","summary":[],"type":"reasoning","content":null,"encrypted_content":null,"status":null},"output_index":0,"sequence_number":2,"type":"response.output_item.added"}
+
+event: response.reasoning_text.delta
+data: {"content_index":0,"delta":"The","item_id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","output_index":0,"sequence_number":3,"type":"response.reasoning_text.delta"}
+
+event: response.reasoning_text.delta
+data: {"content_index":0,"delta":" user asks","item_id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","output_index":0,"sequence_number":4,"type":"response.reasoning_text.delta"}
+
+event: response.reasoning_text.delta
+data: {"content_index":0,"delta":" me","item_id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","output_index":0,"sequence_number":5,"type":"response.reasoning_text.delta"}
+
+event: response.reasoning_text.delta
+data: {"content_index":0,"delta":" to reply with the","item_id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","output_index":0,"sequence_number":6,"type":"response.reasoning_text.delta"}
+
+event: response.reasoning_text.delta
+data: {"content_index":0,"delta":" single word PONG","item_id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","output_index":0,"sequence_number":7,"type":"response.reasoning_text.delta"}
+
+event: response.reasoning_text.delta
+data: {"content_index":0,"delta":". I will do exactly that.","item_id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","output_index":0,"sequence_number":8,"type":"response.reasoning_text.delta"}
+
+event: response.reasoning_text.delta
+data: {"content_index":0,"delta":"","item_id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","output_index":0,"sequence_number":9,"type":"response.reasoning_text.delta"}
+
+event: response.reasoning_text.done
+data: {"content_index":0,"item_id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","output_index":0,"sequence_number":10,"text":"The user asks me to reply with the single word PONG. I will do exactly that.","type":"response.reasoning_text.done"}
+
+event: response.output_item.done
+data: {"item":{"id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","summary":[{"text":"The user asks me to reply with the single word PONG. I will do exactly that.","type":"summary_text"}],"type":"reasoning","content":null,"encrypted_content":null,"status":null},"output_index":0,"sequence_number":11,"type":"response.output_item.done"}
+
+event: response.output_item.added
+data: {"item":{"id":"msg_tr_e16e9ed94b604a929987422b296a5d92_1","content":[],"role":"assistant","status":"in_progress","type":"message"},"output_index":1,"sequence_number":12,"type":"response.output_item.added"}
+
+event: response.content_part.added
+data: {"content_index":0,"item_id":"msg_tr_e16e9ed94b604a929987422b296a5d92_1","output_index":1,"part":{"annotations":[],"text":"","type":"output_text","logprobs":null},"sequence_number":13,"type":"response.content_part.added"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"PONG","item_id":"msg_tr_e16e9ed94b604a929987422b296a5d92_1","logprobs":[],"output_index":1,"sequence_number":14,"type":"response.output_text.delta"}
+
+event: response.output_text.delta
+data: {"content_index":0,"delta":"","item_id":"msg_tr_e16e9ed94b604a929987422b296a5d92_1","logprobs":[],"output_index":1,"sequence_number":15,"type":"response.output_text.delta"}
+
+event: response.output_text.done
+data: {"content_index":0,"item_id":"msg_tr_e16e9ed94b604a929987422b296a5d92_1","logprobs":[],"output_index":1,"sequence_number":16,"text":"PONG","type":"response.output_text.done"}
+
+event: response.content_part.done
+data: {"content_index":0,"item_id":"msg_tr_e16e9ed94b604a929987422b296a5d92_1","output_index":1,"part":{"annotations":[],"text":"PONG","type":"output_text","logprobs":null},"sequence_number":17,"type":"response.content_part.done"}
+
+event: response.output_item.done
+data: {"item":{"id":"msg_tr_e16e9ed94b604a929987422b296a5d92_1","content":[{"annotations":[],"text":"PONG","type":"output_text","logprobs":null}],"role":"assistant","status":"completed","type":"message"},"output_index":1,"sequence_number":18,"type":"response.output_item.done"}
+
+event: response.completed
+data: {"sequence_number":19,"type":"response.completed","response":{"created_at":1789711361,"instructions":"Answer with one word only.","metadata":{},"object":"response","parallel_tool_calls":true,"temperature":1,"tool_choice":"auto","tools":[],"top_p":1,"background":false,"conversation":null,"max_output_tokens":24,"max_tool_calls":null,"previous_response_id":null,"prompt":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":null,"safety_identifier":null,"service_tier":"default","status":"completed","text":null,"top_logprobs":0,"truncation":"disabled","usage":{"input_tokens":122,"input_tokens_details":{"cached_tokens":0,"cache_creation_tokens":null},"output_tokens":22,"output_tokens_details":{"reasoning_tokens":19},"total_tokens":144,"x_details":[{"input_tokens":122,"output_tokens":22,"total_tokens":144,"output_tokens_details":{"reasoning_tokens":19},"prompt_tokens_details":{"cached_tokens":0},"x_billing_type":"response_api"}]},"user":null,"completed_at":1789711361,"frequency_penalty":0,"presence_penalty":0,"store":true,"moderation":null,"billing":null,"id":"resp_e16e9ed94b604a929987422b296a5d92","model":"deepseek-v4-flash-0731","output":[{"id":"item_tr_e16e9ed94b604a929987422b296a5d92_0","summary":[{"text":"The user asks me to reply with the single word PONG. I will do exactly that.","type":"summary_text"}],"type":"reasoning","content":null,"encrypted_content":null,"status":null},{"id":"msg_tr_e16e9ed94b604a929987422b296a5d92_1","content":[{"annotations":[],"text":"PONG","type":"output_text","logprobs":null}],"role":"assistant","status":"completed","type":"message"}],"output_text":"PONG","error":null,"incomplete_details":null,"cost_cny":"0.00056400","billing_pending":false,"trace_id":"trace_891b31c7-ddd4-4171-9d64-116beaa288c6"}}
+

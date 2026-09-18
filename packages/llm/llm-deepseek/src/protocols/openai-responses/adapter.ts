@@ -1,16 +1,34 @@
 /**
- * `DeepSeekAdapter`: fetch + SSE against a DeepSeek (OpenAI-compatible)
- * chat-completions endpoint, emitting harness StreamChunks. The adapter is
- * transport-only: connection facts arrive through a thunk resolved once per
- * operation and the bearer token through a per-request resolver, so the
- * registering plugin owns validation, layering, and credential policy.
+ * `DeepSeekResponsesAdapter`: fetch + SSE against a DeepSeek Responses endpoint,
+ * emitting harness StreamChunks. Transport only — connection facts arrive
+ * through a thunk resolved once per operation and the bearer token through a
+ * per-request resolver, so the registering plugin owns validation, layering and
+ * credential policy.
  *
- * @module dsh-llm-deepseek/adapter
+ * It mirrors the chat-completions adapter because both are OpenAI-family wires
+ * (bearer auth, the same error-body shape, the same idle watchdog and retry
+ * contract), and differs in exactly four places:
+ *
+ * 1. the request path is `/responses`;
+ * 2. the body comes from this directory's `serialize.ts`, which honours the
+ *    Responses contract the chat-completions serializer does not (see its
+ *    header);
+ * 3. the stream is framed by this directory's `sse.ts` and terminated by
+ *    `translate.ts`, because this wire has no `data: [DONE]` — the terminal
+ *    event is the only proof a response finished;
+ * 4. an image may travel as a Files API `file_id` instead of inline base64,
+ *    which is what lifts the 32 MiB inline bound for a large image.
+ *
+ * The plugin-contributed request extensions are deliberately not applied here.
+ * That mechanism exists for the chat-completions body, and this endpoint
+ * **silently ignores** parameters it does not support — so an extension field
+ * would be a no-op that looks like a success.
+ *
+ * @module dsh-llm-deepseek/openai-responses-adapter
  */
 
-import { attributionHeaders, contentHasImage, CONTEXT_WINDOW_EXCEEDED_CODE, isContextWindowExceededError, isQuotaExceededError, LlmAdapter, LlmError, ProviderRequestId, QUOTA_EXCEEDED_CODE } from '@deepseek-ai/dsh-llm'
+import { attributionHeaders, contentHasImage, LlmAdapter, LlmError } from '@deepseek-ai/dsh-llm'
 import type {
-  ContentBlock,
   GenerateOptions,
   ImageAttachmentAccess,
   LlmModelInfo,
@@ -20,102 +38,24 @@ import type {
   ResolvedRetryPolicy,
   StreamChunk,
 } from '@deepseek-ai/dsh-llm'
-import type {
-  AttachmentId,
-  AttachmentStore,
-  ImageAttachmentRef,
-  RequestImageAttachment,
-} from '@deepseek-ai/dsh-attachment'
+import type { AttachmentId, AttachmentStore, ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { idleWatchdog, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import type {
-  DeepSeekLlmApiJson,
-} from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
-import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
-import { deepSeekImageRequestPricing, resolveRequestImageTarget } from '../../common/request-pricing.ts'
 import { catalogModelInfo, modelInfo } from '../../common/model-info.ts'
-import type { DeepSeekAdapterOptions, DeepSeekCatalogModel, DeepSeekConnectionOptions } from '../../common/types.ts'
-import type { DeepSeekFileStore } from '../../common/file-store.ts'
+import { deepSeekImageRequestPricing } from '../../common/request-pricing.ts'
 import { FileResolutionFailure, RequestFiles } from '../../common/request-files.ts'
-import { prepareRequestExtensions } from '../../common/request-extensions.ts'
+import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions } from '../../common/types.ts'
+import type { DeepSeekFileStore } from '../../common/file-store.ts'
+import { httpErrorCode, prepareRequestImages, providerRetryAfterMs, requestId } from '../chat-completions/adapter.ts'
+import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import { parseSse } from './sse.ts'
-import { translate } from './translate.ts'
+import { translateResponses } from './translate.ts'
 import type { WireError, WireRequest } from './types.ts'
 
 const STREAM_IDLE_TIMEOUT_CODE = 'LLM_STREAM_IDLE_TIMEOUT'
 
-function collectImageRefs(
-  content: readonly ContentBlock[],
-  refs: Map<AttachmentId, ImageAttachmentRef>,
-): void {
-  for (const block of content) {
-    if (block.type === 'image' && block.offloaded !== true) refs.set(block.attachment.attachmentId, block.attachment)
-    else if (block.type === 'tool-result') collectImageRefs(block.content, refs)
-  }
-}
-
-export async function prepareRequestImages(
-  options: GenerateOptions,
-  attachments: AttachmentStore,
-  model: DeepSeekCatalogModel,
-  signal: AbortSignal,
-): Promise<Map<AttachmentId, RequestImageAttachment>> {
-  const refs = new Map<AttachmentId, ImageAttachmentRef>()
-  for (const message of options.messages) collectImageRefs(message.content, refs)
-  const orderedRefs = [...refs.values()]
-  const projected = await Promise.all(orderedRefs.map(
-    ref => attachments.readImageRequest(ref, resolveRequestImageTarget(model, ref), signal),
-  ))
-  return new Map(orderedRefs.map((ref, index) => (
-    [ref.attachmentId, projected[index] as RequestImageAttachment]
-  )))
-}
-
-
-
-export function providerRetryAfterMs(value: string | null): number | undefined {
-  if (value === null) return undefined
-  if (/^\d+$/.test(value)) {
-    const delay = Number(value) * 1_000
-    return Number.isFinite(delay) && delay > 0 ? delay : undefined
-  }
-  const delay = Date.parse(value) - Date.now()
-  return Number.isFinite(delay) && delay > 0 ? delay : undefined
-}
-
-export function requestId(headers: Headers): ReturnType<typeof ProviderRequestId> | undefined {
-  const value = headers.get('x-request-id') ?? headers.get('x-deepseek-request-id')
-  return value === null || value.length === 0 ? undefined : ProviderRequestId(value)
-}
-
-/**
- * Map an HTTP status to a stable LlmError code.
- * @param status - status of a non-2xx provider response.
- * @param error - parsed provider error body, when available.
- * @returns the normalized harness error code.
- */
-export function httpErrorCode(status: number, error?: WireError['error']): string {
-  if (status === 401 || status === 403) return 'AUTH'
-  if (status === 413) return 'INVALID_REQUEST'
-  const detail = [error?.code, error?.type, error?.message].filter(Boolean).join(' ')
-  if (isQuotaExceededError(detail)) return QUOTA_EXCEEDED_CODE
-  if (status === 429) return 'RATE_LIMIT'
-  if (status === 400) {
-    if (isContextWindowExceededError(detail)) return CONTEXT_WINDOW_EXCEEDED_CODE
-    return 'INVALID_REQUEST'
-  }
-  if (status >= 500) return 'SERVER'
-  return `HTTP_${status}`
-}
-
-/**
- * The first real `LlmAdapter`. One instance serves every model name it was
- * registered under (the harness model name IS the wire model name).
- *
- * One stable signal reaches both initial fetch and body reads. Caller aborts
- * map to `ABORTED`; the configured per-read idle watchdog maps to `TIMEOUT`.
- */
-export class ChatCompletionsAdapter extends LlmAdapter {
+/** The Responses wire against one configured route. */
+export class DeepSeekResponsesAdapter extends LlmAdapter {
   private readonly files: DeepSeekFileStore
 
   constructor(private readonly config: DeepSeekAdapterOptions & { resolveFiles: () => DeepSeekFileStore }) {
@@ -132,8 +72,6 @@ export class ChatCompletionsAdapter extends LlmAdapter {
   }
 
   override imageRequestPricing(_provider: string, model: string): ReturnType<LlmAdapter['imageRequestPricing']> {
-    // The same access resolution the serializer uses, so priced handle and
-    // placeholder text matches what the request actually sends.
     const attachments = this.config.resolveAttachments?.()
     const resolveAccess = attachments === undefined
       ? undefined
@@ -147,11 +85,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
     return Promise.resolve(this.config.options().models.map(model => catalogModelInfo(provider, model)))
   }
 
-  override resolveModel(
-    provider: string,
-    model: string,
-    _signal?: AbortSignal,
-  ): Promise<LlmResolvedModelInfo> {
+  override resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo> {
     return Promise.resolve(modelInfo(this.config.options(), provider, model))
   }
 
@@ -171,43 +105,28 @@ export class ChatCompletionsAdapter extends LlmAdapter {
     options: GenerateOptions,
     connection: DeepSeekConnectionOptions,
   ): AsyncIterable<StreamChunk> {
-    // One resolution per stream call: connection facts and the credential
-    // freeze here and hold for this whole request, so an in-flight stream
-    // never observes a configuration change and the next call re-resolves.
-    // The key resolves *from this snapshot*, so an endpoint and the secret
-    // sent to it can never come from different configuration generations.
+    // One resolution per stream call: an in-flight stream never observes a
+    // configuration change, and the key resolves from this same snapshot so an
+    // endpoint and the secret sent to it cannot come from different generations.
     const hasImages = options.messages.some(message => contentHasImage(message.content))
     let attachments: AttachmentStore | undefined
     if (hasImages) {
       const model = connection.models.find(entry => entry.id === options.model)
       if (model?.inputModalities?.includes('image') !== true) {
-        throw new LlmError(
-          `DeepSeek model "${options.model}" does not accept image input.`,
-          'UNSUPPORTED_CONTENT',
-        )
+        throw new LlmError(`DeepSeek model "${options.model}" does not accept image input.`, 'UNSUPPORTED_CONTENT')
       }
       attachments = this.config.resolveAttachments?.()
       if (attachments === undefined) {
-        throw new LlmError(
-          'DeepSeek image conversion requires the durable attachment service.',
-          'UNSUPPORTED_CONTENT',
-        )
+        throw new LlmError('DeepSeek image conversion requires the durable attachment service.', 'UNSUPPORTED_CONTENT')
       }
     }
     const apiKey = await this.config.resolveApiKey(connection)
     const userId = this.config.resolveUserId()
     const consumer = new AbortController()
-    const upstream = options.signal === undefined
-      ? consumer.signal
-      : AbortSignal.any([options.signal, consumer.signal])
+    const upstream = options.signal === undefined ? consumer.signal : AbortSignal.any([options.signal, consumer.signal])
     using watchdog = idleWatchdog(upstream, connection.streamIdleTimeoutMs, STREAM_IDLE_TIMEOUT_CODE)
     const iterator = this.request(
-      options,
-      watchdog.signal,
-      connection,
-      apiKey,
-      userId,
-      attachments,
+      options, watchdog.signal, connection, apiKey, userId, attachments,
       () => { watchdog.pulse() },
     )[Symbol.asyncIterator]()
     let exhausted = false
@@ -239,7 +158,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         try {
           await iterator.return()
         } catch (_abortedTransportTeardown) {
-          // The consumer controller already owns termination; a return-time abort cannot add a second outcome.
+          // The consumer controller already owns termination.
         }
       }
     }
@@ -260,24 +179,21 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       'accept': 'text/event-stream',
       ...attributionHeaders(),
       'x-deepseek-harness-user-id': String(userId),
-      ...options.sessionId !== undefined
-        ? { 'x-deepseek-harness-session-id': String(options.sessionId) }
-        : {},
-      ...options.purpose === 'compaction'
-        ? { 'x-deepseek-harness-compact': '1' }
-        : {},
+      ...options.sessionId === undefined ? {} : { 'x-deepseek-harness-session-id': String(options.sessionId) },
+      ...options.purpose === 'compaction' ? { 'x-deepseek-harness-compact': '1' } : {},
     }
-
     const fileConnection = { baseURL: connection.baseURL, apiKey, protocol: connection.protocol }
     const model = connection.models.find(entry => entry.id === options.model)
     const resolveImageAccess = attachments === undefined
       ? undefined
       : (ref: ImageAttachmentRef): ImageAttachmentAccess | undefined => this.config.resolveImageAccess?.(attachments, ref)
     const imageAccessOptions = resolveImageAccess === undefined ? {} : { resolveImageAccess }
-    const requestOptions = options
     const requestImages = attachments === undefined || model === undefined
       ? new Map<AttachmentId, RequestImageAttachment>()
-      : await prepareRequestImages(requestOptions, attachments, model, signal)
+      : await prepareRequestImages(options, attachments, model, signal)
+    // A Files API reference is tried first: it is what lets a large image past
+    // the inline bound, and the fallback below is the same base64 path every
+    // other request uses.
     let representation: 'file' | 'base64' = 'file'
     const requestFiles = new RequestFiles(
       this.files, fileConnection, connection.filePolicy, connection.filesApiTimeoutMs, signal, onActivity,
@@ -286,9 +202,9 @@ export class ChatCompletionsAdapter extends LlmAdapter {
       requestFiles.beginAttempt()
       let body: WireRequest
       if (attachments === undefined) {
-        body = serializeRequest(requestOptions, connection.defaults)
+        body = serializeRequest(options, connection.defaults)
       } else if (representation === 'base64') {
-        body = await serializeRequestWithImages(requestOptions, {
+        body = await serializeRequestWithImages(options, {
           representation: { kind: 'base64' },
           requestImages,
           ...imageAccessOptions,
@@ -299,7 +215,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         }, connection.defaults)
       } else {
         try {
-          body = await serializeRequestWithImages(requestOptions, {
+          body = await serializeRequestWithImages(options, {
             representation: {
               kind: 'file',
               resolveFileId: (version, _block, location) => requestFiles.resolve(version, location),
@@ -317,29 +233,18 @@ export class ChatCompletionsAdapter extends LlmAdapter {
           continue
         }
       }
-      const extensions = await prepareRequestExtensions(body as unknown as Readonly<Record<string, DeepSeekLlmApiJson>>, {
-        signal,
-        ...options.sessionId === undefined ? {} : { sessionId: String(options.sessionId) },
-        ...options.purpose === undefined ? {} : { purpose: options.purpose },
-      }, this.config.prepareExtensions)
 
-      // TODO(http): adopt the Cordis HTTP service when shared transport configuration
-      // outweighs its additional runtime dependencies.
       let response: Response
       try {
-        response = await fetch(`${connection.baseURL}/chat/completions`, {
+        response = await fetch(`${connection.baseURL}/responses`, {
           method: 'POST',
           headers,
-          body: extensions.payload,
+          body: JSON.stringify(body),
           signal,
         })
       } catch (error: unknown) {
         if (signal.aborted) throw error
-        throw new LlmError(
-          `DeepSeek API request to ${connection.baseURL} failed`,
-          'TRANSPORT',
-          { cause: error },
-        )
+        throw new LlmError(`DeepSeek API request to ${connection.baseURL} failed`, 'TRANSPORT', { cause: error })
       }
 
       if (!response.ok) {
@@ -349,9 +254,9 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         try {
           const parsed = JSON.parse(rawResponse) as WireError
           providerError = parsed.error
-          if (providerError?.message) message = providerError.message
+          if (providerError?.message !== undefined && providerError.message.length > 0) message = providerError.message
         } catch {
-          // The HTTP status remains authoritative when a gateway returns malformed JSON.
+          // The HTTP status stays authoritative when a gateway returns malformed JSON.
         }
         const detail = [providerError?.code, providerError?.type, providerError?.message]
           .filter((field): field is string => typeof field === 'string')
@@ -367,14 +272,9 @@ export class ChatCompletionsAdapter extends LlmAdapter {
           ...id === undefined ? {} : { requestId: id },
         })
       }
-      await extensions.accept()
-      if (!response.body) {
-        throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE')
-      }
+      if (!response.body) throw new LlmError('DeepSeek API returned no response body', 'EMPTY_RESPONSE')
 
-      // Bun 1.4 decodes each body chunk natively, so the SSE framer receives
-      // strings and one less transform stage holds buffers between writes.
-      yield* translate(parseSse(response.textStream(), onActivity))
+      yield* translateResponses(parseSse(response.textStream(), onActivity))
       return
     }
   }

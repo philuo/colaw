@@ -13,8 +13,15 @@ export const MESSAGES_FILES_BETA = 'files-api-2025-04-14'
 export const MIN_FILE_EXPIRY_SECONDS = 3_600
 /** Maximum provider-supported file lifetime. */
 export const MAX_FILE_EXPIRY_SECONDS = 2_592_000
-/** Maximum Files API upload size. */
-export const MAX_FILE_UPLOAD_BYTES = 128 * 1024 * 1024
+/**
+ * Maximum Files API upload size.
+ *
+ * The published limit for one uploaded file is 64 MiB. A client-side bound is
+ * still useful — it fails before spending the upload — but it has to agree with
+ * the server's, or a file between the two sizes is accepted here and rejected
+ * there.
+ */
+export const MAX_FILE_UPLOAD_BYTES = 64 * 1024 * 1024
 /** Current per-key file-count quota. */
 export const MAX_STORED_FILE_COUNT = 10_000
 /** Current per-key storage quota. */
@@ -214,7 +221,7 @@ export class DeepSeekFilesClient {
     signal?: AbortSignal
   }): Promise<DeepSeekFileObject & { expiresAt: number }> {
     if (input.data.byteLength > MAX_FILE_UPLOAD_BYTES) {
-      throw new LlmError('DeepSeek Files API upload exceeds 128 MiB.', 'INVALID_REQUEST')
+      throw new LlmError('DeepSeek Files API upload exceeds 64 MiB.', 'INVALID_REQUEST')
     }
     if (!Number.isSafeInteger(input.expiresAfterSeconds)
       || input.expiresAfterSeconds < MIN_FILE_EXPIRY_SECONDS
@@ -222,7 +229,7 @@ export class DeepSeekFilesClient {
       throw new LlmError('DeepSeek file expiry must be between 3600 and 2592000 seconds.', 'INVALID_REQUEST')
     }
     const form = new FormData()
-    if (this.protocol === 'chat-completions') form.set('purpose', 'user_data')
+    if (this.protocol !== 'messages') form.set('purpose', 'user_data')
     form.set('expires_after[anchor]', 'created_at')
     form.set('expires_after[seconds]', String(input.expiresAfterSeconds))
     form.set('file', new Blob([Uint8Array.from(input.data).buffer], { type: input.mediaType }), input.filename)
@@ -254,7 +261,7 @@ export class DeepSeekFilesClient {
     const wire = value as { object?: unknown; data?: unknown; first_id?: unknown; last_id?: unknown; has_more?: unknown }
     const firstId = this.protocol === 'messages' ? wire.first_id ?? undefined : wire.first_id
     const lastId = this.protocol === 'messages' ? wire.last_id ?? undefined : wire.last_id
-    if ((this.protocol === 'chat-completions' && wire.object !== 'list') || !Array.isArray(wire.data) || typeof wire.has_more !== 'boolean'
+    if ((this.protocol !== 'messages' && wire.object !== 'list') || !Array.isArray(wire.data) || typeof wire.has_more !== 'boolean'
       || (firstId !== undefined && typeof firstId !== 'string')
       || (lastId !== undefined && typeof lastId !== 'string')) {
       throw invalidResponse('list')

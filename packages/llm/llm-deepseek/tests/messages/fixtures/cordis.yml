@@ -17,6 +17,11 @@
     watch: false
 - name: '@deepseek-ai/dsh-llm-deepseek'
   config:
+    # Messages is this composition's subject, and it is no longer the schema
+    # default — the default is chat completions, because the Models page offers
+    # a `baseURL` and a catalog and no protocol switch. A composition that means
+    # to exercise Messages has to say so.
+    protocol: anthropic-messages
     apiKeyEnv: DEEPSEEK_API_KEY
     baseURL: {{endpoint}}
     thinking: enabled

@@ -54,6 +54,52 @@ function inlineImageOptions(
   }
 }
 
+describe('serializeRequest: a route declaring DeepSeek compatibility', () => {
+  // DeepSeek implements this wire but documents three deviations. Each is
+  // asserted together with the standard behaviour it must not disturb, because
+  // the flag exists precisely so every other route keeps the standard form.
+  const deepseek = { thinkingBudgetTokens: 16_384, compat: 'deepseek' as const }
+  const reasoning = { reasoning: true, maxTokens: 64_000 }
+  const asking = request({
+    messages: [TEXT_USER],
+    reasoningEffort: ReasoningEffortId('high'),
+    temperature: 0.5,
+  })
+
+  it('sends reasoning effort where DeepSeek reads it, and keeps the budget for Anthropic', () => {
+    const body = serializeRequest(asking, deepseek, reasoning)
+    expect(body.output_config).toEqual({ effort: 'high' })
+    // The budget still rides along: DeepSeek documents it as ignored, and the
+    // standard vendor requires it.
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 16_384 })
+    expect(serializeRequest(asking, { thinkingBudgetTokens: 16_384 }, reasoning).output_config)
+      .toBeUndefined()
+  })
+
+  it('carries the low ladder rung through as an effort, not just a smaller budget', () => {
+    const body = serializeRequest({ ...asking, reasoningEffort: ReasoningEffortId('low') }, deepseek, reasoning)
+    expect(body.output_config).toEqual({ effort: 'low' })
+    expect(body.thinking).toEqual({ type: 'enabled', budget_tokens: 4096 })
+  })
+
+  it('sends no effort when thinking is off or the model cannot reason', () => {
+    const off = serializeRequest({ ...asking, reasoningEffort: ReasoningEffortId('off') }, deepseek, reasoning)
+    expect(off.thinking).toEqual({ type: 'disabled' })
+    expect(off.output_config).toBeUndefined()
+    expect(serializeRequest(asking, deepseek, { reasoning: false }).output_config).toBeUndefined()
+  })
+
+  it('keeps temperature while thinking is on, where the standard vendor drops it', () => {
+    expect(serializeRequest(asking, deepseek, reasoning).temperature).toBe(0.5)
+    expect(serializeRequest(asking, { thinkingBudgetTokens: 16_384 }, reasoning).temperature)
+      .toBeUndefined()
+    // With thinking off, both vendors take it.
+    const off = { ...asking, reasoningEffort: ReasoningEffortId('off') }
+    expect(serializeRequest(off, deepseek, reasoning).temperature).toBe(0.5)
+    expect(serializeRequest(off, { thinkingBudgetTokens: 16_384 }, reasoning).temperature).toBe(0.5)
+  })
+})
+
 describe('serializeRequest', () => {
   it('always streams, always carries the required cap, and folds system into the top level', () => {
     const body = serializeRequest(request({ system: 'be brief', messages: [TEXT_USER] }))
@@ -77,17 +123,37 @@ describe('serializeRequest', () => {
     expect(body.system).toBe('one-shot rules\n\nhistory rules')
   })
 
-  it('omits thinking for non-reasoning models, unknown models, off effort, and session titles', () => {
+  it('omits thinking for non-reasoning models, unknown models, and a request naming no effort', () => {
     const options = request({ messages: [TEXT_USER], reasoningEffort: ReasoningEffortId('high') })
     expect(serializeRequest(options, { thinkingBudgetTokens: 16_384 }, { reasoning: false }).thinking).toBeUndefined()
     expect(serializeRequest(options, {}, undefined).thinking).toBeUndefined()
-    expect(serializeRequest(request({ messages: [TEXT_USER], reasoningEffort: ReasoningEffortId('off') }), { thinkingBudgetTokens: 16_384 }, { reasoning: true }).thinking).toBeUndefined()
+    // No effort anywhere: the vendor default stands, so the field is absent.
+    const unpolicied = serializeRequest(
+      request({ messages: [TEXT_USER] }),
+      {},
+      { reasoning: true },
+    )
+    expect(unpolicied.thinking).toBeUndefined()
+  })
+
+  it('says disabled rather than omitting thinking when the request turns it off', () => {
+    // Omitting the field leaves the vendor default in force, which for a
+    // reasoning model is thinking on — so a user who asked for `off` would not
+    // get it. `{type:'disabled'}` is the value both Anthropic and DeepSeek
+    // document for the instruction.
+    const off = request({ messages: [TEXT_USER], reasoningEffort: ReasoningEffortId('off') })
+    expect(serializeRequest(off, { thinkingBudgetTokens: 16_384 }, { reasoning: true }).thinking)
+      .toEqual({ type: 'disabled' })
+    // One-shot auxiliary callers never pay for thinking, and they say so too.
     const titled = serializeRequest(
-      { ...options, reasoningEffort: ReasoningEffortId('high'), purpose: 'session-title' as const },
+      { ...off, reasoningEffort: ReasoningEffortId('high'), purpose: 'session-title' as const },
       { thinkingBudgetTokens: 16_384 },
       { reasoning: true },
     )
-    expect(titled.thinking).toBeUndefined()
+    expect(titled.thinking).toEqual({ type: 'disabled' })
+    // A disabled model cannot carry an extended-thinking budget.
+    const disabledModel = serializeRequest(off, { thinkingBudgetTokens: 16_384 }, { reasoning: false })
+    expect(disabledModel.thinking).toBeUndefined()
   })
 
   it('enables thinking with the configured budget for reasoning models and drops temperature', () => {

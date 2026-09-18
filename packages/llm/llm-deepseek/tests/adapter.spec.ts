@@ -52,7 +52,7 @@ async function harness(baseURL: string, config: object = {}) {
   await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(DeepSeekLlmApiExtensionRegistry)
-  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL, apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
+  await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions', baseURL, apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
   return ctx
 }
 
@@ -1645,14 +1645,47 @@ describe('DeepSeekAdapter against a mock server', () => {
 })
 
 describe('plugin registration and config', () => {
-  it('defaults to Messages and resolves the selected protocol endpoint without rewriting overrides', () => {
-    expect(resolveAdapterOptions({})).toMatchObject({ protocol: 'messages', baseURL: 'https://api.deepseek.com/anthropic' })
+  it('defaults to chat completions, so a user-supplied OpenAI-compatible baseURL is addressed at its own root', () => {
+    // The default is the whole contract: the Models page offers a `baseURL` and
+    // a model catalog and no protocol switch, and an OpenAI-compatible gateway
+    // is entered as a root such as `https://gateway.example/v1`. Chat
+    // completions appends `/chat/completions` to that; Messages appends
+    // `/v1/messages`, i.e. `…/v1/v1/messages`, which fails every request. This
+    // is what a settings section that names only a `baseURL` depends on, so the
+    // default may not follow an upstream flip to Messages without also giving
+    // the Models page a way to select a protocol.
+    expect(resolveAdapterOptions({})).toMatchObject({ protocol: 'chat-completions', baseURL: 'https://api.deepseek.com' })
     expect(resolveAdapterOptions({ protocol: 'chat-completions' })).toMatchObject({ protocol: 'chat-completions', baseURL: 'https://api.deepseek.com' })
+    // Messages stays reachable for the official Anthropic-compatible root.
     expect(resolveAdapterOptions({ protocol: 'messages' })).toMatchObject({ protocol: 'messages', baseURL: 'https://api.deepseek.com/anthropic' })
     for (const baseURL of ['https://gateway.example/custom/v1', 'https://gateway.example/v1/messages']) {
       expect(resolveAdapterOptions({ protocol: 'messages', baseURL }).baseURL).toBe(baseURL)
+      expect(resolveAdapterOptions({ baseURL }).baseURL).toBe(baseURL)
     }
     expect(() => resolveAdapterOptions({ protocol: 'responses' } as unknown as LlmDeepSeek.Config)).toThrow(/protocol/)
+  })
+
+  it('posts a settings-only section to <baseURL>/chat/completions', async () => {
+    // End-to-end proof of the default above. The section the Models page writes
+    // carries a gateway root and nothing else, so this adapter is built from the
+    // real resolve step with no protocol forced — which is exactly what the
+    // plugin does for a live settings snapshot. `https://gateway.example/v1` is
+    // the shape a user enters; the request must land on `/chat/completions`
+    // under it, not on a Messages path.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(successfulSseResponse())
+    const adapter = new DeepSeekAdapter({
+      options: () => resolveAdapterOptions({ baseURL: 'https://gateway.example/v1' }),
+      resolveApiKey: () => Promise.resolve('k'),
+      resolveUserId: () => TEST_USER_ID,
+      resolveAttachments: () => undefined,
+      prepareExtensions: noExtensions,
+    })
+    try {
+      await drain(adapter.stream({ provider: 'deepseek-official', model: 'm', messages: [] }))
+      expect(fetchSpy.mock.calls[0]?.[0]).toBe('https://gateway.example/v1/chat/completions')
+    } finally {
+      fetchSpy.mockRestore()
+    }
   })
 
   it('keeps wire helpers off the package root', () => {
@@ -1673,7 +1706,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     const fiber = await ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: server.url,
     })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
@@ -1692,7 +1725,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       retryPolicy: {
         mode: 'always',
@@ -1711,7 +1744,7 @@ describe('plugin registration and config', () => {
   it('owns the deepseek provider and advertises the default models', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions', baseURL: 'http://127.0.0.1:1' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     await expect(ctx.llm.listModels('deepseek-official')).resolves.toEqual([
       { provider: 'deepseek-official', id: 'deepseek-flash', name: 'DeepSeek-V41-Flash', inputModalities: ['text', 'image'] },
@@ -1759,7 +1792,7 @@ describe('plugin registration and config', () => {
   ])('keeps $model available with its V4 capabilities', async ({ model, inputModalities }) => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions', baseURL: 'http://127.0.0.1:1' })
     const info = await ctx.llm.resolveModelInfo('deepseek-official', model)
     expect(info).toMatchObject({
       id: model,
@@ -1774,7 +1807,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       reasoningEffort: effort,
     })
@@ -1796,7 +1829,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       thinking: 'disabled',
       reasoningEffort: 'off',
@@ -1820,7 +1853,7 @@ describe('plugin registration and config', () => {
       const ctx = new Context()
       await ctx.plugin(LlmRuntime)
       await expect(ctx.plugin(LlmDeepSeek, {
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         baseURL: 'http://127.0.0.1:1',
         thinking: 'disabled',
         reasoningEffort,
@@ -1895,7 +1928,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       models: [
         { id: 'private-fast', contextWindow: 32_000 },
@@ -1931,7 +1964,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       defaultContextWindow: 256_000,
       models: [
@@ -1952,7 +1985,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       models: [],
     })
@@ -1977,7 +2010,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await expect(ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       models: [...models],
     })).rejects.toThrow(message)
@@ -2004,7 +2037,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await expect(ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       models: [legacyModel],
     })).rejects.toThrow(/imageDetail is no longer supported/)
@@ -2086,7 +2119,7 @@ describe('plugin registration and config', () => {
       const ctx = new Context()
       await ctx.plugin(LlmRuntime)
       await expect(ctx.plugin(LlmDeepSeek, {
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         baseURL: 'http://127.0.0.1:1',
         defaultContextWindow,
       })).rejects.toThrow(/defaultContextWindow/)
@@ -2103,7 +2136,7 @@ describe('plugin registration and config', () => {
       const ctx = new Context()
       await ctx.plugin(LlmRuntime)
       await expect(ctx.plugin(LlmDeepSeek, {
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         baseURL: 'http://127.0.0.1:1',
         maxTokens,
       })).rejects.toThrow(/maxTokens/)
@@ -2154,7 +2187,7 @@ describe('plugin registration and config', () => {
       const ctx = new Context()
       await ctx.plugin(LlmRuntime)
       await expect(ctx.plugin(LlmDeepSeek, {
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         baseURL: 'http://127.0.0.1:1',
         maxRequestFilesBytes,
       })).rejects.toThrow(/maxRequestFilesBytes/)
@@ -2171,7 +2204,7 @@ describe('plugin registration and config', () => {
       const ctx = new Context()
       await ctx.plugin(LlmRuntime)
       await expect(ctx.plugin(LlmDeepSeek, {
-        protocol: 'chat-completions',
+        protocol: 'openai-completions',
         baseURL: 'http://127.0.0.1:1',
         maxInlineRequestImageBytes,
       })).rejects.toThrow(/maxInlineRequestImageBytes/)
@@ -2185,7 +2218,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LocalCredentialProvider, { watch: false })
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
     // The ambient env value must not serve as the credential: the request
     // still fails for the missing store entry.
@@ -2196,7 +2229,7 @@ describe('plugin registration and config', () => {
   it('loads keyless, keeps the catalog browsable, and fails the request actionably', async () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions', baseURL: 'http://127.0.0.1:1' })
     // First-boot onboarding: the route registers so models stay discoverable;
     // only the request itself needs a key.
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
@@ -2229,7 +2262,7 @@ describe('plugin registration and config', () => {
     vi.stubEnv('DEEPSEEK_API_KEY', '')
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', baseURL: 'http://127.0.0.1:1' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions', baseURL: 'http://127.0.0.1:1' })
     const result = await assemble(ctx, { model: 'deepseek-v4-flash', messages: [] })
     expect(result.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
   })
@@ -2250,7 +2283,7 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LocalCredentialProvider, { watch: false })
     await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
     await ctx.plugin(LlmRuntime)
-    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions' })
     await assemble(ctx,{ model: 'deepseek-v4-flash', messages: [] })
     expect(server.requests).toHaveLength(1)
   })
@@ -2280,7 +2313,7 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     // Registration succeeds; no call is made (would hit api.deepseek.com).
-    await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions' })
+    await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions' })
     expect(ctx.llm.listProviders()).toEqual([{ id: 'deepseek-official', name: 'DeepSeek' }])
   })
 
@@ -2316,12 +2349,12 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await expect(ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       streamIdleTimeoutMs: 0,
     })).rejects.toThrow(/streamIdleTimeoutMs/)
     await expect(ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       streamIdleTimeoutMs: MAX_TIMER_DELAY_MS + 1,
     })).rejects.toThrow(/streamIdleTimeoutMs/)
@@ -2336,12 +2369,12 @@ describe('plugin registration and config', () => {
     const ctx = new Context()
     await ctx.plugin(LlmRuntime)
     await expect(ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       filesApiTimeoutMs: 0,
     })).rejects.toThrow(/filesApiTimeoutMs/)
     await expect(ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       filesApiTimeoutMs: MAX_TIMER_DELAY_MS + 1,
     })).rejects.toThrow(/filesApiTimeoutMs/)
@@ -2354,7 +2387,7 @@ describe('plugin registration and config', () => {
     await ctx.plugin(LlmRuntime)
 
     await expect(ctx.plugin(LlmDeepSeek, {
-      protocol: 'chat-completions',
+      protocol: 'openai-completions',
       baseURL: 'http://127.0.0.1:1',
       retryPolicy: { mode: 'normal', maxRetries: -1 },
     })).rejects.toThrow(/retryPolicy/)

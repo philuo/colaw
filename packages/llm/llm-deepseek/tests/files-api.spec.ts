@@ -308,6 +308,13 @@ describe('DeepSeekFilesClient', () => {
     expect(fetchImpl).not.toHaveBeenCalled()
   })
 
+  it('bounds one upload at the published 64 MiB limit', () => {
+    // The provider documents 64 MiB for a single uploaded file. A wider client
+    // bound is not harmless: a file between the two sizes passes this check and
+    // is refused by the server after the bytes have already been sent.
+    expect(MAX_FILE_UPLOAD_BYTES).toBe(64 * 1024 * 1024)
+  })
+
   it('refuses a file larger than the upload limit before transport', async () => {
     const fetchImpl = vi.fn() as typeof fetch
     const client = new DeepSeekFilesClient({ protocol: 'chat-completions', baseURL: 'https://api.deepseek.com', apiKey: 'key', fetch: fetchImpl })

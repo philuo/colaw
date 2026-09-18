@@ -127,7 +127,7 @@ async function boot(dir: string, config: object): Promise<Harness> {
   await ctx.plugin(LocalCredentialProvider, { path: join(dir, '.credentials.yaml'), watch: false })
   // The reference is stated explicitly: the plugin no longer defaults one, so
   // the launching environment is never consulted unless a test opts in.
-  await ctx.plugin(LlmDeepSeek, { protocol: 'chat-completions', apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
+  await ctx.plugin(LlmDeepSeek, { protocol: 'openai-completions', apiKeyEnv: 'DEEPSEEK_API_KEY', ...config })
   return { ctx, settingsFiber }
 }
 

@@ -22,8 +22,21 @@ export interface WireRequest {
   stream: true
   /** Top-level system prompt (the Messages API has no system role in messages). */
   system?: string
-  /** Extended thinking; sent only for catalog models declaring `reasoning`. */
-  thinking?: { type: 'enabled'; budget_tokens: number }
+  /**
+   * Extended thinking; sent only for catalog models declaring `reasoning`.
+   *
+   * `disabled` is a real value on this wire, and it is how a request says
+   * "do not think" — omitting the field instead leaves the vendor's default
+   * in force, which for a reasoning model is thinking on.
+   */
+  thinking?: { type: 'enabled'; budget_tokens: number } | { type: 'disabled' }
+  /**
+   * Reasoning depth for vendors that take it here instead of from the thinking
+   * budget. DeepSeek documents `budget_tokens` as ignored and supports only
+   * `effort` in this object; the standard Anthropic API has no such field, so
+   * it is sent only for a route declaring that vendor.
+   */
+  output_config?: { effort: 'low' | 'high' | 'max' }
   tools?: WireTool[]
   /**
    * Omitted when thinking is enabled (the Messages API requires the default

@@ -72,9 +72,21 @@ describe('serializeResponsesRequest: system prompt', () => {
     expect(body.input[0]).toEqual({ role: 'system', content: 'be brief' })
   })
 
-  it('prepends a developer-role message for a reasoning model', () => {
+  it('prepends the same system-role message for a reasoning model', () => {
+    // OpenAI prefers `developer` here, and this wire used it first. It is not
+    // the safe spelling: DeepSeek documents `developer` as equivalent to
+    // **user**, so a `developer` system prompt would arrive as user speech on
+    // that route. `system` is read as instructions by both.
     const body = serializeResponsesRequest(base({ system: 'be brief' }), {}, { reasoning: true })
-    expect(body.input[0]).toEqual({ role: 'developer', content: 'be brief' })
+    expect(body.input[0]).toEqual({ role: 'system', content: 'be brief' })
+  })
+
+  it('never sends a developer-role item, whatever the model declares', () => {
+    for (const model of [{ reasoning: true }, { reasoning: false }, undefined]) {
+      const body = serializeResponsesRequest(base({ system: 'be brief' }), {}, model)
+      expect(body.input[0]).toEqual({ role: 'system', content: 'be brief' })
+      expect(JSON.stringify(body)).not.toContain('developer')
+    }
   })
 })
 

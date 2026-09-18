@@ -6,6 +6,7 @@ import type { DeepSeekAdapterOptions } from './common/types.ts'
 import { ChatCompletionsAdapter } from './protocols/chat-completions/adapter.ts'
 import { DeepSeekFileStore } from './common/file-store.ts'
 import { DeepSeekMessagesAdapter } from './protocols/messages/adapter.ts'
+import { DeepSeekResponsesAdapter } from './protocols/openai-responses/adapter.ts'
 
 /** One provider route with protocol-local transport and shared credentials and model configuration. */
 export class DeepSeekAdapter extends LlmAdapter {
@@ -35,6 +36,8 @@ export class DeepSeekAdapter extends LlmAdapter {
         })
       case 'chat-completions':
         return new ChatCompletionsAdapter({ ...this.dependencies, options: () => connection, resolveFiles: () => this.files })
+      case 'responses':
+        return new DeepSeekResponsesAdapter({ ...this.dependencies, options: () => connection, resolveFiles: () => this.files })
       /* v8 ignore next -- protocol is validated at configuration resolution. */
       default: return assertNever(connection.protocol, 'DeepSeek protocol')
     }

@@ -26,18 +26,39 @@ function adapter(connection: () => DeepSeekConnectionOptions) {
   })
 }
 
-it.each([false, true])('uses Messages when protocol is omitted, schema=%s', async (schema) => {
-  const http = await endpoint()
+it.each([false, true])('uses chat completions when protocol is omitted, schema=%s', async (schema) => {
+  // The default is chat completions because this provider's configuration
+  // surface is a user-supplied `baseURL` plus a model catalog, with no protocol
+  // switch on the Models page: an OpenAI-compatible gateway is entered as a root
+  // such as `https://gateway.example/v1`, which chat completions addresses by
+  // appending `/chat/completions`. Messages appends `/v1/messages` instead, i.e.
+  // `…/v1/v1/messages`, so defaulting to it fails every request from a
+  // settings section that names only a `baseURL`.
+  const http = await endpoint(response => response.end(chat))
   const raw = { baseURL: http.url }
   const connection = resolveAdapterOptions(schema ? Config(raw) : raw)
   const response = await assemble(adapter(() => connection).stream(options()))
 
-  expect(response.message.content).toEqual([{ type: 'text', text: 'Hello 世界' }])
+  expect(response.message.content).toEqual([{ type: 'text', text: 'Chat answer' }])
   expect(http.requests).toHaveLength(1)
+  expect(http.requests[0]).toMatchObject({
+    path: '/anthropic/chat/completions',
+    headers: { authorization: 'Bearer key-for-DEEPSEEK_API_KEY' },
+    body: { model: MODEL, messages: [{ role: 'user', content: 'hello' }] },
+  })
+})
+
+it('reaches Messages only when the section names the protocol', async () => {
+  // The other half of the contract above: the official Anthropic-compatible
+  // root stays reachable, but only on an explicit `protocol: messages`.
+  const http = await endpoint()
+  const connection = resolveAdapterOptions({ protocol: 'messages', baseURL: http.url })
+  const response = await assemble(adapter(() => connection).stream(options()))
+
+  expect(response.message.content).toEqual([{ type: 'text', text: 'Hello 世界' }])
   expect(http.requests[0]).toMatchObject({
     path: '/anthropic/v1/messages',
     headers: { 'x-api-key': 'key-for-DEEPSEEK_API_KEY', 'anthropic-version': '2023-06-01' },
-    body: { model: MODEL, messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }] },
   })
 })
 
