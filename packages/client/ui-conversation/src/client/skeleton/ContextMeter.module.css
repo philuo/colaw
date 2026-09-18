@@ -134,7 +134,7 @@
 /* Slot sections (the session stats) close the panel: a full-bleed hairline
    echoing the header rule, then the section's own grid. */
 .extraRule {
-  height: 1px;
+  height: 0.5px;
   margin: 10px -12px 2px;
   background: var(--dsw-alias-border-l2);
 }

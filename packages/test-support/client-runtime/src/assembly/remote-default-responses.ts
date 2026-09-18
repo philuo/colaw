@@ -8,11 +8,24 @@
  */
 import { ok, openStream, type RemoteTable } from '@deepseek-ai/dsh-remote-mock'
 
+/**
+ * The Session the startup default creates when the assembly boots with nothing
+ * open. A spec that boots the roster ends up with it selected, so the id is
+ * fixed here rather than left to a random draw: a spec can address the row it
+ * produces without knowing which order the fixtures ran in.
+ */
+export const DETACHED_SESSION_ID = '5d0de740-0000-4000-8000-000000000000'
+
 /** Default responses of the boot-time Remote endpoints; a spec loads it first and layers its own table on top. */
 export const remoteDefaultResponses: RemoteTable = {
   unary: {
     // api-session-controller `sessions.handleConnected()` on `connection/reset`.
     'session/list': ok({ items: [] }),
+    // ui-workspace `WorkspaceNavigation`'s startup reconcile: with no current
+    // Session and no Workspace to reuse, the workspace-less default creates one
+    // so the composer is usable from the first paint. It is the one write the
+    // assembly makes on its own, and every spec that boots the roster rides it.
+    'session/create': ok({ sessionId: DETACHED_SESSION_ID }),
     // ui-settings `mirror.ensure()` at apply and again on `connection/reset`.
     'settings/describe': ok({ writable: true, hasDocument: false, namespaces: [] }),
     // ui-model-selection `ModelDirectoryResolver` constructor.
@@ -32,16 +45,22 @@ export const remoteDefaultResponses: RemoteTable = {
     'credentials/describe': ok({}),
     // ui-permission-presets `PermissionCatalogDirectory` on its first read for a connection generation.
     'permissionPresets/catalog': ok({ options: [] }),
+    // api-session-controller `AgentCatalogDirectory` for the Session the startup
+    // default just created: a blank Session has no subagents.
+    'subagents/list': ok({ entries: [], parentAvailable: true }),
+    // ui-commands `CommandDirectory.warm` when the composer of that Session mounts.
+    'commands/list': ok([]),
+    // ui-skill's catalog fetch for the same composer.
+    'skills/list': ok({ skills: [] }),
   },
-  // Stream endpoints the roster opens later than boot; declared so a spec that forgets the script gets a stream miss.
-  streams: [
-    // api-session-controller `SessionEventStream.follow` when a Session opens.
-    'session/follow',
-  ],
   stream: {
     // api-session-controller client `apply`: the control stream's opening baseline, then open.
     'session/control': openStream([{ type: 'baseline', value: { queues: {}, jobs: {}, projections: {} } }]),
     // api-workspace-controller client `apply`: the follow stream's opening baseline, then open.
     'workspace/follow': openStream([{ type: 'baseline', value: { items: [], archivedSessionIds: [] } }]),
+    // api-session-controller `SessionEventStream.follow` once the startup
+    // default's Session opens: no history to replay, and it stays open so a
+    // spec can push into it.
+    'session/follow': openStream(),
   },
 }

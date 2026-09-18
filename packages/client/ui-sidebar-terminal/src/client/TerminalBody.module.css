@@ -20,7 +20,7 @@
 .screen { --dsh-scrollbar-width: 6px; }
 .screen :global(.xterm-viewport)::-webkit-scrollbar { width: var(--dsh-scrollbar-width); }
 .screen :global(.xterm-viewport)::-webkit-scrollbar-track { background: transparent; }
-.screen :global(.xterm-viewport)::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; background: var(--dsh-scrollbar-thumb); background-clip: content-box; }
+.screen :global(.xterm-viewport)::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 999px; corner-shape: round; background: var(--dsh-scrollbar-thumb); background-clip: content-box; }
 .screen :global(.xterm-viewport)::-webkit-scrollbar-thumb:hover { background-color: var(--dsh-scrollbar-thumb-hover); }
 /* The pane's own chrome, over the terminal. It is a centred card on a dimmed
    pane rather than a bar bolted to an edge: a bar at the top painted its copy

@@ -101,6 +101,11 @@
 .listWrap {
   min-height: 0;
   overflow-y: auto;
+  /* This scroller sits on the confirmation card's l2 surface, so it
+     rebinds the bar pair to the l2 rung rather than inheriting the
+     panel's default. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   padding: 6px;
@@ -243,6 +248,11 @@
 .previewBody {
   min-height: 0;
   overflow-y: auto;
+  /* This scroller sits on the confirmation card's l2 surface, so it
+     rebinds the bar pair to the l2 rung rather than inheriting the
+     panel's default. */
+  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l2);
+  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l2);
   border: 0.5px solid var(--dsw-alias-border-l2);
   border-radius: 10px;
   padding: 14px 16px;
@@ -286,6 +296,7 @@
   width: 40px;
   height: 40px;
   border-radius: 999px;
+  corner-shape: round;
   background: var(--dsw-alias-fill-danger, rgb(220, 38, 38));
   color: rgb(255, 255, 255);
 }
