@@ -115,27 +115,84 @@ export function deriveKeyRef(provider: string): string {
 }
 
 /**
- * The wire protocols a hand-declared route may name, read straight out of
- * the owning namespace's own schema (the adapter's `api` union, in the
- * order it declares them — most-reached first, so the first stays the
- * create card's default, exactly as the retired pi-ai adapter offered
- * them). This stays a schema read rather than a wire field so the choices
- * the page offers cannot drift from the ones the adapter accepts: both
- * come from the same `Config`.
+ * Where a namespace declares the wire protocols it serves, inside its own
+ * settings schema.
+ */
+export interface ProtocolChoicesAt {
+  /** Mounted namespace that owns the union. */
+  readonly ns: string
+  /** Path to the union within that namespace's schema. */
+  readonly path: readonly string[]
+}
+
+/** The multi-protocol family declares the union per route, beside the route's own fields. */
+const PROVIDER_PROTOCOL_AT: ProtocolChoicesAt = { ns: 'llm-provider', path: ['providers', PROBE_ROUTE, 'api'] }
+
+/**
+ * The wire protocols a route may name, read straight out of the owning
+ * namespace's own schema (the adapter's `api` union, in the order it declares
+ * them — most-reached first, so the first stays the create card's default,
+ * exactly as the retired pi-ai adapter offered them). This stays a schema read
+ * rather than a wire field so the choices the page offers cannot drift from the
+ * ones the adapter accepts: both come from the same `Config`.
+ *
+ * Every adapter that declares such a union is served by this one read, which is
+ * what keeps a built-in family's selector identical to a hand-declared route's:
+ * `llm-provider` keeps one union per route, while a whole-section adapter such
+ * as `llm-deepseek` keeps a single `protocol` field.
  * @param namespaces - the mounted namespace views.
  * @param schema - settings schema operations.
+ * @param at - where the union lives; omission reads the multi-protocol family's per-route one.
  * @returns the protocol identifiers, or an empty list when the namespace is not mounted.
  */
 export function protocolChoices(
   namespaces: ReadonlyMap<string, SettingsNamespaceView | undefined>,
   schema: SettingsSchemaOperations,
+  at: ProtocolChoicesAt = PROVIDER_PROTOCOL_AT,
 ): string[] {
-  const namespace = namespaces.get('llm-provider')
-  if (namespace === undefined) return []
-  const node = schema.nodeAtPath(schema.rehydrate(namespace.schema), ['providers', PROBE_ROUTE, 'api'])
-  const list = (node as { type?: string; list?: readonly { value?: unknown }[] } | undefined)
-  if (list?.type !== 'union' || list.list === undefined) return []
-  return list.list.map(entry => entry.value).filter((value): value is string => typeof value === 'string')
+  return readProtocolUnion(namespaces, schema, at)?.choices ?? []
+}
+
+/**
+ * The member a protocol union puts in effect while its field is unset — the
+ * `.default(...)` the adapter's own schema declares. A selector lists only the
+ * members, so an unset field has to be shown as this one rather than as a slot
+ * of its own: it is the protocol a request would actually be sent with.
+ * @param namespaces - the mounted namespace views.
+ * @param schema - settings schema operations.
+ * @param at - where the union lives; omission reads the multi-protocol family's per-route one.
+ * @returns the declared default, or `undefined` when the union declares none.
+ */
+export function protocolDeclaredDefault(
+  namespaces: ReadonlyMap<string, SettingsNamespaceView | undefined>,
+  schema: SettingsSchemaOperations,
+  at: ProtocolChoicesAt = PROVIDER_PROTOCOL_AT,
+): string | undefined {
+  return readProtocolUnion(namespaces, schema, at)?.declaredDefault
+}
+
+/**
+ * Read a protocol union node: its members and the default it declares.
+ * @param namespaces - the mounted namespace views.
+ * @param schema - settings schema operations.
+ * @param at - where the union lives.
+ * @returns the members and default, or `undefined` when there is no such union.
+ */
+function readProtocolUnion(
+  namespaces: ReadonlyMap<string, SettingsNamespaceView | undefined>,
+  schema: SettingsSchemaOperations,
+  at: ProtocolChoicesAt,
+): { choices: string[]; declaredDefault?: string } | undefined {
+  const namespace = namespaces.get(at.ns)
+  if (namespace === undefined) return undefined
+  const node = schema.nodeAtPath(schema.rehydrate(namespace.schema), [...at.path]) as
+    { type?: string; list?: readonly { value?: unknown }[]; meta?: { default?: unknown } } | undefined
+  if (node?.type !== 'union' || node.list === undefined) return undefined
+  const choices = node.list.map(entry => entry.value).filter((value): value is string => typeof value === 'string')
+  // Schemastery keeps `.default(v)` on the node's meta, beside the members it
+  // also names — the value is validated against them, never a member of its own.
+  const declared = node.meta?.default
+  return typeof declared === 'string' ? { choices, declaredDefault: declared } : { choices }
 }
 
 /** The credential reference a resolved profile names (its `apiKeyEnv` field). */

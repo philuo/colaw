@@ -248,9 +248,12 @@
     - id: ui-settings-plugin-inventory
       name: '@deepseek-ai/dsh-client-ui-settings-plugin-inventory'
 
-    - id: ui-settings-unarchive-sessions
-      name: '@deepseek-ai/dsh-client-ui-settings-unarchive-sessions'
-
+    # Upstream's archived-session Settings page is deliberately not mounted. The
+    # fork's own Trash section (packages/client/ui-workspace) already lists the
+    # archived set and restores from it, so this row would be a second page for
+    # the same verb under a second name. The package itself stays in the tree,
+    # unmounted, the way ui-message-feedback does — a future merge that edits it
+    # still lands cleanly against code we never touched.
     - id: ui-conversation
       name: '@deepseek-ai/dsh-client-ui-conversation'
 

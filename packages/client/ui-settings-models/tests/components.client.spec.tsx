@@ -62,6 +62,10 @@ const PiAiConfig = Schema.object({
 })
 
 const DeepSeekConfig = Schema.object({
+  // The adapter declares its wire-protocol union, and the card's selector is a
+  // read of it — so a mock that omits this field is not the adapter's shape and
+  // cannot exercise the selector.
+  protocol: Schema.union(['openai-completions', 'openai-responses', 'anthropic-messages']).default('openai-completions'),
   apiKeyEnv: Schema.string().role('credential-ref'),
   baseURL: Schema.string().pattern(/^https:\/\//),
   reasoningEffort: Schema.union(['off', 'low', 'high', 'max']),
@@ -651,11 +655,11 @@ describe('ModelsSection', () => {
     ])
   })
 
-  it('edits the shared DeepSeek card while preserving the YAML protocol selection', async () => {
+  it('edits the shared DeepSeek card while preserving the protocol selection', async () => {
     const namespace: SettingsNamespaceView = {
       ...wireNamespaces()[0]!,
       ns: 'llm-deepseek',
-      value: { protocol: 'messages', apiKeyEnv: 'DEEPSEEK_API_KEY', models: DEFAULT_DEEPSEEK_MODELS },
+      value: { protocol: 'anthropic-messages', apiKeyEnv: 'DEEPSEEK_API_KEY', models: DEFAULT_DEEPSEEK_MODELS },
       user: {},
     }
     const { face, mutate, set } = scriptedFace({
@@ -674,9 +678,19 @@ describe('ModelsSection', () => {
       onClose={vi.fn()}
     />)
     fireEvent.click(screen.getByText(en.customized))
+    // The endpoint placeholder follows the protocol this card names: clearing
+    // the field restores the adapter's default for `messages`, which is the
+    // Anthropic-compatible root rather than the public one.
     expect(screen.getByLabelText<HTMLInputElement>(en.baseUrl).placeholder)
       .toBe('https://api.deepseek.com/anthropic')
-    expect(screen.queryByLabelText(en.customApi)).toBeNull()
+    // The protocol is selectable here, exactly as a hand-declared route's is,
+    // and it opens on the value the section already stores.
+    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('anthropic-messages')
+    // The selector offers exactly the three protocols the provider's schema
+    // declares, in that order — the user-visible contract of this change.
+    const offered = [...screen.getByLabelText<HTMLSelectElement>(en.customApi).options].map(option => option.value)
+    expect(offered).toEqual(['openai-completions', 'openai-responses', 'anthropic-messages'])
+
     expect(screen.getByText(en.deepSeekEndpointHint)).toBeTruthy()
     fireEvent.change(screen.getByLabelText(en.keyInput), { target: { value: 'sk-messages-test' } })
     fireEvent.change(screen.getByLabelText(en.baseUrl), { target: { value: 'https://messages.example/anthropic' } })
@@ -694,6 +708,63 @@ describe('ModelsSection', () => {
       ],
       0,
     ]])
+  })
+
+  it('writes the protocol this card switches to; an unset one reads as its declared default', async () => {
+    // The built-in family names its own protocol, so the selector is the way a
+    // user moves a gateway between chat completions, Responses, and Messages
+    // without hand-editing settings.yaml. It lists the adapter's members and
+    // nothing else — the same control a hand-declared route gets — so there is
+    // no slot that writes the field away: an unset field is shown as the member
+    // its schema puts in effect, which is what a request would be sent with.
+    const original = wireNamespaces()[0]!
+    const namespace: SettingsNamespaceView = {
+      ...original,
+      value: { ...original.value as Record<string, unknown>, protocol: 'anthropic-messages' },
+      user: { ...original.user as Record<string, unknown>, protocol: 'anthropic-messages' },
+    }
+    const { face, mutate } = scriptedFace({ mutate: vi.fn(() => Promise.resolve(remoteOk(namespace))) })
+    const { ProviderEditor } = await import('../src/client/ProviderEditor.tsx')
+    const render1 = render(<ProviderEditor
+      provider="deepseek-official"
+      displayName="DeepSeek"
+      namespace={namespace}
+      schema={settingsSchema}
+      settingsPath={[]}
+      operations={operationsWith(face)}
+      t={t}
+      readOnly={false}
+      onClose={vi.fn()}
+    />)
+    fireEvent.click(screen.getByText(en.customized))
+    fireEvent.change(screen.getByLabelText(en.customApi), { target: { value: 'openai-completions' } })
+    fireEvent.click(screen.getByText(en.apply))
+    await waitFor(() => { expect(mutate.mock.calls.length).toBe(1) })
+    expect(mutate.mock.calls[0]?.[1]).toEqual([
+      { op: 'set', path: ['protocol'], value: 'openai-completions' },
+    ])
+    render1.unmount()
+
+    // A section that never picked a protocol — the shape `wireNamespaces()`
+    // ships — is not a blank slot: the field is unset, the schema's declared
+    // member is what a request would use, and the selector opens on exactly
+    // that. This is the state the removed "default" entry used to stand for,
+    // now carried by the schema instead of by a fourth choice.
+    render1.unmount()
+    const { face: face2 } = scriptedFace({ mutate: vi.fn(() => Promise.resolve(remoteOk(original))) })
+    render(<ProviderEditor
+      provider="deepseek-official"
+      displayName="DeepSeek"
+      namespace={original}
+      schema={settingsSchema}
+      settingsPath={[]}
+      operations={operationsWith(face2)}
+      t={t}
+      readOnly={false}
+      onClose={vi.fn()}
+    />)
+    fireEvent.click(screen.getByText(en.customized))
+    expect(screen.getByLabelText<HTMLSelectElement>(en.customApi).value).toBe('openai-completions')
   })
 
   it('rejects duplicate DeepSeek model ids before writing', async () => {

@@ -33,7 +33,7 @@ import {
 import { apiKeyFailure } from './apiKey.ts'
 import { EditorFooter } from './EditorFooter.tsx'
 import { ModelListEditor } from './ModelListEditor.tsx'
-import { deriveKeyRef, protocolChoices } from './store.ts'
+import { deriveKeyRef, protocolChoices, protocolDeclaredDefault, type ProtocolChoicesAt } from './store.ts'
 import type { ModelsOperations } from './operations.ts'
 import type { SettingsSchemaOperations } from './schema-operations.ts'
 import type { en } from './locales.ts'
@@ -44,8 +44,19 @@ type EditorLayout = 'deepseek' | 'provider' | 'unknown'
 
 /** The public DeepSeek endpoint shown as the deepseek base-URL placeholder. */
 const DEEPSEEK_PUBLIC_BASE_URL = 'https://api.deepseek.com'
+/** Official Messages root, which the adapter addresses at `<base>/v1/messages`. */
+const DEEPSEEK_MESSAGES_BASE_URL = 'https://api.deepseek.com/anthropic'
 const OPENAI_PUBLIC_BASE_URL = 'https://api.openai.com/v1'
 const ANTHROPIC_PUBLIC_BASE_URL = 'https://api.anthropic.com'
+
+/**
+ * Where the built-in DeepSeek adapter declares its wire-protocol union.
+ *
+ * The multi-protocol family keeps one union per route; this adapter is
+ * whole-section and keeps a single `protocol` field, so the selector and the
+ * write both address it directly.
+ */
+const DEEPSEEK_PROTOCOL_AT: ProtocolChoicesAt = { ns: 'llm-deepseek', path: ['protocol'] }
 
 /** Props of {@link ProviderEditor}. */
 export interface ProviderEditorProps {
@@ -183,10 +194,26 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   const keyRef = refFor(schema, namespace, settingsPath, props.provider)
   // The same schema read the create card makes, so the choices offered here
   // and there cannot drift apart: both come from the adapter's own `Config`.
-  const protocols = useMemo(
-    () => layout === 'provider' ? protocolChoices(new Map([[namespace.ns, namespace]]), schema) : [],
-    [layout, namespace, schema],
-  )
+  // The built-in single-protocol family reads its own `protocol` union through
+  // the same call, so its selector offers exactly what its adapter accepts and
+  // picks up a new protocol the moment the adapter declares one.
+  const protocols = useMemo(() => {
+    const mounted = new Map([[namespace.ns, namespace]])
+    if (layout === 'provider') return protocolChoices(mounted, schema)
+    if (layout === 'deepseek') return protocolChoices(mounted, schema, DEEPSEEK_PROTOCOL_AT)
+    return []
+  }, [layout, namespace, schema])
+  /** The field each family stores its protocol under. */
+  const protocolField = layout === 'provider' ? 'api' : 'protocol'
+  // The built-in section's selector lists the adapter's own union and nothing
+  // else, exactly as a hand-declared route's does, so an unset field is shown
+  // as the member its schema puts in effect rather than as a fourth "default"
+  // entry: leaving the field out is what selects that member, and a request
+  // would be sent with it either way.
+  const deepSeekProtocolDefault = useMemo(() => {
+    if (layout !== 'deepseek') return undefined
+    return protocolDeclaredDefault(new Map([[namespace.ns, namespace]]), schema, DEEPSEEK_PROTOCOL_AT)
+  }, [layout, namespace, schema])
 
   useEffect(() => {
     let stale = false
@@ -248,6 +275,8 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
   // What the form currently shows, which is what an interrogation must ask:
   // an edited-but-unsaved endpoint, and a key typed but not yet stored.
   const probeApi = stringAt(draft, 'api') ?? stringAt(fallback, 'api')
+  /** What the protocol selector shows for the built-in family, draft first. */
+  const writtenProtocol = stringAt(draft, protocolField) ?? stringAt(fallback, protocolField)
   const probeBaseURL = stringAt(draft, 'baseURL') ?? stringAt(fallback, 'baseURL')
   const probe = {
     settingsNs: namespace.ns,
@@ -437,7 +466,13 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                 type="text"
                 value={stringAt(draft, 'baseURL') ?? ''}
                 placeholder={family === 'deepseek'
-                  ? DEEPSEEK_PUBLIC_BASE_URL
+                  // Clearing the field restores the adapter's default for the
+                  // protocol this card names, so the placeholder has to follow
+                  // the selection rather than always show the public root.
+                  // The selector's values are the public protocol names, so this
+                  // compares against the canonical spelling — an internal name here
+                  // would never match and the placeholder would stop following.
+                  ? writtenProtocol === 'anthropic-messages' ? DEEPSEEK_MESSAGES_BASE_URL : DEEPSEEK_PUBLIC_BASE_URL
                   // The protocol the form names decides which public API
                   // clearing the field restores to.
                   : probeApi === 'anthropic-messages'
@@ -477,6 +512,38 @@ export function ProviderEditor(props: ProviderEditorProps): ReactNode {
                   </select>
                 </div>
               )
+              : null}
+            {/* The built-in family gets the same control in the same place,
+                addressed at its own `protocol` field, and lists the same thing
+                a hand-declared route's does — the adapter's members alone. Its
+                default is chat completions — the endpoint the Models page
+                expects a gateway root to be addressed at — and Messages and
+                Responses stay reachable by name, exactly as the adapter's own
+                schema declares them. An unset field shows that default because
+                it is what a request would use, not because a value was picked:
+                the schema, not the selector, owns the fallback. */}
+            {layout === 'deepseek' && protocols.length > 0
+              ? (
+                <div className={styles['field']}>
+                  <span className={styles['fieldLabel']}>{t('customApi')}</span>
+                  <select
+                    className={`${styles['input']} ${styles['selectInput']}`}
+                    value={writtenProtocol ?? deepSeekProtocolDefault ?? ''}
+                    aria-label={t('customApi')}
+                    disabled={disabled}
+                    onChange={(event) => { setField('protocol', event.target.value) }}
+                  >
+                    {protocols.map(choice => <option key={choice} value={choice}>{choice}</option>)}
+                  </select>
+                </div>
+              )
+              : null}
+            {/* The endpoint and the protocol have to agree: chat completions
+                addresses `<base>/chat/completions`, Messages addresses
+                `<base>/v1/messages`. Switching one without the other is the
+                failure this says out loud. */}
+            {layout === 'deepseek'
+              ? <p className={styles['advancedHint']}>{t('deepSeekEndpointHint')}</p>
               : null}
             {/* Both layouts edit the same rows through the same contract;
                 only the extras differ — DeepSeek's inherited capacities, the

@@ -305,13 +305,13 @@ describe('SettingsPanel navigation', () => {
         { id: 'models', order: 10, label: 'Models' },
         { id: 'agent-presets', order: 20, label: 'Agent presets' },
         { id: 'plugins', order: 30, label: 'Plugins' },
-        { id: 'archived-sessions', order: 40, label: 'Archived sessions' },
+        { id: 'trash', order: 40, label: 'Trash' },
         { id: 'contributed', order: 50, label: 'Contributed' },
       ],
     })
     openPanel()
     // Glyphs carry no id of their own, so the drawn paths are what tells them apart.
-    const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Archived sessions', 'Contributed']
+    const glyphs = ['General', 'Models', 'Agent presets', 'Plugins', 'Trash', 'Contributed']
       .map(name => screen.getByRole('button', { name }).querySelector('svg')?.innerHTML)
 
     expect(glyphs.every(glyph => glyph !== undefined && glyph !== '')).toBe(true)
