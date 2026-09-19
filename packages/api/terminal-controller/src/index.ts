@@ -346,8 +346,14 @@ export class TerminalController extends TypertRemoteService {
         PS1: 'dsh> ',
         // zsh-only: re-assert PS1 after every command so an override inside
         // the session cannot survive to the next prompt (mirrors bash's
-        // PROMPT_COMMAND contract; harmless in fish).
-        PROMPT_COMMAND: 'precmd() { PS1=\'dsh> \' }; precmd',
+        // PROMPT_COMMAND contract; harmless in fish). The literal is zsh
+        // syntax: bash parses `{ PS1='dsh> ' }` as an unterminated group and
+        // dies with "unexpected end of file" on every prompt (macOS still
+        // ships bash 3.2), so it must only be set when the selected shell
+        // really is zsh.
+        ...(shell.path.endsWith('zsh')
+          ? { PROMPT_COMMAND: 'precmd() { PS1=\'dsh> \' }; precmd' }
+          : {}),
         // Zsh paints a reverse-video % before a prompt that follows output
         // with no trailing newline; the pane renders that mark as a stray
         // glyph, so clear it.

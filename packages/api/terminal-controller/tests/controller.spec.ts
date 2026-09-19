@@ -297,10 +297,14 @@ describe('TerminalController', () => {
         DSH_SESSION_ID: agent.id,
         LANG: 'en_US.UTF-8',
         PS1: 'dsh> ',
-        PROMPT_COMMAND: "precmd() { PS1='dsh> ' }; precmd",
+        // The zsh-only PROMPT_COMMAND must never reach a bash session: bash
+        // 3.2 parses `{ PS1='…' }` as an unterminated group and dies with
+        // "unexpected end of file" before every prompt.
       }),
       graceMs: 100,
     }))
+    const lastCall = (vi.mocked(subprocess.spawnTerminal).mock.calls as unknown as Array<[{ env: { PROMPT_COMMAND?: string } }]>).at(-1)
+    expect(lastCall?.[0].env.PROMPT_COMMAND).toBeUndefined()
   })
 
   it('rejects a confined Session without a sandbox provider before spawning', async () => {
