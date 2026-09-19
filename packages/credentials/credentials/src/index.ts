@@ -62,7 +62,7 @@ export function isCredentialKeySegment(value: string): boolean {
 
 /**
  * Brand a scope and an id as a {@link CredentialKey}.
- * @param scope - the owning plugin's registered name, such as `llm-pi-ai`.
+ * @param scope - the owning plugin's registered name, such as `llm-provider`.
  * @param id - that plugin's own addressing unit, such as a provider route key.
  * @returns the branded key.
  * @throws TypeError when either segment is not a lowercase hyphenated identifier.

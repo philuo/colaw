@@ -50,11 +50,11 @@ describe('assertUsableApiKey', () => {
 
   it('refuses an unusable stored credential with the invalid-credential code', () => {
     try {
-      assertUsableApiKey('sk-\u{1F600}', 'llm-pi-ai', 'ACME_API_KEY')
+      assertUsableApiKey('sk-\u{1F600}', 'llm-provider', 'ACME_API_KEY')
       expect.fail('an illegal key must throw')
     } catch (error) {
       expect((error as { code: string }).code).toBe(INVALID_CREDENTIAL_CODE)
-      expect((error as Error).message).toContain('llm-pi-ai')
+      expect((error as Error).message).toContain('llm-provider')
       expect((error as Error).message).toContain('ACME_API_KEY')
     }
   })

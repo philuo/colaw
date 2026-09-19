@@ -16,8 +16,8 @@ function writeCredentials(file: string, text: string): Promise<void> {
   return writeFile(file, text, { mode: 0o600 })
 }
 
-const CODEX = credentialKey('llm-pi-ai', 'openai-codex')
-const BEDROCK = credentialKey('llm-pi-ai', 'amazon-bedrock')
+const CODEX = credentialKey('llm-provider', 'openai-codex')
+const BEDROCK = credentialKey('llm-provider', 'amazon-bedrock')
 const OTHER_OWNER = credentialKey('llm-kimi', 'openai-codex')
 
 const cleanups: Array<() => Promise<void>> = []
@@ -53,7 +53,7 @@ function recordUpdates(ctx: Context): CredentialKey[] {
 
 describe('credential keys', () => {
   it('rejects a segment that is not a lowercase hyphenated identifier', () => {
-    expect(() => credentialKey('llm-pi-ai', 'OpenAI')).toThrow(/credential key segment/)
+    expect(() => credentialKey('llm-provider', 'OpenAI')).toThrow(/credential key segment/)
     expect(() => credentialKey('', 'codex')).toThrow(/credential key segment/)
   })
 
@@ -64,12 +64,12 @@ describe('credential keys', () => {
   })
 
   it('reads back the owning plugin, which is what makes an orphan recognizable', () => {
-    expect(credentialKeyScope(CODEX)).toBe('llm-pi-ai')
+    expect(credentialKeyScope(CODEX)).toBe('llm-provider')
     expect(credentialKeyScope(OTHER_OWNER)).toBe('llm-kimi')
   })
 
   it('admits a stored key and refuses one that is not two segments', () => {
-    expect(parseCredentialKey('llm-pi-ai/openai-codex')).toBe(CODEX)
+    expect(parseCredentialKey('llm-provider/openai-codex')).toBe(CODEX)
     expect(() => parseCredentialKey('openai-codex')).toThrow(/must be "<scope>\/<id>"/)
     expect(() => parseCredentialKey('a/b/c')).toThrow(/must be "<scope>\/<id>"/)
   })
@@ -126,7 +126,7 @@ describe('record storage', () => {
     const text = await readFile(path, 'utf8')
     expect(text).toBe(
       'version: 1\nrefs:\n  DSH_RECORDS_KEY: sk-live\nrecords:\n'
-      + '  llm-pi-ai/openai-codex:\n    kind: grant\n    payload:\n      token: t\n',
+      + '  llm-provider/openai-codex:\n    kind: grant\n    payload:\n      token: t\n',
     )
     expect(await ctx.credentials.resolve(credentialRef('DSH_RECORDS_KEY'))).toEqual({ value: 'sk-live', source: 'file' })
   })
@@ -138,20 +138,20 @@ describe('record storage', () => {
     // an api-key record is legal with a key, with environment values, with
     // both, or with neither.
     await writeCredentials(path, 'version: 1\nrecords:\n'
-      + '  llm-pi-ai/openai-codex:\n    kind: grant\n    payload:\n      access: at\n'
-      + '  llm-pi-ai/amazon-bedrock:\n    kind: api-key\n    env:\n      AWS_PROFILE: prod\n'
-      + '  llm-pi-ai/azure:\n    kind: api-key\n    key: sk-azure\n'
-      + '  llm-pi-ai/both:\n    kind: api-key\n    key: sk-both\n    env:\n      REGION: eu\n'
-      + '  llm-pi-ai/ambient:\n    kind: api-key\n')
+      + '  llm-provider/openai-codex:\n    kind: grant\n    payload:\n      access: at\n'
+      + '  llm-provider/amazon-bedrock:\n    kind: api-key\n    env:\n      AWS_PROFILE: prod\n'
+      + '  llm-provider/azure:\n    kind: api-key\n    key: sk-azure\n'
+      + '  llm-provider/both:\n    kind: api-key\n    key: sk-both\n    env:\n      REGION: eu\n'
+      + '  llm-provider/ambient:\n    kind: api-key\n')
     const ctx = await boot({ path, watch: false })
 
     expect(await ctx.credentials.readRecord(CODEX)).toEqual({ kind: 'grant', payload: { access: 'at' } })
     expect(await ctx.credentials.readRecord(BEDROCK)).toEqual({ kind: 'api-key', env: { AWS_PROFILE: 'prod' } })
-    expect(await ctx.credentials.readRecord(credentialKey('llm-pi-ai', 'azure')))
+    expect(await ctx.credentials.readRecord(credentialKey('llm-provider', 'azure')))
       .toEqual({ kind: 'api-key', key: 'sk-azure' })
-    expect(await ctx.credentials.readRecord(credentialKey('llm-pi-ai', 'both')))
+    expect(await ctx.credentials.readRecord(credentialKey('llm-provider', 'both')))
       .toEqual({ kind: 'api-key', key: 'sk-both', env: { REGION: 'eu' } })
-    expect(await ctx.credentials.readRecord(credentialKey('llm-pi-ai', 'ambient'))).toEqual({ kind: 'api-key' })
+    expect(await ctx.credentials.readRecord(credentialKey('llm-provider', 'ambient'))).toEqual({ kind: 'api-key' })
   })
 
   it('publishes a record an external edit reshaped, whatever shape it took', async () => {
@@ -165,7 +165,7 @@ describe('record storage', () => {
     // neither is caught by an identity check, and reporting them as unchanged
     // would leave a stale credential on every configuration surface.
     for (const payload of ['[1]', '{a: 1}', '{a: 1, b: 2}']) {
-      await writeCredentials(path, 'version: 1\nrecords:\n  llm-pi-ai/openai-codex:\n'
+      await writeCredentials(path, 'version: 1\nrecords:\n  llm-provider/openai-codex:\n'
         + `    kind: grant\n    payload: ${payload}\n`)
       // Any write folds the unobserved document in before committing its own.
       await put(ctx, BEDROCK, { kind: 'api-key' })
@@ -240,14 +240,14 @@ describe('record mutation', () => {
     // attaches it to the section rather than to the pair. Removing a *later*
     // entry must leave it exactly where it is.
     await writeCredentials(path, 'version: 1\nrecords:\n  # the one to keep\n'
-      + '  llm-pi-ai/openai-codex:\n    kind: grant\n    payload: 1\n'
-      + '  llm-pi-ai/amazon-bedrock:\n    kind: api-key\n')
+      + '  llm-provider/openai-codex:\n    kind: grant\n    payload: 1\n'
+      + '  llm-provider/amazon-bedrock:\n    kind: api-key\n')
     const ctx = await boot({ path, watch: false })
 
     await ctx.credentials.deleteRecord(BEDROCK)
 
     expect(await readFile(path, 'utf8')).toBe('version: 1\nrecords:\n  # the one to keep\n'
-      + '  llm-pi-ai/openai-codex:\n    kind: grant\n    payload: 1\n')
+      + '  llm-provider/openai-codex:\n    kind: grant\n    payload: 1\n')
   })
 
   it('folds an unobserved external record edit into a write instead of overwriting it', async () => {
@@ -258,8 +258,8 @@ describe('record mutation', () => {
     // Landed on disk with no watcher to report it — the same blind spot as a
     // debounce window, a missed event, or another process's write.
     await writeCredentials(path, 'version: 1\nrecords:\n'
-      + '  llm-pi-ai/openai-codex:\n    kind: grant\n    payload:\n      v: 1\n'
-      + '  llm-pi-ai/amazon-bedrock:\n    kind: api-key\n    env:\n      AWS_PROFILE: prod\n')
+      + '  llm-provider/openai-codex:\n    kind: grant\n    payload:\n      v: 1\n'
+      + '  llm-provider/amazon-bedrock:\n    kind: api-key\n    env:\n      AWS_PROFILE: prod\n')
 
     await put(ctx, CODEX, { kind: 'grant', payload: { v: 2 } })
 
@@ -310,7 +310,7 @@ describe('record mutation', () => {
     // keepable; a rejected value must also leave nothing behind.
     for (const payload of [{ at: new Date(0) }, { size: 1n }, { run: () => undefined }, { ratio: Number.NaN }]) {
       await expect(put(ctx, CODEX, { kind: 'grant', payload }))
-        .rejects.toThrow(/record "llm-pi-ai\/openai-codex" payload/)
+        .rejects.toThrow(/record "llm-provider\/openai-codex" payload/)
     }
     expect(await ctx.credentials.readRecord(CODEX)).toBeUndefined()
     await expect(readFile(path, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })

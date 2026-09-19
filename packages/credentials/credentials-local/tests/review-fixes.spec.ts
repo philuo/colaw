@@ -81,8 +81,8 @@ describe('read-modify-write', () => {
     const path = join(dir, '.credentials.yaml')
     const holder = await boot({ path, watch: false })
     const contender = await boot({ path, watch: false })
-    const doomed = credentialKey('llm-pi-ai', 'doomed')
-    const slowKey = credentialKey('llm-pi-ai', 'slow')
+    const doomed = credentialKey('llm-provider', 'doomed')
+    const slowKey = credentialKey('llm-provider', 'slow')
     await holder.credentials.modifyRecord(doomed, () => Promise.resolve({ kind: 'api-key', key: 'x' }))
     const entered = Promise.withResolvers<undefined>()
     // The mutation holds the cross-process writer lock across a stand-in for

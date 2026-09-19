@@ -7,7 +7,6 @@
 
 /** Package or subpath specifiers served from the worker bundle instead of the VFS. */
 export const REPLACED_EXTERNAL_PACKAGES: readonly string[] = [
-  '@earendil-works/pi-ai',
   '@vscode/ripgrep',
   '@deepseek-ai/node-addon-system/flock',
   'koffi',

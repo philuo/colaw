@@ -40,7 +40,7 @@ Provider ID 是永久的，因为请求、已保存会话、模型默认值和�
 
 ## 进阶配置
 
-自动生成的[插件配置目录](../../config-catalog.zh.md)列出每个插件的所有受支持字段与默认值；[`dsh-llm-pi-ai`](../../config-catalog.zh.md#deepseek-aidsh-llm-pi-ai) 就是本页所配置的那个提供方段落。[`dsh-llm-pi-ai`](../../../packages/llm/llm-pi-ai/README.zh.md) 和 [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.zh.md) 参考文档负责直接 `settings.yaml` 配置、目录解析、推理控制、凭据与适配器错误。
+自动生成的[插件配置目录](../../config-catalog.zh.md)列出每个插件的所有受支持字段与默认值；[`dsh-llm-provider`](../../config-catalog.zh.md#deepseek-aidsh-llm-provider) 就是本页所配置的那个提供方段落。[`dsh-llm-provider`](../../../packages/llm/llm-provider/README.zh.md) 和 [`dsh-llm-deepseek`](../../../packages/llm/llm-deepseek/README.zh.md) 参考文档负责直接 `settings.yaml` 配置、目录解析、推理控制、凭据与适配器错误。
 
 ::: tip 其他设置
 模型页提供 API 密钥、显示名称、API 地址、API 协议，以及每个模型的 ID、显示名称、上下文窗口、最大输出 token 数和输入类型。推理等级、请求兼容性开关、请求头、超时和重试策略在 `$DSH_HOME/settings.yaml` 中设置，也就是模型页写入的同一份文档。可以直接编辑它；浏览器与服务器在同一台机器时，也可以点击设置页顶部的**打开配置文件**打开它。适配器会在下一次请求时重新读取，无需重启任何东西。下面各小节介绍多数网关会用到的字段。
@@ -53,7 +53,7 @@ Provider ID 是永久的，因为请求、已保存会话、模型默认值和�
 复选框将 pi-ai 模型的选择保存为 `input`，将直连 DeepSeek 适配器的选择保存为 `inputModalities`。也可以在 `$DSH_HOME/settings.yaml` 中编辑模型；例如，以下自定义 pi-ai 提供方声明了一个纯文本模型和一个视觉模型：
 
 ```yaml
-llm-pi-ai:
+llm-provider:
   providers:
     my-gateway:
       apiKeyEnv: GATEWAY_API_KEY
@@ -74,7 +74,7 @@ DeepSeek 将省略的 `inputModalities` 视为纯文本，并拒绝空列表。�
 如果你手动录入的模型全都接受图片，可以在路由上设置一次回退值，不必逐个模型写：
 
 ```yaml
-llm-pi-ai:
+llm-provider:
   providers:
     vision-gateway:
       apiKeyEnv: GATEWAY_API_KEY
@@ -89,7 +89,7 @@ llm-pi-ai:
 `defaultInput` 是回退值而不是覆盖值，默认为 `[text]`：在内置提供方上，它只为其目录未描述的模型作答，因此绝不会把目录中本就具备图片能力的模型的该能力去掉。要收窄这类模型，请用它自己的 `input`。内置提供方没有显式 `models` 列表时，写在 `modelOverrides` 下，以模型 id 为键：
 
 ```yaml
-llm-pi-ai:
+llm-provider:
   providers:
     anthropic:
       modelOverrides:
@@ -106,7 +106,7 @@ llm-pi-ai:
 对于声明了推理等级的模型，模型选择器会提供**推理等级**菜单。内置提供方的模型从已安装目录继承其等级。手动录入的模型不声明任何等级，因此模型菜单里不会出现推理等级项，由端点自身的默认值决定模型是否思考。请在 `$DSH_HOME/settings.yaml` 中用 `reasoningEfforts` 声明等级：
 
 ```yaml
-llm-pi-ai:
+llm-provider:
   providers:
     my-gateway:
       apiKeyEnv: GATEWAY_API_KEY
@@ -150,7 +150,7 @@ llm-deepseek:
 其中两样占了绝大多数。声明了推理能力的模型，其系统提示词会以 `role: "developer"` 发出，很多网关直接拒绝；输出上限则写作 `max_completion_tokens`，只认 `max_tokens` 的服务端会拒绝。表单里没有这两个字段；请在 `$DSH_HOME/settings.yaml` 的路由上更正：
 
 ```yaml
-llm-pi-ai:
+llm-provider:
   providers:
     my-gateway:
       apiKeyEnv: GATEWAY_API_KEY
@@ -177,7 +177,7 @@ llm-pi-ai:
 
 每个开关归属于声明了它的那些协议，因此在某个 `api` 上合法的开关，在另一个上可能被拒绝——报错会点名该协议实际提供哪些。与上面的 `input` 一样，开关陈述的是关于你的端点的一个断言，而不是对它的检查：设置一个网关其实并不需要的开关，只是发出一个不同的请求而已。
 
-全部开关、各自接受的取值，以及接受它们的协议，都列在[生成的 `dsh-llm-pi-ai` 配置参考](../../config-catalog.zh.md#deepseek-aidsh-llm-pi-ai)的 `PiAiCompatProfile` 之下——该参考派生自源码，因此不会落后于适配器实际接受的内容。
+全部开关、各自接受的取值，以及接受它们的协议，都列在[生成的 `dsh-llm-provider` 配置参考](../../config-catalog.zh.md#deepseek-aidsh-llm-provider)的 提供方 profile schema 之下——该参考派生自源码，因此不会落后于适配器实际接受的内容。
 
 ## 排错
 

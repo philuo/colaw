@@ -95,8 +95,7 @@ const GROUP_ORDER = [
   'workspace',
   'support',
   'acp',
-  'ui',
-]
+  'ui']
 
 const SERVICE_ROLES: ServiceRole[] = [
   {
@@ -148,7 +147,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Durable binary attachment storage',
     mode: 'seam',
     implementations: ['attachment-local'],
-    consumers: ['api-session-controller', 'tool-fs', 'llm-pi-ai', 'llm-deepseek'],
+    consumers: ['api-session-controller', 'tool-fs', 'llm-deepseek'],
     note: 'The host commits accepted images before session events; provider adapters resolve authorized durable references into provider-native content.',
   },
   {
@@ -164,7 +163,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     pkg: 'llm',
     title: 'LLM adapter registry',
     mode: 'seam',
-    implementations: ['llm-deepseek', 'llm-pi-ai', 'llm-replay'],
+    implementations: ['llm-deepseek', 'llm-replay'],
     consumers: ['agent-loop', 'compaction-basic'],
     note: 'Adapters register provider implementations; the loop and compaction call the provider-neutral stream service.',
   },
@@ -309,7 +308,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'User-settings seam',
     mode: 'seam',
     implementations: ['settings-file'],
-    consumers: ['api-settings-controller', 'llm-deepseek', 'llm-pi-ai'],
+    consumers: ['api-settings-controller', 'llm-deepseek'],
     note: 'Plugins register namespace schemas and resolve layered values; providers store the raw document. The LLM adapters register their entry config as the composition base under the user section; the settings controller serves redacted layered descriptors and writes the user layer.',
   },
   {
@@ -326,7 +325,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Credential seam',
     mode: 'seam',
     implementations: ['credentials-local'],
-    consumers: ['api-settings-controller', 'llm-deepseek', 'llm-pi-ai'],
+    consumers: ['api-settings-controller', 'llm-deepseek'],
     note: 'Configuration carries references to secrets; providers own the values. Consumers resolve per operation, so a rotated credential reaches the very next request; the settings controller exposes value-free views and write-only storage.',
   },
   {
@@ -335,7 +334,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     title: 'Authorization flow registry',
     mode: 'seam',
     implementations: [],
-    consumers: ['llm-pi-ai'],
+    
     note: 'Flows are registered by the plugin that knows how to obtain one credential and keyed by the record they write; the seam owns the conversation and the one-attempt-per-key lifecycle, never the protocol.',
   },
   {
@@ -743,8 +742,7 @@ const SERVICE_ROLES: ServiceRole[] = [
     mode: 'core',
     consumers: ['tool-cordis'],
     note: 'Registers host inspect providers, mirrors the client provider manifest, and routes client queries through the dynamic Cordis transport.',
-  },
-]
+  }]
 
 function generatedHeader(title: string): string[] {
   return [
@@ -752,8 +750,7 @@ function generatedHeader(title: string): string[] {
     '     Run `pnpm run gen-doc-graphs` to regenerate. -->',
     '',
     `# ${title}`,
-    '',
-  ]
+    '']
 }
 
 function maintenanceFooter(source: string): string[] {
@@ -801,8 +798,7 @@ function assertServiceRolesComplete(services: readonly ServiceEntry[]): void {
   if (missing.length || stale.length) {
     throw new Error([
       missing.length ? `missing service role classification: ${missing.join(', ')}` : '',
-      stale.length ? `stale service role classification: ${stale.join(', ')}` : '',
-    ].filter(Boolean).join('; '))
+      stale.length ? `stale service role classification: ${stale.join(', ')}` : ''].filter(Boolean).join('; '))
   }
 }
 
@@ -886,8 +882,7 @@ const APP_EXAMPLES = [
     label: 'packages/bundle/base/cordis.patch.yml',
     config: 'packages/bundle/base/cordis.patch.yml',
     summary: 'The dsh-base bundle patch shared by the web, headless, sdk, and acp profiles; their mode bundles and user layers patch over it, while sdk-minimal owns a separate standalone tree.',
-  },
-]
+  }]
 
 type AppExample = typeof APP_EXAMPLES[number]
 
@@ -1459,8 +1454,7 @@ function renderLifecycle(): string {
     '',
     'SDK users that need replayable transcript data should consume `session/event`; `agent/*` is the live coordination API for queue/status, prompt interception, request construction, steering, continuation, and errors.',
     '',
-    ...maintenanceFooter(maintenance),
-  ].join('\n')
+    ...maintenanceFooter(maintenance)].join('\n')
 }
 
 function renderToolPipeline(): string {
@@ -1523,8 +1517,7 @@ function renderToolPipeline(): string {
     '',
     'Filesystem read-before-edit checks stay below `tool-fs` on `fs/*` events. Generic pre/post waterfalls host hooks and approval policy; `ctx.approval` resolves asks before monotonic guards, and owner policy that must not be reordered remains a registered guard. Around-dispatch concerns such as timeouts wrap `tools/execute`. The registry losslessly snapshots the candidate result and normalizes a snapshot failure before the visible definition\'s snapshotted `finalizeContent` callback enforces its synchronous content-only invariant. `tools/result` then observes the immutable, lossless-JSON outcome. This lets hooks span tool families without coupling the tools to one policy service. PTC mode sends both the reserved `run_code` transport and its serialized sub-calls through the pipeline; sub-calls carry the parent token, log `tool/ptc-dispatch`, return denials as binding rejections, and omit `additionalContexts` to preserve call/result adjacency.',
     '',
-    ...maintenanceFooter(maintenance),
-  ].join('\n')
+    ...maintenanceFooter(maintenance)].join('\n')
 }
 
 function renderDocs(): GraphDoc[] {
@@ -1535,8 +1528,7 @@ function renderDocs(): GraphDoc[] {
     ...APP_EXAMPLES.map(example => ({ rel: example.rel, content: renderAppComposition(example) })),
     { rel: 'docs/event-producer-consumer.md', content: renderEventRelations(pkgs, model.events) },
     { rel: 'docs/agent-lifecycle.md', content: renderLifecycle() },
-    { rel: 'docs/tool-execution-pipeline.md', content: renderToolPipeline() },
-  ]
+    { rel: 'docs/tool-execution-pipeline.md', content: renderToolPipeline() }]
   docs.unshift({ rel: 'docs/graph-atlas.md', content: renderIndex(docs) })
   return docs
 }
@@ -1562,8 +1554,7 @@ function renderIndex(docs: GraphDoc[]): string {
     ...docs.map((doc) => {
       const link = graphIndexLink(doc.rel)
       return `| [${labels[doc.rel] ?? link}](${link}) | \`${modes[doc.rel] ?? 'generated'}\` |`
-    }),
-  ]
+    })]
   const maintenance = 'mixed: each linked page declares generated, hybrid, or curated mode'
   return [
     ...generatedHeader('Documentation Graph Index'),
@@ -1577,8 +1568,7 @@ function renderIndex(docs: GraphDoc[]): string {
     '',
     'Regenerate with `pnpm run gen-doc-graphs`; verify freshness with `pnpm run verify-doc-graphs`.',
     '',
-    ...maintenanceFooter(maintenance),
-  ].join('\n')
+    ...maintenanceFooter(maintenance)].join('\n')
 }
 
 function main(): void {

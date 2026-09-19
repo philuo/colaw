@@ -9,8 +9,8 @@ import AuthorizationService, {
 } from '@deepseek-ai/dsh-authorization'
 import { MemoryCredentials } from './memory.ts'
 
-const KEY = credentialKey('llm-pi-ai', 'openai-codex')
-const OTHER = credentialKey('llm-pi-ai', 'anthropic')
+const KEY = credentialKey('llm-provider', 'openai-codex')
+const OTHER = credentialKey('llm-provider', 'anthropic')
 
 /** A context with the record store the seam confirms commits against. */
 async function harness(): Promise<Context> {

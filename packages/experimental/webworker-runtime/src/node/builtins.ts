@@ -49,7 +49,6 @@ import * as systemFlock from './external_packages/node-addon-system-flock.ts'
 import * as koffi from './external_packages/koffi.ts'
 import * as nodePty from './external_packages/node-pty.ts'
 import * as execa from './external_packages/execa.ts'
-import * as piAi from './external_packages/pi-ai.ts'
 import * as ripgrep from './external_packages/ripgrep.ts'
 import * as sharp from './external_packages/sharp.ts'
 import * as ws from './external_packages/ws.ts'
@@ -94,7 +93,6 @@ const EXTERNALS: Record<string, StaticModuleFactory> = {
   'execa': () => execa,
   'ws': () => ws,
   '@vscode/ripgrep': () => ripgrep,
-  '@earendil-works/pi-ai': () => piAi,
 }
 
 /**
@@ -103,7 +101,6 @@ const EXTERNALS: Record<string, StaticModuleFactory> = {
  * `/providers/*` and `/api/*.lazy` entries need no enumeration.
  */
 export const REPLACED_PREFIXES: Record<string, StaticModuleFactory> = {
-  '@earendil-works/pi-ai/': () => piAi,
 }
 
 // One list, two consumers: a package replaced here must also be kept out of the

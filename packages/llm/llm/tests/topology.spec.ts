@@ -20,7 +20,7 @@ function entry(overrides: Partial<LlmConfigurableProvider> = {}): LlmConfigurabl
   return {
     provider: 'openai',
     displayName: 'OpenAI',
-    settingsNs: 'llm-pi-ai',
+    settingsNs: 'llm-provider',
     settingsPath: ['providers', 'openai'],
     ...overrides,
   }
@@ -114,7 +114,7 @@ describe('configurable-provider directory', () => {
     const listed = ctx.llm.listConfigurableProviders()
     expect(listed).toEqual([
       { provider: 'deepseek-official', displayName: 'DeepSeek', settingsNs: 'llm-deepseek', settingsPath: [] },
-      { provider: 'openai', displayName: 'OpenAI', settingsNs: 'llm-pi-ai', settingsPath: ['providers', 'openai'] },
+      { provider: 'openai', displayName: 'OpenAI', settingsNs: 'llm-provider', settingsPath: ['providers', 'openai'] },
     ])
     listed[0]!.displayName = 'mutated'
     ;(listed[1]!.settingsPath as string[]).push('mutated')

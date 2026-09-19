@@ -247,25 +247,25 @@ describe('document validation', () => {
     ['an empty value', 'version: 1\nrefs:\n  DSH_CRED_TEST: ""\n', /is empty/],
     ['a record key that is not scoped', 'version: 1\nrecords:\n  codex:\n    kind: grant\n    payload: 1\n',
       /must be "<scope>\/<id>"/],
-    ['a record that is not a mapping', 'version: 1\nrecords:\n  llm-pi-ai/codex: token\n',
-      /record "llm-pi-ai\/codex" .* must be a mapping/],
-    ['a record with no kind', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    payload: 1\n', /has no kind/],
-    ['a record with an unknown kind', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: token\n',
+    ['a record that is not a mapping', 'version: 1\nrecords:\n  llm-provider/codex: token\n',
+      /record "llm-provider\/codex" .* must be a mapping/],
+    ['a record with no kind', 'version: 1\nrecords:\n  llm-provider/codex:\n    payload: 1\n', /has no kind/],
+    ['a record with an unknown kind', 'version: 1\nrecords:\n  llm-provider/codex:\n    kind: token\n',
       /unknown kind "token"/],
-    ['a record with an unknown field', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: grant\n'
+    ['a record with an unknown field', 'version: 1\nrecords:\n  llm-provider/codex:\n    kind: grant\n'
       + '    payload: 1\n    extra: 2\n', /unknown field "extra"/],
-    ['a grant with no payload', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: grant\n', /has no payload/],
+    ['a grant with no payload', 'version: 1\nrecords:\n  llm-provider/codex:\n    kind: grant\n', /has no payload/],
     // YAML spells values JSON has none for. The seam promises an owner its
     // payload comes back exactly as written, which a lossy round trip breaks.
-    ['a non-finite payload number', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: grant\n'
+    ['a non-finite payload number', 'version: 1\nrecords:\n  llm-provider/codex:\n    kind: grant\n'
       + '    payload:\n      ratio: .inf\n', /non-finite number/],
-    ['a cyclic payload', 'version: 1\nrecords:\n  llm-pi-ai/codex:\n    kind: grant\n'
+    ['a cyclic payload', 'version: 1\nrecords:\n  llm-provider/codex:\n    kind: grant\n'
       + '    payload: &loop\n      self: *loop\n', /is cyclic/],
-    ['an api-key record with an empty key', 'version: 1\nrecords:\n  llm-pi-ai/acme:\n    kind: api-key\n'
+    ['an api-key record with an empty key', 'version: 1\nrecords:\n  llm-provider/acme:\n    kind: api-key\n'
       + '    key: ""\n', /non-string or empty key/],
-    ['an api-key record env that is not a mapping', 'version: 1\nrecords:\n  llm-pi-ai/acme:\n    kind: api-key\n'
+    ['an api-key record env that is not a mapping', 'version: 1\nrecords:\n  llm-provider/acme:\n    kind: api-key\n'
       + '    env: nope\n', /non-mapping env/],
-    ['an api-key record env value that is empty', 'version: 1\nrecords:\n  llm-pi-ai/acme:\n    kind: api-key\n'
+    ['an api-key record env value that is empty', 'version: 1\nrecords:\n  llm-provider/acme:\n    kind: api-key\n'
       + '    env:\n      AWS_PROFILE: ""\n', /env "AWS_PROFILE" .* must be a non-empty string/],
     ['duplicate keys', 'version: 1\nrefs:\n  DSH_CRED_TEST: one\n  DSH_CRED_TEST: two\n', /invalid document/],
     ['malformed yaml', 'DSH_CRED_TEST: "unterminated\n', /invalid document/],

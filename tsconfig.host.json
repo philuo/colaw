@@ -250,7 +250,6 @@
     { "path": "./packages/llm/deepseek-llm-api-extensions" },
     { "path": "./packages/llm/llm" },
     { "path": "./packages/llm/llm-deepseek" },
-    { "path": "./packages/llm/llm-pi-ai" },
     { "path": "./packages/llm/llm-provider" },
     { "path": "./packages/llm/llm-retry" },
     { "path": "./packages/llm/plugin-package-inventory-deepseek" },

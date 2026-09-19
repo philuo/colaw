@@ -3,7 +3,6 @@ import { Context } from '@deepseek-ai/cordis'
 import AgentRegistry, { installModelSelection, type Agent, type ModelSelectionRef } from '@deepseek-ai/dsh-agent'
 import AgentLoop from '@deepseek-ai/dsh-agent-loop'
 import LlmRuntime, { createUserMessage, LlmError, type GenerateOptions } from '@deepseek-ai/dsh-llm'
-import { toPiContext } from '@deepseek-ai/dsh-llm-pi-ai/src/context.ts'
 import SessionStore, { Session, SessionId } from '@deepseek-ai/dsh-session'
 import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -58,12 +57,10 @@ function systemTexts(request: GenerateOptions) {
 
 function expectPlain(request: GenerateOptions, prompt: string) {
   expect(systemTexts(request)).toEqual([[{ type: 'text', text: prompt }]])
-  const converted = toPiContext(request)
-  expect(converted.systemPrompt).toBe(prompt)
-  expect(converted.messages.filter(message => message.role === 'user').map(message => message.content))
-    .not.toContain('prompt one')
-  expect(converted.messages.filter(message => message.role === 'user').map(message => message.content))
-    .not.toContain('prompt two')
+  const userTexts = request.messages.filter(message => message.role === 'user')
+    .map(message => JSON.stringify(message.content)).join('\n')
+  expect(userTexts).not.toContain('prompt one')
+  expect(userTexts).not.toContain('prompt two')
 }
 
 describe('prepared-route prompt admission', () => {
@@ -81,8 +78,7 @@ describe('prepared-route prompt admission', () => {
     const adapter = provider === 'capable' ? h.capable : h.plain
     const cleared = adapter.requests.at(-1)!
     expect(systemTexts(cleared)).toEqual([])
-    expect(toPiContext(cleared).systemPrompt).toBeUndefined()
-    expect(JSON.stringify(toPiContext(cleared))).not.toContain('prompt ')
+    expect(JSON.stringify(cleared.messages)).not.toContain('prompt ')
     const clearEvents = h.agent.session.snapshotEvents().filter(event => event.type === 'system/message').filter(event => event.data.turn === 4)
     expect(clearEvents).toHaveLength(3)
     for (const event of clearEvents) {

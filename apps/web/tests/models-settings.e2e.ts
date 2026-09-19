@@ -345,7 +345,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
 
   it('inherits installed vision input and retains it when adopting a discovered model', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-models-catalog-inputs'))
-    await scaffold.ctx.settings.mutate('llm-pi-ai', [{
+    await scaffold.ctx.settings.mutate('llm-provider', [{
       op: 'set', path: ['providers', 'openai'],
       value: { models: [{ id: 'gpt-6-astra', name: 'GPT-6 Astra', contextWindow: 272000, maxTokens: 128000 }] },
     }])
@@ -393,7 +393,7 @@ describe('web e2e: Models settings page configures a dormant provider', () => {
       await types.waitFor({ state: 'detached' })
       await expect(scaffold.ctx.llm.resolveModelInfo('openai', 'gpt-6-astra')).resolves.toMatchObject({ inputModalities: ['text', 'image'] })
     } finally {
-      await scaffold.ctx.settings.mutate('llm-pi-ai', [{ op: 'unset', path: ['providers', 'openai'] }])
+      await scaffold.ctx.settings.mutate('llm-provider', [{ op: 'unset', path: ['providers', 'openai'] }])
       await edit.waitFor({ state: 'detached' })
       await page.getByRole('dialog', { name: '选择要添加的模型' }).waitFor({ state: 'detached' })
     }

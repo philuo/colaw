@@ -33,7 +33,7 @@ describe.skipIf(MODE === 'record')('web e2e: declared reasoning efforts reach th
     // = the wire spelling dispatch would send (`max: ultra` renames; the
     // valueless `off` means "supported, send nothing"). The route sets no
     // deployment default, so the pane leads with the provider-default entry.
-    await scaffold.ctx.settings.update('llm-pi-ai', {
+    await scaffold.ctx.settings.update('llm-provider', {
       providers: {
         'acme-gateway': {
           displayName: 'Acme Gateway',

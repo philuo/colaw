@@ -6,7 +6,7 @@ import AuthorizationService from '@deepseek-ai/dsh-authorization'
 import * as AuthorizationInvariant from '../src/invariant.ts'
 import { MemoryCredentials } from './memory.ts'
 
-const KEY = credentialKey('llm-pi-ai', 'openai-codex')
+const KEY = credentialKey('llm-provider', 'openai-codex')
 
 describe('authorization invariant companion', () => {
   it('accepts an attempt that released its key before settling', async () => {

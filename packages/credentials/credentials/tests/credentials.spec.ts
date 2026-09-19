@@ -28,7 +28,7 @@ describe('credentialRef', () => {
 
 describe('isCredentialKeySegment', () => {
   it('answers whether credentialKey would accept the segment', () => {
-    for (const valid of ['llm-pi-ai', 'openai-codex', 'a', 'z9']) {
+    for (const valid of ['llm-provider', 'openai-codex', 'a', 'z9']) {
       expect(isCredentialKeySegment(valid)).toBe(true)
     }
     // The shapes an arbitrary settings dict key can take that a record id

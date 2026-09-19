@@ -33,11 +33,17 @@ afterEach(() => {
   for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true })
 })
 
+// Runtime and dual resolution install on Node's ESM/CJS cascaded loader internals
+// via node-addon-require-builtin; Bun exposes no V8/loader equivalent, so those
+// cases run on Node only. Link-mode launch and resource release stay covered on Bun.
+const nodeLoaderResolution = process.versions.bun === undefined
+
 describe('runProfile with an application-owned profile', () => {
   it.each(
     (['link', 'runtime'] as const).flatMap(resolutionMode =>
       (['composition', 'boot', 'watch', 'cleanup', 'tree-cleanup', 'both-cleanups'] as const)
-        .map(stage => ({ resolutionMode, stage }))),
+        .map(stage => ({ resolutionMode, stage })))
+      .filter(({ resolutionMode }) => nodeLoaderResolution || resolutionMode === 'link'),
   )('releases startup resources after a $stage failure in $resolutionMode mode', async ({ resolutionMode, stage }) => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-profile-startup-failure-'))
     homes.push(home)
@@ -90,12 +96,14 @@ describe('runProfile with an application-owned profile', () => {
     }
   })
 
-  it.each([
-    { selection: 'default', options: {}, mode: 'runtime' },
-    { selection: 'link', options: { resolutionMode: 'link' }, mode: 'link' },
-    { selection: 'dual', options: { resolutionMode: 'dual' }, mode: 'dual' },
-    { selection: 'runtime', options: { resolutionMode: 'runtime' }, mode: 'runtime' },
-  ] as const)('uses shared layers, $selection resolution, and shutdown', async ({ options, mode }) => {
+  it.each(
+    ([
+      { selection: 'default', options: {}, mode: 'runtime' },
+      { selection: 'link', options: { resolutionMode: 'link' }, mode: 'link' },
+      { selection: 'dual', options: { resolutionMode: 'dual' }, mode: 'dual' },
+      { selection: 'runtime', options: { resolutionMode: 'runtime' }, mode: 'runtime' },
+    ] as const).filter(({ mode }) => nodeLoaderResolution || mode === 'link'),
+  )('uses shared layers, $selection resolution, and shutdown', async ({ options, mode }) => {
     const home = mkdtempSync(join(tmpdir(), 'dsh-resolved-profile-'))
     homes.push(home)
     mkdirSync(join(home, 'runtime'))
