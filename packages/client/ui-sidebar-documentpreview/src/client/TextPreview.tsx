@@ -340,7 +340,6 @@ export function TextPreview({
               onSelect={(id) => { actions.selected(tab.id, id); setMenuOpen(false) }}
               onClose={() => { setMenuOpen(false) }}
               align="end"
-              portal
               dense
             />
           )}
