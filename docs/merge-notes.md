@@ -1,0 +1,155 @@
+# 合并须知（fork ← 官方 upstream）
+
+本文只讲**怎么合、怎么验、哪些地方每次都会坏**。每次把官方代码合进这个 Bun-native fork 之前先读一遍；合完按第 4 节的四关验收。
+
+## 0. 基线与裁决原则
+
+| 角色 | 引用 |
+| --- | --- |
+| fork 基线（唯一权威） | `ee6950e87c`，tag `backup/pre-merge-official-882-20260918` |
+| 共同祖先 base | `0d1f50007f9bca3f52b06e1c3074fa14d5fb0720` |
+| 官方 | `origin/master` |
+| 用户认可的可用产物 | 用 fork 基线构建出来的 app（`apps/electrobun-host/build/stable-macos-arm64/Colaw.app`） |
+
+**裁决原则：fork-wins。** 同一个文件两边都改过时以 fork 为准，除非官方改动是 bug 修复且不违背下面任何一条硬约束。
+
+**硬约束（不可违背）**
+
+1. 不重新引入已移除依赖（node-pty、fs-ext、sharp、koffi、`@earendil-works/pi-ai` …）——它们已 fork 自适配。
+2. 不干预模型提供方处理：内置 `deepseek-official`（`packages/llm/llm-deepseek`，`PROVIDER = 'deepseek-official'`）必须按 fork 语义工作。
+3. 不破坏 fork 功能：右侧栏、设置面板、回收站、主题。
+4. 仅支持 macOS arm64。
+5. 逐文件对比 fork 提交，不做凭感觉的"整文件覆盖"。
+
+**反面基准**：同事的工作区源码**不能**当基准——它也是合并产物、可能已被污染。只有 fork 基线的 commit 和**用基线构建出来的 app**能当基准。
+
+## 1. 铁律（每次合并都要做）
+
+1. **先扫"混合体"，再谈别的。** 自动三方合并会产出既不是 fork 也不是官方的第三种内容（本文称之为混合体）。它们不报错、能编译、看起来正常，但语义是错的。**这是历次合并出问题的主要来源。**
+2. **`fork-delta > 0` 的包整包 checkout fork 基线**，再单独把官方真正的 bug 修复补回去（例如 `messagesApiRoot()`，见 3-C）。
+3. **三类文件永远要人工过一遍**：样式/主题变量、装配层 overlay、请求体字段。
+4. **验收必须四关全过**（第 4 节），任何一关都不能跳。
+5. **改完必须让运行中的 app 完全退出重启。** 已运行的进程在内存里持着旧模块，替换磁盘文件不生效。用户两次反馈"没有任何改观"都是这个原因——先怀疑没重启，再怀疑修复无效。
+
+## 2. 第一步：混合体扫描
+
+脚本：`scripts/merge-hygiene.sh`（`bash scripts/merge-hygiene.sh`），内部等价于对 `git ls-tree -r <fork> <pkg>` 的每个受跟踪文件比较三方 md5。
+
+判定：`current != fork && current != official && fork != official` ⇒ 混合体，必须逐个裁决。
+
+用法与过滤：默认跳过 `*.md`／`*.i18n.yaml`／`package.json`／lockfile；`FORCE=1` 时全量输出。**注意**：`app 目录 / lib 产物 / node_modules` 不参与比对，它们是生成物。
+
+裁决顺序（按风险从高到低）：
+
+1. 运行时语义文件（协议、序列化、请求体、env 构造）→ 逐个 diff fork 与官方，**取 fork 语义 + 只吸收官方明确的修复**。
+2. 样式与主题 → 回退 fork（第 3-A 节）。
+3. 装配层 overlay → 回退 fork，但把官方新增的插件挂载**单独审查**（第 3-B 节）。
+4. 纯文档、`.d.ts`、构建产物 → 忽略。
+
+### 2.1 混合体不等于"全是错误"
+
+扫描把"内容既不是 fork 也不是官方"的文件全列出来，其中必然包含**本次有意做的本地改动**。判断一个条目属于哪一类，只看一句话：**这个 diff 是不是我/上一个里程碑故意做的？**
+
+| 属于"有意改动"（登记后放行） | 属于"事故"（必须处理） |
+| --- | --- |
+| 打包/构建脚本（`scripts/*`）、tsconfig、lockfile 的适配 | 运行时语义文件被官方内容覆盖（协议、序列化、env） |
+| overlay 里 fork 特意关掉的插件与 shell 配置 | 样式/主题令牌被官方设计改写 |
+| 主动移除依赖时改到的清单与导出面（例如移除 `@earendil-works/pi-ai`） | 组件与它的 `*.module.css` 只回退了一半 |
+| 测试断言随行为同步更新的改动 | 装配层官方新增的插件挂载（默认值随官方走） |
+
+**怎么快速分辨**：`git log -p -- <file>` 看该文件的最近改动是不是自己的里程碑提交；若是，登记为有意改动并跳过；若不是，按第 3 节三类重灾区处理。
+
+扫描输出里"跳过 N 个文档/清单"的数字很大（数千）是正常的——fork 与官方的 README、`*.i18n.yaml` 本来就大面积不同，它们不参与运行时，无需裁决。**看的是被列出来的那份名单，不是跳过数。**
+
+
+## 3. 三类重灾区（都是真实事故）
+
+### A. 样式与主题
+
+**症状**：暗色模式下菜单/面板样式变了、下拉菜单焦点框消失、明明"没人动过 UI"。
+
+**机制**：官方 alpha 版本会重做设计令牌，回退时只回退 CSS 但**组件也在官方版**，于是类名与结构对不上；或者只回退了组件而 CSS 仍是官方的。
+
+| 真实案例 | 官方改动 | 修复 |
+| --- | --- | --- |
+| `packages/client/ui-theme/src/styles/design-platform.css` | 新增 `--dsw-alias-bg-document-preview` 等 4 行 | 回退 fork（主题变量数应回到 357） |
+| `packages/client/ui-primitives/src/Menu.module.css` | 菜单项 `:focus-visible { outline: none }` —— 移除焦点轮廓 | 回退 fork |
+| `ui-conversation`／`ui-workspace`／`ui-settings-models` 的 `*.module.css` | 大幅重排（单个文件最多 156 行） | 回退 fork |
+
+**验证手法**
+
+- **不要比对类名**：CSS Modules 的 hash 每次构建都变，比出来全是差异。要比**变量的定义与值**，或规则的**文本内容**。
+- 类名一致性检查：从组件里抽 `css.X`／`styles.X` 的引用集合，与 CSS 里定义的类名集合做差集。**注意变量名可能是 `css` 而不是 `styles`**——搞错变量名会得到"零差异"的假结果。
+- 最终判据：`ui-theme` 的令牌数量与变量名集合要和 fork 基线的 app 完全一致。
+
+### B. 装配层 overlay
+
+**位置**：`apps/electrobun-host/config/electrobun.cordis.patch.yml`（桌面版 overlay，打包时并入 `Resources/app/config/`）。
+
+**症状**：桌面端行为与 web 版不同、装/卸插件失效、请求里多出字段。
+
+**机制**：官方会**新增插件挂载**或在 bundle 里改动同一行；overlay 里的 `disabled: true`／`config: { enabled: false }` 是 fork 特意关掉的东西，很容易在合并中被"补回来"。
+
+**要点**
+
+- 新增的官方插件挂载必须**逐个判断**是否适合本 fork（第 3-C 节就是漏判的后果）。
+- 改完 overlay 后，**到产物里复核**：`grep -A2 'id: <plugin>' <app>/Contents/Resources/app/config/electrobun.cordis.patch.yml`。
+
+### C. 协议与私有请求字段
+
+**症状**：DeepSeek 报 `HTTP 400 INVALID_REQUEST`，且错误信息看不出原因。
+
+**机制**：官方会通过 request extensions 往请求体塞**官方端点私有**的顶层字段；第三方中转站（以及任何兼容网关）不认识就整条拒绝。历次事故字段：
+
+| 字段 | 注入方 | 处置 |
+| --- | --- | --- |
+| `dsh_session_log` | `packages/session/session-log-deepseek` | overlay 里 `disabled: true` |
+| `dsh_plugin_packages` | `packages/llm/plugin-package-inventory-deepseek` | overlay 里 `config: { enabled: false }` |
+
+**同时要吸收官方真正的修复**（不能一刀切回退）：fork 的 Messages 路径硬编码 `/v1`，baseURL 自带 `/v1` 时会拼成 `/v1/v1/messages`；官方的 `messagesApiRoot()` 正是修这个——**取官方的 URL 逻辑，保留 fork 的 Bun `textStream()` 读取**。
+
+**错误可读性**：适配器原先只解析 `{ error: { message } }`，而兼容网关用**顶层** `{ code, message }`，导致永远只能看到 `HTTP 400`。已补 `topLevelError()`（`protocols/chat-completions/adapter.ts` 导出，responses 适配器复用）。**合并时不要把这个回退掉**——它是定位此类问题的唯一线索。
+
+## 4. 验收四关（缺一不可）
+
+```bash
+# ① 双 typecheck：必须双 0
+bun node_modules/typescript/bin/tsc -b tsconfig.client.json --pretty false
+bun node_modules/typescript/bin/tsc -b tsconfig.host.json  --pretty false
+
+# ② 受影响包的测试（改了行为就连 spec 断言一起改）
+bun node_modules/vitest/vitest.mjs run packages/llm/llm-deepseek/tests/ packages/credentials/
+
+# ③ 打包（内部会跑 build:lib + web dist + 闭包审计）
+bun scripts/pack-stable-app.ts
+
+# ④ 产物审计：契约文件、私有字段、主题令牌
+APP=apps/electrobun-host/build/stable-macos-arm64/Colaw.app
+grep -A2 'id: session-log-deepseek' "$APP/Contents/Resources/app/config/electrobun.cordis.patch.yml"
+```
+
+第 ⑤ 关（不能省）：**真实请求 smoke**。用真实凭据、真实端点、**从会话里取出的真实请求体**发一次。判据是 `HTTP 200`，不是"看起来对"。
+
+> 构建命令注意：`bun scripts/build.ts` 会因缺 `npm_execpath` 直接失败，必须经包管理器触发：
+> `bun /usr/local/lib/node_modules/pnpm/bin/pnpm.cjs run build:lib`（或 `run build`）。
+
+## 5. 排查纪律（踩过的坑）
+
+- **别按错误文案猜代码路径。** `DeepSeek API error (HTTP` 只出现在 chat／responses 适配器，messages 适配器用的是另一套文案——只看文案会一路查错方向。
+- **手工构造的请求不等于真实请求。** 自己拼的 body 永远"通过"，因为它缺的正是要查的那个字段。真实请求要从会话日志取：`~/.colaw/sessions/<project>/session-<id>/session.v3.jsonl.zstd`（用 app 内置的 `Contents/MacOS/zig-zstd decompress -i <in> -o <out>` 解压），看 `request/header`（config + tools）与 `request/context` 事件。
+- **逐字段对照，而不是整包替换。** 定位上游拒绝时，拿真实的 `tools`／`messages`／system 原文发对照实验，一次只变一个字段。
+- **大文件编辑用精确锚点或按行删除，禁用贪婪正则。** 曾用 `re.sub(r',(\s*[}\]])', ...)` 处理整份 `tsconfig`，把四万多行压成了几行。改完必须复核行数。
+- **改了运行时行为就同步 spec 断言**（例如 reasoning 字段的构造方式变了，`messages/serialize.spec.ts` 与 `adapter.spec.ts` 要一起改），否则测试会指着过时的期望。
+- **判断"哪份代码在跑"看产物时间戳**：`ls -l <app>/Contents/Resources/app/node_modules/@deepseek-ai/<pkg>/lib/index.js`。进程在运行 ≠ 跑的是新代码。
+- **文本脚本的 `.filter()` 别用变量名当后缀匹配**：`str.replace` 的锚点要整行匹配，否则会命中长文件里同名的注释。
+
+## 6. 交付前清单
+
+- [ ] `scripts/merge-hygiene.sh` 输出的混合体已全部裁决，或已在本文档登记例外
+- [ ] `fork-delta > 0` 的包已整包对齐 fork 基线
+- [ ] 三类重灾区（样式／overlay／请求字段）已逐一核对
+- [ ] 双 typecheck 为 0
+- [ ] 受影响测试通过；因行为变更而更新的 spec 已同步
+- [ ] 已打包，且产物审计通过（契约 overlay、无 `pi-ai`／`node-pty` 残留、主题令牌数与基线一致）
+- [ ] 已用真实凭据＋真实请求体发过一次 smoke 请求并成功
+- [ ] 已提醒：**完全退出并重启** app 后再验证

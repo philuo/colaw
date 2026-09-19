@@ -12,6 +12,17 @@ Acknowledge [declared persistence-type changes](docs/cookbook/reviewing-persiste
 
 **Application launch.** Only `dsh` profiles launch supported Node apps; package bins, demos, and public SDK argv escapes are forbidden ([rule](docs/architecture.md#application-launch)).
 
+## Merging upstream (mandatory read)
+
+**Before merging any official commit into this fork, read [docs/merge-notes.md](docs/merge-notes.md); after merging, run `bash scripts/merge-hygiene.sh`.** Four rules are non-negotiable, each one earned by a real regression:
+
+1. **Automated merges produce "hybrid" content** — a file that is neither the fork's nor the official version. It compiles and looks fine, but its semantics are wrong, and it is the single largest source of merge regressions. The scan above lists every one; each needs an explicit verdict (intentional local edit, or accident).
+2. **Restore `fork-delta > 0` packages wholesale from the fork baseline** — `ee6950e87c`, tag `backup/pre-merge-official-882-20260918` — then re-apply only the official fixes that do not violate the constraints in merge-notes (one real example: the official `messagesApiRoot()` wins, the fork's `textStream()` read stays).
+3. **Three areas break every time**: style/theme tokens (`ui-theme`, `*.module.css`), the desktop overlay (`apps/electrobun-host/config/electrobun.cordis.patch.yml` — including plugin `disabled` rows), and provider-private request fields (e.g. `dsh_session_log`, `dsh_plugin_packages` — a compatible gateway rejects the whole request with HTTP 400).
+4. **A running app holds the old modules.** Replacing files on disk does nothing until the app is fully quit and relaunched — never conclude "the fix did not work" before that, and always tell the user to relaunch.
+
+Acceptance is the four gates in merge-notes (dual typecheck, affected tests, packaged-app audit, real-credential smoke request). "Looks right" is not a gate.
+
 ## Repository layout
 
 ```
