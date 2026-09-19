@@ -146,6 +146,11 @@ export function spawn(
       }
     }
   }
+  // Apple's bash 3.2 prints a full-screen-obscuring "switch to zsh" notice on
+  // every interactive start; this variable is the documented silencer. The
+  // caller normally sets it, but a lost key is invisible until the pane opens,
+  // so the adapter backstops it here.
+  filteredEnv.BASH_SILENCE_DEPRECATION_WARNING ??= '1'
   const proc = Bun.spawn([file, ...args], {
     terminal,
     cwd: options.cwd,
