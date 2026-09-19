@@ -988,6 +988,20 @@ prepare(id?: SessionId, options?: PrepareSessionOptions): Session
  */
 enter(session: Session): () => void
 
+/**
+ * End one live session's store lifecycle NOW, without waiting for the fiber
+ * that entered it (permanent deletion: the callers' durable artifact is
+ * already gone, and a surviving entry would keep the id listed and let its
+ * writer re-materialize the very log being removed). Removal is the same
+ * single lifecycle edge as a normal teardown — the entry leaves the store,
+ * its attachment is dropped, `session/disposed` publishes once, and every
+ * later `get()` misses.
+ * @param id - the live session to retire.
+ * @returns whether an entered session was retired; an unknown id is a
+ *   no-op, so repeated deletions stay idempotent.
+ */
+retire(id: SessionId): boolean
+
 /** Emit `session/created` exactly once for an {@link enter}ed session (with
  * the carrier {@link enter} captured). Separate from {@link enter} so the
  * caller can yield the detach disposer first (rollback safety — see

@@ -40,8 +40,6 @@ Load the provider in the same composition as its consumers. It has no config fie
 
 Absolute executable paths are verified; bare names resolve against the scrubbed PATH with platform-aware executable extensions (`.COM`/`.EXE`/`.BAT`/`.CMD` on Windows). Relative paths containing separators are rejected — provide an absolute path or a bare PATH name — and relative PATH entries resolve from the host process cwd.
 
-Windows ordinary subprocesses start the private Job runner with `windowsHide` and request hidden initial windows for native targets. Standard streams and Job ownership remain independent of window visibility; commands that explicitly create their own windows are outside this guarantee.
-
 ### Collecting output
 
 Collect mode keeps the last `maxBytes` of a stream in memory — errors and final results cluster at the end — and, when a `spill` cap is configured, appends the complete stream to a private file under a per-process directory in the OS temp dir (a `0700` directory, `0600` random-named files). A stream larger than the spill cap discards its incomplete spill and returns only the marked truncated tail. Reads are offset-based and non-consuming, so background and batch readers coexist before and after exit.
@@ -52,14 +50,9 @@ The `./output` export shares this collector and retained-spill storage with proc
 
 An ordinary spawn can request the [subprocess control pipe](../subprocess/README.md#using-a-control-pipe). A Node target receives fd 7 on every supported host; Windows descriptor numbering requires CRT initialization. POSIX runners preserve that descriptor across `execve`; Windows Job and ACL runners establish it in the child's CRT startup table before Node initializes and close their own carrier copies after spawning. Standard streams and the runner's private management channel remain independent.
 
-<a id="running-terminal-sessions"></a>
 ### Running terminal sessions
 
 `spawnTerminal` allocates a real PTY and bridges UTF-8 text; you can inspect and signal the current foreground process group and await one `terminate()` operation. On supported Linux hosts, the original terminal argv runs directly inside a user-systemd scope, preserving the node-pty PID, session leader, controlling terminal, foreground `inputWaiting`, and readiness while the scope owns reparented or `setsid` descendants. On fallback hosts, cleanup retains exact identities from the rooted tree and observable session but cannot recover every escaped descendant. An exact Linux input wait requires a foreground thread whose fd 0 identifies the shell's controlling terminal and whose current syscall waits on that fd; if the kernel denies the syscall probe, the higher PTY backend uses its idle inference instead. On Windows, SIGINT is delivered as a Ctrl-C input write, SIGTSTP and SIGHUP are unsupported, and teardown verifies the shell's termination through the process table because an externally killed shell may never fire the PTY exit notification.
-
-With `shellActivity: true`, plain non-login `bash -i` and `zsh -i` launches install private lifecycle records while retaining user startup files and prompt configuration. Bash requires version 4.4 or later and writable prompt hooks; Zsh observes an empty top-level ZLE prompt, excluding `vared`, selection and continuation prompts. Input, shell transitions and changed process observations advance activity revisions. Foreground, background and stopped descendants block idle; native Linux also requires exactly one task in the systemd scope, including ownership beyond the process tree; incomplete process-table scans, custom traps and Zsh asynchronous descriptor handlers yield unknown. A failure to enumerate the process table rejects the observation; activity remains unknown and cleanup retains ownership until a readable table permits verification. Private files are removed after successful process cleanup. Other shells, Windows, custom arguments and sandbox-wrapped executables remain usable with unknown activity.
-
-Opted-in root exit does not terminate surviving descendants. A confirmed empty Linux managed range or complete empty Linux session can authorize reclamation of its retained record; macOS cannot confirm an unobserved process range after root exit and keeps that record unknown. The existing fallback visibility limits still apply: shell lifecycle records do not make escaped, unobserved descendants discoverable. Lifecycle records coordinate ordinary shell behavior, not hostile same-user processes.
 
 ### Shutdown behavior
 
@@ -92,15 +85,14 @@ Each spawn selects one owner for both signalling and quiescence. Supported Linux
 | [`src/index.ts`](src/index.ts) | Service wiring: live-handle sets, disposal, host-exit finalization, executable lookup |
 | [`src/spawn.ts`](src/spawn.ts) | Shared process plumbing: direct outcomes, tail-keep collection, spill files, and fallback spawning |
 | [`src/managed-owner.ts`](src/managed-owner.ts) | Private signal-and-wait owner used by each ordinary handle |
-| [`src/linux-scope.ts`](src/linux-scope.ts) | Linux user-systemd capability checks, scope launch, signalling, and quiescence |
-| [`src/linux-execve.ts`](src/linux-execve.ts) | Linux libc image replacement and inherited-standard-descriptor preservation |
-| [`src/windows-job.ts`](src/windows-job.ts) | Windows Job capability checks and helper launch |
 | [`src/runner-launch.ts`](src/runner-launch.ts) | Source, built, and packaged private-runner selection |
-| [`src/spawn-runner.ts`](src/spawn-runner.ts) | Linux one-shot exec bootstrap and Windows Job runner |
-| [`src/runner-protocol.ts`](src/runner-protocol.ts) | Strict Linux launch/startup files and Windows IPC messages |
-| [`src/terminal.ts`](src/terminal.ts) | `node-pty` handle: Linux scope attachment, foreground inspection, and fallback cleanup |
-| [`src/process-inspector.ts`](src/process-inspector.ts) | POSIX process-tree and session inspection |
-| [`src/windows-inspector.ts`](src/windows-inspector.ts) | Windows Toolhelp32 process-table inspection via koffi |
+| [`src/control-spawn.ts`](src/control-spawn.ts) | Control-pipe process spawning shared by direct and runner launches |
+| [`src/pty-adapter.ts`](src/pty-adapter.ts) | PTY port the terminal handle drives |
+| [`src/bun-pty-adapter.ts`](src/bun-pty-adapter.ts) | Bun-native PTY backend (macOS arm64 only; no `node-pty`) |
+| [`src/output.ts`](src/output.ts) | Bounded in-memory output tail and spill-file recovery |
+| [`src/shell-activity.ts`](src/shell-activity.ts) | Idle/busy shell activity inference over the process inspector |
+| [`src/terminal.ts`](src/terminal.ts) | PTY handle: foreground inspection, shell activity, and fallback cleanup |
+| [`src/process-inspector.ts`](src/process-inspector.ts) | macOS process-tree and session inspection |
 | — | No runtime invariant companion is published; this package exposes no independent event sequence or mutable data relation beyond contracts enforced at its owning seam. |
 
 ### Main flow

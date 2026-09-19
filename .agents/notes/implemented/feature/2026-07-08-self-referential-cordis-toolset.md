@@ -14,7 +14,7 @@ Runtime API discovery must describe the APIs a plugin can actually call. Process
 
 The Host and Client runners retain their programmatic lifecycle and browser consumers. A Host definition evaluates in a fresh vm realm and receives a context façade: service access requires declared injection, framework internals are hidden, and registrations belong to the definition's fiber. Tool output normalization crosses back into the Host realm before validation. Disposal awaits the fiber's owned effects. The vm prevents accidental global pollution; injected filesystem, shell, and network services still have real authority, so it is not a security boundary.
 
-Definitions remain process-local. Restart and session resume do not recreate them from historical calls. The [Creator persistent plugin decision](../architecture/2026-09-16-creator-persistent-plugin-management.md) owns agent-authored installation, approval, and profile persistence. Shipped model tools do not create or mutate runner definitions.
+Definitions remain process-local. Restart and session resume do not recreate them from historical calls. Shipped model tools do not create or mutate runner definitions.
 
 ## Alternatives considered
 

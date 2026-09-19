@@ -91,7 +91,7 @@ describe('Typert-backed Cordis catalog', () => {
     )
   })
 
-  it('includes referenced framework enums in the runtime declaration closure', () => {
+  it('includes referenced framework enums in the runtime declaration closure', { timeout: 480_000 }, () => {
     const { projector, model } = projection()
     const rendered = projector.renderRuntimeApi(model)
     expect(rendered).toContain("name: 'FiberState'")

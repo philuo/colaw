@@ -56,8 +56,8 @@ function props(
         title: '正在扫描项目文件',
         displayTitle: 'worker',
         running: true,
-        retainedBy: {},
         blank: false,
+        retainedBy: {},
         updatedAt: Date.now(),
       },
     },
@@ -72,7 +72,6 @@ function props(
     sessionId: PARENT,
     useSessions,
     openChild: vi.fn(),
-    openChildAside: vi.fn(),
     refresh: vi.fn(),
     setCatalogOpen: vi.fn(),
     lineageSessionId: PARENT,
@@ -86,8 +85,8 @@ function summary(id: SessionId, updatedAt: number): SessionSummary {
     id,
     displayTitle: id,
     running: false,
-    retainedBy: {},
     blank: false,
+    retainedBy: {},
     updatedAt,
   }
 }
@@ -165,14 +164,6 @@ describe('SubagentHeaderLineage', () => {
     expect(screen.queryByRole('button', { name: '展开 reviewer 的下级子代理' })).toBeNull()
     expect(screen.getByRole('treeitem', { name: /reviewer/ }).children).toHaveLength(2)
 
-    const sidebarButton = screen.getByRole('button', { name: '在侧边栏打开 worker' })
-    fireEvent.keyDown(sidebarButton, { key: 'Enter' })
-    fireEvent.click(sidebarButton)
-    expect(input.openChildAside).toHaveBeenCalledWith({
-      parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',
-    })
-
-    hoverCatalog(trigger)
     fireEvent.click(screen.getByRole('treeitem', { name: /worker/ }))
     expect(input.openChild).toHaveBeenCalledWith({
       parentSessionId: PARENT, childSessionId: CHILD, mode: 'continuable',

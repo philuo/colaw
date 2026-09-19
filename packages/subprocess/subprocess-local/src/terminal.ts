@@ -86,6 +86,7 @@ export class LocalTerminalHandle implements SubprocessTerminalHandle {
     private readonly terminal: IPty,
     private readonly inspector: ProcessInspector,
     private readonly graceMs: number,
+    private readonly platform: NodeJS.Platform = process.platform,
     private readonly managedOwner?: BoundProcessOwner,
     private readonly resolveManagedOutcome?: (outcome: SubprocessOutcome) => SubprocessOutcome,
     private readonly shellActivity?: Pick<ShellActivity, 'inspect' | 'invalidate' | 'dispose'>,

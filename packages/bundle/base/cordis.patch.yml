@@ -13,14 +13,6 @@
 # driven); the grouping is for readers.
 
 - insert:
-    - id: tool-plugin-manager
-      name: '@deepseek-ai/dsh-plugin-manager/tools'
-      disabled: true
-
-    - id: plugin-manager
-      name: '@deepseek-ai/dsh-plugin-manager'
-      disabled: !!js "!ctx.get('profileContext')"
-
     - id: timer
       name: '@deepseek-ai/cordis-plugin-timer'
 

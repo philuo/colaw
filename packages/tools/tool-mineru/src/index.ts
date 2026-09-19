@@ -33,10 +33,12 @@ export const MINERU_CREDENTIAL_REF = 'MINERU_API_KEY'
 
 /** Plugin configuration: an optional static MinerU API token. */
 export interface Config {
+  /** Static MinerU Bearer token; when omitted, the token resolves from the MINERU_API_KEY managed credential. */
   token?: string
 }
 
 export const Config: z<Config> = z.object({
+  /** Static MinerU Bearer token; when omitted, configuration leaves the token to the MINERU_API_KEY managed credential. */
   token: z.string(),
 })
 

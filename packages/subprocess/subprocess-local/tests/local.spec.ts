@@ -198,6 +198,7 @@ describe('LocalSubprocessRuntime', () => {
       write: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
+      inspectActivity: async () => ({ state: 'unknown' as const, revision: 0 }),
       resize: async () => {},
       terminate,
     }
@@ -226,6 +227,7 @@ describe('LocalSubprocessRuntime', () => {
       write: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
+      inspectActivity: async () => ({ state: 'unknown' as const, revision: 0 }),
       resize: async () => {},
       terminate: vi.fn(async () => { throw firstFailure }),
     }
@@ -279,6 +281,7 @@ describe('LocalSubprocessRuntime', () => {
       write: async () => {},
       inspectForeground: async () => undefined,
       signalForeground: async () => 1,
+      inspectActivity: async () => ({ state: 'unknown' as const, revision: 0 }),
       resize: async () => {},
       terminate: vi.fn(async () => { throw failure }),
     }

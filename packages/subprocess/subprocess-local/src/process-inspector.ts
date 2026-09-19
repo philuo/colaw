@@ -29,6 +29,8 @@ interface FileStatus {
  * is the fence a signal takes, because it reads current state instead.
  */
 export interface ProcessSnapshot {
+  /** Whether the process-table scan omitted no unreadable rows; absent means unverified. */
+  readonly complete?: boolean
   /**
    * Return the root and its transitive descendants as observed, children first.
    * @param rootPid - tree root to descend from.
@@ -219,11 +221,11 @@ export function linuxProcessGroupHasLiveMembers(
   return matched ? false : undefined
 }
 
-function numericEntries(internals: ProcessInspectorInternals, path: string): number[] {
+function numericEntries(internals: ProcessInspectorInternals, path: string): number[] | undefined {
   try {
     return internals.readDir(path).filter(entry => /^\d+$/.test(entry)).map(Number)
   } catch (_unreadableProcDirectory) {
-    return []
+    return undefined
   }
 }
 
@@ -380,7 +382,7 @@ function quiescent(state: string | undefined): boolean {
 class PosixProcessSnapshot implements ProcessSnapshot {
   private readonly byPid: Map<number, ProcessRow>
 
-  constructor(private readonly rows: ProcessRow[]) {
+  constructor(private readonly rows: ProcessRow[], readonly complete: boolean) {
     this.byPid = new Map(rows.map(row => [row.pid, row]))
   }
 
@@ -441,10 +443,10 @@ class LinuxProcessInspector extends PosixProcessInspector {
     if (shell === undefined) return false
     const terminalDevice = readLinuxTerminalDevice(this.internals, shellPid, shell.ttyDevice)
     if (terminalDevice === undefined) return false
-    for (const pid of numericEntries(this.internals, '/proc')) {
+    for (const pid of numericEntries(this.internals, '/proc') ?? []) {
       const process = readLinuxStat(this.internals, pid)
       if (process?.pgrp !== pgid) continue
-      for (const tid of numericEntries(this.internals, `/proc/${pid}/task`)) {
+      for (const tid of numericEntries(this.internals, `/proc/${pid}/task`) ?? []) {
         const syscall = readSyscall(this.internals, pid, tid)
         if (syscall !== undefined
           && syscallWaitsOnStdin(this.internals, pid, tid, syscall, tables)
@@ -460,8 +462,12 @@ class LinuxProcessInspector extends PosixProcessInspector {
   }
 
   snapshot(): ProcessSnapshot {
-    return new PosixProcessSnapshot(numericEntries(this.internals, '/proc').flatMap((pid) => {
+    const pids = numericEntries(this.internals, '/proc')
+    if (pids === undefined) throw new Error('Cannot inspect processes: /proc directory is unreadable')
+    let complete = true
+    const rows = pids.flatMap((pid) => {
       const stat = readLinuxStat(this.internals, pid)
+      if (stat === undefined) complete = false
       return stat === undefined ? [] : [{
         pid,
         parentPid: stat.parentPid,
@@ -469,26 +475,31 @@ class LinuxProcessInspector extends PosixProcessInspector {
         session: stat.session,
         state: stat.state,
       }]
-    }))
+    })
+    return new PosixProcessSnapshot(rows, complete)
   }
 
 }
 
 // `ps` exposes neither the session id nor a state column in this format, so a
 // macOS row can answer presence and parentage but never session membership.
-function macProcessTable(internals: ProcessInspectorInternals): ProcessRow[] {
+function macProcessTable(internals: ProcessInspectorInternals): { rows: ProcessRow[]; complete: boolean } {
   let table: string
   try {
     table = internals.exec('/bin/ps', ['-axo', 'pid=,ppid=,lstart='])
   } catch {
     // Hardened environments (sandbox-exec profiles, some MDM policies) refuse
-    // posix_spawn of /bin/ps. An empty table degrades ancestry answers to
+    // posix_spawn of /bin/ps. An incomplete table degrades ancestry answers to
     // "unknown" instead of failing terminal allocation outright.
-    return []
+    return { rows: [], complete: false }
   }
-  return table.split('\n').flatMap((line) => {
+  let complete = true
+  const rows = table.split('\n').flatMap((line) => {
     const match = /^\s*(\d+)\s+(\d+)\s+(.+?)\s*$/.exec(line)
-    if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) return []
+    if (match?.[1] === undefined || match[2] === undefined || match[3] === undefined) {
+      if (line.trim().length > 0) complete = false
+      return []
+    }
     return [{
       pid: Number(match[1]),
       parentPid: Number(match[2]),
@@ -497,6 +508,7 @@ function macProcessTable(internals: ProcessInspectorInternals): ProcessRow[] {
       state: undefined,
     }]
   })
+  return { rows, complete }
 }
 
 class MacProcessInspector extends PosixProcessInspector {
@@ -514,12 +526,13 @@ class MacProcessInspector extends PosixProcessInspector {
   }
 
   isAlive(identity: ProcessIdentity): boolean {
-    return macProcessTable(this.internals)
+    return macProcessTable(this.internals).rows
       .some(entry => entry.pid === identity.pid && entry.started === identity.started)
   }
 
   snapshot(): ProcessSnapshot {
-    return new PosixProcessSnapshot(macProcessTable(this.internals))
+    const table = macProcessTable(this.internals)
+    return new PosixProcessSnapshot(table.rows, table.complete)
   }
 
 }

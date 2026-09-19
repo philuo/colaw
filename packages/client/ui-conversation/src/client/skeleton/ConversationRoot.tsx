@@ -129,13 +129,13 @@ function WidthHandle(props: {
 }
 
 export function ConversationRoot({
-  sessionId, useSession, useSessions, useSessionPendingInteraction,
+  sessionId, useSession, useSessions, useSessionStatus,
   useWorkspaces, useConversation, useInput, useComposerBlock,
   renderSlot, renderSlotChain, selectWorkspace, startDetached, t,
 }: ConversationRootProps) {
   const session = useSession(s => s)
-  const pendingInteraction = useSessionPendingInteraction(snapshot =>
-    sessionId === undefined ? undefined : snapshot.get(sessionId))
+  const pendingInteraction = useSessionStatus(snapshot =>
+    sessionId === undefined ? undefined : snapshot.get(sessionId)?.pendingInteraction)
   const conversation = useConversation(s => s)
   const shellPhase = session === undefined || conversation === undefined
     ? 'blank'

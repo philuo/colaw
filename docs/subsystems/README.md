@@ -6,7 +6,7 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 
 | Page | Owns |
 |---|---|
-| [boot.md](boot.md) | Current-profile plugin management and launcher reload coordination |
+| [boot.md](boot.md) | launcher-owned profile data, configuration/patch composition inputs, and the coordinated module/configuration reload queue (HMR) |
 | [core.md](core.md) | how `packages/core` controls the agent loop: the package-by-package loop description, agent creation and ownership (`AgentHandle`), the `Agent` handle's delivery/cancellation/interception contracts, and the repo-wide type patterns (`…Map → derived-union`, branded ids) |
 | [llm-streaming.md](llm-streaming.md) | the `packages/llm` conversation types — `Message`/`ContentBlock`, the assembled model request, the `StreamChunk` wire protocol and adapter contract, `BlockAssembler`, and the `LlmAdapter` provider contract |
 | [token-meter.md](token-meter.md) | immutable scalar and positional replay measurements with consumed-log revisions |
@@ -30,7 +30,6 @@ One page per subsystem of the DeepSeek Harness: what it is, the data structures 
 | [mcp.md](mcp.md) | external MCP connections, scoped tools and resources, server instructions, protocol results, and configuration ownership |
 | [user-questions.md](user-questions.md) | the UI-backed human question/answer seam: `AskUserQuestionRequest`, answer/options vocabulary, provider API, error taxonomy |
 | [approval.md](approval.md) | the one-shot user-approval seam: `ApprovalRequest`, `ApprovalOutcome`, per-session policy, audit events, and answerer contracts |
-| [office-to-pdf.md](office-to-pdf.md) | authorized Office-to-PDF conversion, native/WASM engines, and bounded shared reuse |
 | [attachment.md](attachment.md) | durable image identity and metadata, validation inputs, verified reads, and the `AttachmentStore` seam |
 | [shell.md](shell.md) | the shell executor seam: `ShellExecRequest`/`Spec`, `ShellRunResult`, background `ShellProcess` handles |
 | [subprocess.md](subprocess.md) | the subprocess seam: fully-explicit `SubprocessSpawnSpec`, offset-based output readers, unclassified `SubprocessOutcome`, and the managed `DSH_*` environment vocabulary |

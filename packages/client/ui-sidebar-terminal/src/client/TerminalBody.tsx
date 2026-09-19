@@ -177,7 +177,7 @@ function TerminalScreen({ state, model, visible, label, theme }: {
       resizeTimer = undefined
       if (next === undefined || !current.current.visible || !current.current.state.writable) return
       sentAt = Date.now()
-      void model.resize(next.cols, next.rows)
+      model.resize(next.cols, next.rows)
     }
     const measure = (): void => {
       if (!current.current.state.writable || node.clientWidth === 0 || node.clientHeight === 0) return

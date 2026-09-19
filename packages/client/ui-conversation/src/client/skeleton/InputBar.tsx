@@ -102,6 +102,10 @@ export const InputBar = memo(function InputBar({
   useEffect(() => {
     if (promptError === null) return
     const { error } = promptError
+    if (error.code === 'session/writer-held') {
+      showToast(t('error.sessionInUse'))
+      return
+    }
     showToast(error.code === 'session/attachment-invalid' || error.code === 'subagent/attachment-invalid'
       ? attachmentErrorText(t, error.details.reason, imageLimits)
       : `${error.message} (${error.code})`)
@@ -138,7 +142,7 @@ export const InputBar = memo(function InputBar({
   const editable = live && !locked && !machineBusy
   const steeringAvailable = subagent === null || subagent.address.mode === 'continuable'
   const canSteerQueue = !locked && !machineBusy && !commandMenuOpen && empty && running && steeringAvailable
-    && input.queue.some(row => row.placement === 'queued')
+    && input.queue.length > 0
 
   useEffect(() => {
     if (input === undefined || inputActions === undefined) return
@@ -325,7 +329,13 @@ export const InputBar = memo(function InputBar({
   }
 
   const onToggleCommandMenu = (): void => {
-    if (keyboard !== undefined) toggleCommandMenu?.(keyboard.caretSpan())
+    if (keyboard === undefined) return
+    // The menu is a combobox whose arrow handling lives on the editor, so the
+    // keyboard has to be in the editor before the launcher opens it. Keyboard
+    // activation leaves focus on the button; restoring it only afterwards would
+    // re-track an empty draft and close the menu again.
+    if (editor !== null) editor.getRootElement()?.focus({ preventScroll: true })
+    toggleCommandMenu?.(keyboard.caretSpan())
   }
 
   // The no-Session start trigger: the resident editable div acts as the

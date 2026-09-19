@@ -4,6 +4,8 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { ClientRemote, DirectoryListing, RemoteFailure } from '@deepseek-ai/dsh-api-remotes/client'
 import type {
   ISessions,
+  SessionReference,
+  SessionTarget,
   SessionListState,
 } from '@deepseek-ai/dsh-api-session-controller/client'
 import type {
@@ -16,9 +18,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 export interface UiWorkspace {
   /**
    * Select a Session and show its Conversation as one UI navigation action.
-   * @param sessionId - listed or retained Session to display.
+   * @param target - known Session identity or durable direct-parent subagent address to display.
    */
-  openSession(sessionId: SessionId): void
+  openSession(target: SessionTarget): void
   /**
    * Connect a Workspace and open its Session unless a later navigation supersedes it.
    * @param workspaceId - target Workspace.
@@ -76,7 +78,7 @@ export interface UiWorkspace {
   /**
    * Create a child directory.
    * @param path - existing parent directory.
-   * @param name - child directory name.
+   * @param name - child directory.
    * @returns created absolute path.
    */
   createDirectory(path: string, name: string): Promise<string>
@@ -103,6 +105,7 @@ export class DirectoryBrowseError extends Error {
 class UiWorkspaceService extends Service implements UiWorkspace {
   private readonly connecting = new Map<WorkspaceId, Promise<SessionId>>()
   private readonly lifetime = new AbortController()
+  private mainReference: SessionReference | undefined
 
   /**
    * @param ctx - Client root Context.
@@ -117,7 +120,16 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     private readonly sessions: ISessions,
   ) {
     super(ctx, 'uiWorkspace')
-    ctx.effect(() => this.watchNavigation(), 'ui-workspace: Workspace navigation policy')
+    ctx.effect(() => {
+      const stop = this.watchNavigation()
+      return () => {
+        stop()
+        this.lifetime.abort()
+        const reference = this.mainReference
+        this.mainReference = undefined
+        reference?.release()
+      }
+    }, 'ui-workspace: Workspace navigation policy')
   }
 
   async connectWorkspace(workspaceId: WorkspaceId): Promise<SessionId> {
@@ -144,35 +156,29 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     return attempt
   }
 
-  openSession(sessionId: SessionId): void {
-    this.sessions.open(sessionId)
-    this.ctx.layout.selectPanel(null)
+  openSession(target: SessionTarget): void {
+    this.replaceMain(target, this.lifetime.signal)
   }
 
   async openWorkspace(workspaceId: WorkspaceId, beforeOpen?: (sessionId: SessionId) => void): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
-    const isCurrent = (): boolean => !navigation.aborted
     const sessionId = await this.connectWorkspace(workspaceId)
-    if (!isCurrent()) return
-    beforeOpen?.(sessionId)
-    if (isCurrent()) this.openSession(sessionId)
+    if (navigation.aborted) return
+    this.replaceMain(sessionId, navigation, beforeOpen)
   }
 
   /** A chat with no workspace attached: the host's session create defaults
    * the cwd on its own, so a session can start with no directory bound. */
   startDetachedSession(beforeOpen?: (sessionId: SessionId) => void): void {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
-    const isCurrent = (): boolean => !navigation.aborted
     void this.sessions.create({}).then(
       (sessionId) => {
-        if (!isCurrent()) return
-        beforeOpen?.(sessionId)
-        if (isCurrent()) this.openSession(sessionId)
+        if (navigation.aborted) return
+        this.replaceMain(sessionId, navigation, beforeOpen)
       },
       (reason: unknown) => {
         console.warn('workspace-free session failed:', reason)
-        this.sessions.clear()
-        this.ctx.layout.selectPanel(null)
+        if (!navigation.aborted) this.clearMain()
       },
     )
   }
@@ -180,13 +186,12 @@ class UiWorkspaceService extends Service implements UiWorkspace {
   async forkSession(sessionId: SessionId): Promise<void> {
     const navigation = AbortSignal.any([this.ctx.layout.beginNavigation(), this.lifetime.signal])
     const childId = await this.sessions.fork({ sessionId, increaseTitle: true })
-    if (!navigation.aborted) this.openSession(childId)
+    if (!navigation.aborted) this.replaceMain(childId, navigation)
   }
 
   startSession(workspaceId?: WorkspaceId): void {
     const workspace = this.workspaces.list.getSnapshot()
-    const sessions = this.sessions.list.getSnapshot()
-    const current = sessions.current
+    const current = this.mainReference?.sessionId
     // A Workspace is preselected only by an explicit request (the sidebar
     // group's New action) or by the current Session already living in one;
     // every other start is workspace-less by default — no recency fallback.
@@ -238,7 +243,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       const workspace = this.workspaces.list.getSnapshot()
       const sessions = this.sessions.list.getSnapshot()
       if (workspace.phase !== 'ready' || sessions.phase !== 'ready') return
-      if (sessions.current !== undefined) {
+      if (this.mainReference !== undefined) {
         initial = 'done'
         return
       }
@@ -252,9 +257,7 @@ class UiWorkspaceService extends Service implements UiWorkspace {
       void attempt.then(
         (sessionId) => {
           if (this.lifetime.signal.aborted) return
-          if (this.sessions.list.getSnapshot().current === undefined) {
-            this.sessions.open(sessionId)
-          }
+          if (this.mainReference === undefined) this.openSession(sessionId)
           initial = 'done'
         },
         (reason: unknown) => {
@@ -276,11 +279,43 @@ class UiWorkspaceService extends Service implements UiWorkspace {
 
   /** @returns true when an archived current selection was cleared. */
   private clearArchivedCurrent(): boolean {
-    const current = this.sessions.list.getSnapshot().current
+    const current = this.mainReference?.sessionId
     if (current === undefined
       || !this.workspaces.list.getSnapshot().archivedSessionIds.includes(current)) return false
-    this.sessions.clear()
+    this.clearMain()
     return true
+  }
+
+  private clearMain(): void {
+    const previous = this.mainReference
+    this.mainReference = undefined
+    previous?.release()
+    this.ctx.layout.selectPanel(null)
+  }
+
+  private replaceMain(
+    target: SessionTarget,
+    signal: AbortSignal,
+    beforeOpen?: (sessionId: SessionId) => void,
+  ): void {
+    signal.throwIfAborted()
+    const reference = this.sessions.retain(target, { source: 'mainView' })
+    try {
+      signal.throwIfAborted()
+      beforeOpen?.(reference.sessionId)
+      if (signal.aborted) {
+        reference.release()
+        return
+      }
+    } catch (error: unknown) {
+      reference.release()
+      throw error
+    }
+    const previous = this.mainReference
+    this.mainReference = reference
+    previous?.release()
+    void this.sessions.refreshSubagents(reference.sessionId)
+    this.ctx.layout.selectPanel(null)
   }
 
 }

@@ -340,7 +340,7 @@ describe('ModelsSection', () => {
     const scripted = scriptedFace()
     scripted.face.settings.describe.mockResolvedValue(remoteOk({ writable: true, hasDocument: false, namespaces: [] }))
     await mountFace(scripted)
-    expect((screen.getByRole('button', { name: en.add }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.add }).disabled).toBe(true)
   })
 
   it('keeps the add action disabled when its settings namespace is absent', async () => {
@@ -350,7 +350,7 @@ describe('ModelsSection', () => {
       namespaces: wireNamespaces().filter(view => view.ns !== 'llm-provider'),
     }))
     await mountFace(scripted)
-    expect((screen.getByRole('button', { name: en.add }) as HTMLButtonElement).disabled).toBe(true)
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.add }).disabled).toBe(true)
   })
 
   it('shows a catalog diagnostic while keeping the provider editable', async () => {
@@ -1100,10 +1100,10 @@ describe('ModelsSection', () => {
     expandRow(1)
     const group = screen.getByRole('group', { name: en.inputTypes })
     // Text is pinned; the declaration drives the rest.
-    expect((within(group).getByLabelText(en.inputText) as HTMLInputElement).checked).toBe(true)
-    expect((within(group).getByLabelText(en.inputText) as HTMLInputElement).disabled).toBe(true)
-    expect((within(group).getByLabelText(en.inputImage) as HTMLInputElement).checked).toBe(true)
-    expect((within(group).getByLabelText(en.inputVideo) as HTMLInputElement).checked).toBe(false)
+    expect(within(group).getByLabelText<HTMLInputElement>(en.inputText).checked).toBe(true)
+    expect(within(group).getByLabelText<HTMLInputElement>(en.inputText).disabled).toBe(true)
+    expect(within(group).getByLabelText<HTMLInputElement>(en.inputImage).checked).toBe(true)
+    expect(within(group).getByLabelText<HTMLInputElement>(en.inputVideo).checked).toBe(false)
 
     // Ticking video materializes the full array; unticking images narrows it.
     fireEvent.click(within(group).getByLabelText(en.inputVideo))
@@ -1124,9 +1124,9 @@ describe('ModelsSection', () => {
       onReset={vi.fn()}
     />)
     const inherited = screen.getByRole('group', { name: en.inputTypes })
-    expect((within(inherited).getByLabelText(en.inputImage) as HTMLInputElement).checked).toBe(true)
-    expect((within(inherited).getByLabelText(en.inputFile) as HTMLInputElement).checked).toBe(true)
-    expect((within(inherited).getByLabelText(en.inputVideo) as HTMLInputElement).checked).toBe(false)
+    expect(within(inherited).getByLabelText<HTMLInputElement>(en.inputImage).checked).toBe(true)
+    expect(within(inherited).getByLabelText<HTMLInputElement>(en.inputFile).checked).toBe(true)
+    expect(within(inherited).getByLabelText<HTMLInputElement>(en.inputVideo).checked).toBe(false)
   })
 
   it('adds rows claiming the modern input default on both editor families', () => {
@@ -1171,7 +1171,7 @@ describe('ModelsSection', () => {
     // state; wait for it before toggling, exactly as a user reads it.
     const group = screen.getAllByRole('group', { name: en.inputTypes })[0] as HTMLElement
     await waitFor(() => {
-      expect((within(group).getByLabelText(en.inputImage) as HTMLInputElement).checked).toBe(true)
+      expect(within(group).getByLabelText<HTMLInputElement>(en.inputImage).checked).toBe(true)
     })
     fireEvent.click(within(group).getByLabelText(en.inputVideo))
     fireEvent.click(screen.getByText(en.apply))

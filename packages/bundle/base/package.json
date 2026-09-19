@@ -120,8 +120,7 @@
     "@deepseek-ai/dsh-workflow-ptc": "workspace:^",
     "@deepseek-ai/dsh-ptc-runtime-node": "workspace:^",
     "@deepseek-ai/dsh-compaction-image-offload": "workspace:^",
-    "@deepseek-ai/dsh-mcp-resources": "workspace:^",
-    "@deepseek-ai/dsh-plugin-manager": "workspace:^"
+    "@deepseek-ai/dsh-mcp-resources": "workspace:^"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^"

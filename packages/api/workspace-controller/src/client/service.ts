@@ -64,6 +64,11 @@ export interface IWorkspaces {
    */
   trashEntries(): Promise<readonly WorkspaceTrashEntry[]>
   /**
+   * Archive a Session from Workspace grouping surfaces.
+   * @param sessionId - Session to archive.
+   */
+  archiveSession(sessionId: SessionId): Promise<void>
+  /**
    * Restore one archived Session to its grouping surfaces.
    * @param sessionId - archived Session to restore.
    */
@@ -77,11 +82,6 @@ export interface IWorkspaces {
    * Remove every archived Session from disk for good. Unrecoverable.
    */
   clearTrash(): Promise<void>
-  /**
-   * Archive a Session from Workspace grouping surfaces.
-   * @param sessionId - Session to archive.
-   */
-  archiveSession(sessionId: SessionId): Promise<void>
   /**
    * Move a Session within one Workspace account.
    * @param workspaceId - owning Workspace.

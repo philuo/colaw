@@ -76,6 +76,9 @@ export function ConversationSessionHeader({
       {!hideChrome && (
         <>
           <div className={css.titleRow} data-dsh-window-drag="">
+            <div className={css.headerLeading} data-conversation-header-leading="">
+              {renderSlot('conversation.session.header.leading', {})}
+            </div>
             <div className={css.titleCluster}>
               <nav className={css.crumbs} aria-label={t('session.hierarchy')}>
                 {ancestry.map((summary, index) => {

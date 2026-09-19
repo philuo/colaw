@@ -24,7 +24,7 @@ function writeViaDesktopBridge(text: string): Promise<boolean> {
     const nonce = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
     const onAck = (event: Event): void => {
       const detail = (event as CustomEvent<{ nonce?: string; ok?: boolean }>).detail
-      if (detail?.nonce !== nonce) return
+      if (detail.nonce !== nonce) return
       cleanup()
       resolve(detail.ok === true)
     }

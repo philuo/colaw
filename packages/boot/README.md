@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The boot group launches profile applications and manages their installed composition. `app-boot` resolves configuration and starts the Loader, `cmdline` supplies application arguments, and `plugin-manager` exposes current-profile operations shared with the CLI. Each package README owns its details.
+The boot group provides what every dsh app bin needs to start and reload. `app-boot` turns a `cordis.yml` plus environment and patch layers into a running app with clear failure messages, `cmdline` lets the app own its flags and `--help`, and `hmr` coordinates module and profile-configuration reloads through one queue while the app runs. With these packages you can run `dsh` or write an application or fixture that boots the same way. They are libraries imported by `apps/cli` and Loader fixtures, never plugins a composition loads. This page maps the group; each package README owns its contract.
 
 ## Table of Contents
 
@@ -24,8 +24,7 @@ The boot group launches profile applications and manages their installed composi
 |---|---|---|
 | [`app-boot`](app-boot/README.md) | Boots a dsh app from a `cordis.yml`: loads `.env`, applies profile and patch layers, and reports startup failures clearly | (library for the bins) |
 | [`cmdline`](cmdline/README.md) | Lets the app own its flags, `--help`, and exit code; passes everything after the launcher's flags through verbatim | `cmdlineArgs`, `appExit` |
-| [`hmr`](hmr/README.md) | Coordinates module and configuration reloads with package mutations | `hmr` |
-| [`plugin-manager`](plugin-manager/README.md) | Manages current-profile plugins and bundle packages through shared CLI operations | `pluginManager` |
+| [`hmr`](hmr/README.md) | Coordinates module and profile-configuration reloads through one queue | `hmr` |
 
 <a id="related-documentation"></a>
 ## Related documentation
@@ -35,7 +34,7 @@ The boot group launches profile applications and manages their installed composi
 - [dsh-home-paths](../util/home-paths/README.md) — the harness-home resolver both packages build on.
 - [dsh-cmdline](cmdline/README.md) — how an app owns its flag family instead of the launcher.
 
-- [Profile management](../../docs/subsystems/boot.md) — service methods and result records.
+- [Application boot and HMR](../../docs/subsystems/boot.md) — service methods, events, and the reload queue.
 
 <a id="dev-note"></a>
 ## Dev Note

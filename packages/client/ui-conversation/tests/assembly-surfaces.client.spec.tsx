@@ -50,6 +50,28 @@ const LAYOUT_CHILDREN = {
   'main': { kind: 'keyed', scope: 'root' },
 } as const
 
+function provideWorkspaceNavigation(runtime: SlotTestRuntime): {
+  openSession: (id: SessionId) => void
+  startDetachedSession: ReturnType<typeof vi.fn>
+} {
+  let mainReference: ReturnType<typeof runtime.sessions.retain> | undefined
+  const openSession = (id: SessionId): void => {
+    const next = runtime.sessions.retain(id, { source: 'mainView' })
+    mainReference?.release()
+    mainReference = next
+  }
+  const startDetachedSession = vi.fn()
+  runtime.ctx.provide('uiWorkspace', {
+    openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
+      beforeOpen(SID)
+      openSession(SID)
+    }),
+    openSession,
+    startDetachedSession,
+  } as never)
+  return { openSession, startDetachedSession }
+}
+
 function WorkspaceProbe({ open }: EmptyWorkspaceOwnerProps) {
   const [count, setCount] = useState(0)
   return (
@@ -61,14 +83,7 @@ function WorkspaceProbe({ open }: EmptyWorkspaceOwnerProps) {
 
 async function bench(opts?: { blank?: boolean }) {
   const runtime = await SlotTestRuntime.create()
-  runtime.ctx.provide('uiWorkspace', {
-    openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
-      beforeOpen(SID)
-      runtime.sessions.open(SID)
-    }),
-    openSession: (id: SessionId) => { runtime.sessions.open(id) },
-    startDetachedSession: vi.fn(),
-  } as never)
+  const { openSession } = provideWorkspaceNavigation(runtime)
   runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
   const locale = new LocaleRuntime(runtime.ctx)
   runtime.ctx.provide('locale', locale)
@@ -82,6 +97,7 @@ async function bench(opts?: { blank?: boolean }) {
       prompt: vi.fn<ISession['prompt']>(async () => ({ ok: true, value: { accepted: true } })),
     },
   })
+  openSession(SID)
   await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
   await runtime.mount({ inject: [...inject], apply })
   return runtime
@@ -90,15 +106,7 @@ async function bench(opts?: { blank?: boolean }) {
 describe('resident composer', () => {
   it('renders the locked view state while no session exists at all', async () => {
     const runtime = await SlotTestRuntime.create()
-    const startDetachedSession = vi.fn()
-    runtime.ctx.provide('uiWorkspace', {
-      openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
-        beforeOpen(SID)
-        runtime.sessions.open(SID)
-      }),
-      openSession: (id: SessionId) => { runtime.sessions.open(id) },
-      startDetachedSession,
-    } as never)
+    const { startDetachedSession } = provideWorkspaceNavigation(runtime)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)
@@ -130,14 +138,7 @@ describe('resident composer', () => {
 
   it('keeps the complete Hero tree mounted when the first Workspace session appears', async () => {
     const runtime = await SlotTestRuntime.create()
-    runtime.ctx.provide('uiWorkspace', {
-      openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
-        beforeOpen(SID)
-        runtime.sessions.open(SID)
-      }),
-      openSession: (id: SessionId) => { runtime.sessions.open(id) },
-      startDetachedSession: vi.fn(),
-    } as never)
+    const { openSession } = provideWorkspaceNavigation(runtime)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)
@@ -168,6 +169,8 @@ describe('resident composer', () => {
       summary: { title: 'S', displayTitle: 'S', cwd: '/proj', blank: true },
       snapshot: { blank: true },
     })
+    openSession(SID)
+    await runtime.flush()
 
     expect(view.container.querySelector('[data-phase="hero"]')).toBe(root)
     expect(view.container.querySelector('[data-conversation-scroll]')).toBe(scrollBody)
@@ -206,14 +209,7 @@ describe('resident composer', () => {
 describe('prompt rejection through the assembled composer', () => {
   it('renders the promptError alert strip and keeps the draft in the machine', async () => {
     const runtime = await SlotTestRuntime.create()
-    runtime.ctx.provide('uiWorkspace', {
-      openWorkspace: vi.fn(async (_workspaceId: WorkspaceId, beforeOpen: (id: SessionId) => void) => {
-        beforeOpen(SID)
-        runtime.sessions.open(SID)
-      }),
-      openSession: (id: SessionId) => { runtime.sessions.open(id) },
-      startDetachedSession: vi.fn(),
-    } as never)
+    const { openSession } = provideWorkspaceNavigation(runtime)
     runtime.ctx.provide('settingsScope', { bind: () => stubSettingsScope().scope } as never)
     const locale = new LocaleRuntime(runtime.ctx)
     runtime.ctx.provide('locale', locale)
@@ -227,6 +223,7 @@ describe('prompt rejection through the assembled composer', () => {
       summary: { title: 'S', displayTitle: 'S', cwd: '/proj' },
       session: { prompt, loadOlder: vi.fn<ISession['loadOlder']>() },
     })
+    openSession(SID)
     await runtime.root.declare(LAYOUT_CHILDREN, AppRoot)
     await runtime.mount({ inject: [...inject], apply })
     const view = runtime.renderRoot()

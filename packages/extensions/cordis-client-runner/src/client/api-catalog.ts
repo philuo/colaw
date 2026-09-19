@@ -366,7 +366,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'startSession(workspaceId?: WorkspaceId): void',
         description: 'Start a New Session flow and navigate to its Session.',
-        parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current or most recent Workspace.' }],
+        parameters: [{ name: 'workspaceId', description: 'explicit target; absent inherits the current Session\'s Workspace or starts workspace-less (the New Session default).' }],
       },
       {
         signature: 'archiveSession(sessionId: SessionId): Promise<void>',
@@ -393,7 +393,7 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       {
         signature: 'createDirectory(path: string, name: string): Promise<string>',
         description: 'Create a child directory.',
-        parameters: [{ name: 'path', description: 'existing parent directory.' }, { name: 'name', description: 'child directory name.' }],
+        parameters: [{ name: 'path', description: 'existing parent directory.' }, { name: 'name', description: 'child directory.' }],
         returns: 'created absolute path.',
       },
     ],
@@ -427,8 +427,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
-        description: 'Unarchive a Session from the archived Session list.',
-        parameters: [{ name: 'sessionId', description: 'Session to unarchive.' }],
+        description: 'Restore one archived Session to its grouping surfaces.',
+        parameters: [{ name: 'sessionId', description: 'archived Session to restore.' }],
       },
       {
         signature: 'insertSessionBefore( workspaceId: WorkspaceId, sessionId: SessionId, beforeSessionId?: SessionId, ): Promise<WorkspaceView>',
@@ -1025,6 +1025,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ThemeTokens',
     declaration: 'export type ThemeTokens = Record<string, string>;',
+  },
+  {
+    name: 'Translate',
+    declaration: 'export type Translate<K extends string = string> = (key: K, params?: Record<string, unknown>) => string;',
   },
   {
     name: 'TranslateNS',

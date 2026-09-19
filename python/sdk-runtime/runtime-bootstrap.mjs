@@ -1,19 +1,6 @@
 #!/usr/bin/env node
 /** Private entry owned by the Python single-file runtime packaging. */
-import { registerHooks } from 'node:module'
-import { isSea } from 'node:sea'
-import { fileURLToPath, pathToFileURL } from 'node:url'
-
-if (isSea()) {
-  // Office spawns executable helpers and URL workers; its complete package tree must be real files.
-  const parentURL = pathToFileURL(`${process.execPath.replace(/\.exe$/i, '')}-office/package.json`).href
-  registerHooks({
-    resolve(specifier, context, nextResolve) {
-      const office = specifier === '@deepseek-ai/libreoffice-kit' || specifier === '@deepseek-ai/libreoffice-kit/package.json'
-      return nextResolve(specifier, office ? { ...context, parentURL } : context)
-    },
-  })
-}
+import { fileURLToPath } from 'node:url'
 
 const selectorName = 'DSH_SUBPROCESS_RUNNER'
 const selection = process.env[selectorName]

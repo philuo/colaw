@@ -14599,7 +14599,7 @@
         "packages/llm/llm/src/types.ts#StreamChunk"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:426"
+        "packages/llm/llm/src/types.ts:430"
       ]
     },
     {
@@ -14859,7 +14859,7 @@
         "packages/llm/llm/src/types.ts#ReplayEnvelope"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:404"
+        "packages/llm/llm/src/types.ts:408"
       ]
     },
     {
@@ -23553,7 +23553,7 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[16].changes"
+        "event:agent/inbox/spliced.data.inserted[0].source[15].changes"
       ],
       "sources": []
     },
@@ -23601,7 +23601,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[2]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:429"
+        "packages/llm/llm/src/types.ts:433"
       ]
     },
     {
@@ -32113,7 +32113,7 @@
         "packages/workflow/workflow/src/types.ts#WorkflowRunId"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:376",
+        "packages/api/session-controller/src/types.ts:378",
         "packages/attachment/attachment/src/brand.ts:6",
         "packages/compaction/compaction/src/brand.ts:4",
         "packages/core/session/src/types.ts:19",
@@ -33433,7 +33433,7 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references[0]"
+        "event:agent/inbox/spliced.data.inserted[0].source[16].references[0]"
       ],
       "sources": [
         "packages/context/session-reference/src/types.ts:18"
@@ -36826,7 +36826,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[0]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:427"
+        "packages/llm/llm/src/types.ts:431"
       ]
     },
     {
@@ -38044,10 +38044,10 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[11]"
+        "event:agent/inbox/spliced.data.inserted[0].source[10]"
       ],
       "sources": [
-        "packages/api/session-controller/src/types.ts:381"
+        "packages/api/session-controller/src/types.ts:383"
       ]
     },
     {
@@ -40722,7 +40722,7 @@
         "packages/llm/llm/src/types.ts#ToolSchema"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:447"
+        "packages/llm/llm/src/types.ts:451"
       ]
     },
     {
@@ -41035,7 +41035,7 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[17].entries[0]"
+        "event:agent/inbox/spliced.data.inserted[0].source[18].entries[0]"
       ],
       "sources": [
         "packages/skill/tool-skill/src/index.ts:40"
@@ -42299,7 +42299,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[3]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:430"
+        "packages/llm/llm/src/types.ts:434"
       ]
     },
     {
@@ -43669,7 +43669,7 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[16].changes[0].action"
+        "event:agent/inbox/spliced.data.inserted[0].source[15].changes[0].action"
       ],
       "sources": []
     },
@@ -43988,7 +43988,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[4]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:431"
+        "packages/llm/llm/src/types.ts:435"
       ]
     },
     {
@@ -44363,7 +44363,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[1]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:428"
+        "packages/llm/llm/src/types.ts:432"
       ]
     },
     {
@@ -46741,7 +46741,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[6]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:433"
+        "packages/llm/llm/src/types.ts:437"
       ]
     },
     {
@@ -48972,7 +48972,7 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[17].entries"
+        "event:agent/inbox/spliced.data.inserted[0].source[18].entries"
       ],
       "sources": []
     },
@@ -56884,7 +56884,7 @@
         ]
       },
       "names": [
-        "event:agent/inbox/spliced.data.inserted[0].source[15].references"
+        "event:agent/inbox/spliced.data.inserted[0].source[16].references"
       ],
       "sources": []
     },
@@ -59874,7 +59874,7 @@
         "event:assistant/attempt.data.stream[0][3].chunk[5]"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:432"
+        "packages/llm/llm/src/types.ts:436"
       ]
     },
     {
@@ -59955,7 +59955,7 @@
         "packages/llm/llm/src/types.ts#SystemPromptUpdate"
       ],
       "sources": [
-        "packages/llm/llm/src/types.ts:383"
+        "packages/llm/llm/src/types.ts:387"
       ]
     },
     {

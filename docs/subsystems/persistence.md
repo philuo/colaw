@@ -408,6 +408,18 @@ abstract stat(id: SessionId, options?: SessionPersistenceStatOptions): Promise<S
  * @returns one snapshot per stored session.
  */
 abstract list(options?: SessionPersistenceListOptions): Promise<readonly SessionPersistenceSnapshot[]>
+
+/**
+ * Remove one stored session's durable artifact for good.
+ *
+ * Backend-optional: a backend without a deletable medium keeps this base
+ * refusal. There is no tombstone, no trash, and no undo — the bytes leave
+ * the disk; callers own every accounting cleanup around the removal.
+ * @param _id - the stored session to remove.
+ * @param _options - optional cancellation; unused by the base refusal.
+ * @throws {SessionPersistenceNotFoundError} when the session does not exist.
+ */
+remove(_id: SessionId, _options?: SessionPersistenceListOptions): Promise<void>
 ```
 
 Types: [SessionId](core.md)

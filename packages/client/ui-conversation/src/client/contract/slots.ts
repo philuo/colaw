@@ -8,8 +8,7 @@ import type {
   MaybeSnapshotSelectorHook, ObservableSnapshot, SnapshotSelectorHook,
 } from '@deepseek-ai/dsh-client-store'
 import type {
-  FactoryComponentPropsOf, FactoryLocalComponentPropsOf,
-  InjectFace, PropsLocale, PropsRenderFactories, PropsRenderSlots, PropsRuntime, PropsStore,
+  InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SessionPendingInteraction } from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
@@ -154,8 +153,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     /**
      * Leading seat before the Session breadcrumbs, for window-chrome-adjacent
      * controls (macOS desktop sidebar reopen and New Session while the sidebar
-     * is hidden). The seat is laid out only while its occupant renders
-     * something, and it stays mounted through the blank-session state so a
+     * is hidden). The seat stays mounted through the blank-session state so a
      * hidden sidebar always keeps a reopen control on screen.
      */
     'conversation.session.header.leading': {
@@ -210,29 +208,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'conversation.input.permission': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
     /** Model selector inside the composer tool row. */
     'conversation.input.model': { kind: 'single'; scope: 'session'; owner: InputControlOwnerProps }
-  }
-
-  interface SlotFactoryMap {
-    /** Reusable Conversation content instantiated by presentation hosts. */
-    'conversation.content': {
-      scope: 'session-maybe'
-      props: ConversationContentInputProps
-      children: {
-        'conversation.session': { kind: 'single'; scope: 'session' }
-        'conversation.composer': { kind: 'chain'; scope: 'session' }
-        'conversation.composer.bar': { kind: 'single'; scope: 'session-maybe' }
-        'conversation.input.dock': { kind: 'list'; scope: 'session' }
-        'conversation.hero.brand.mark': { kind: 'single'; scope: 'root' }
-        'conversation.hero.workspace': { kind: 'single'; scope: 'root' }
-        'conversation.hero.agentPreset': { kind: 'single'; scope: 'session-maybe' }
-      }
-      inject: ConversationInjected
-      locale: 'conversation'
-      slots: {
-        views: { scope: 'session' }
-        widthControls: { scope: 'root'; props: ConversationWidthControlsInputProps }
-      }
-    }
   }
 
   interface GlobalStandardProps {
@@ -424,36 +399,19 @@ export interface HeroBrandMarkOwnerProps {
 /** Full props of the resident optional-Session Conversation shell. */
 export type ConversationSlotProps =
   PropsRuntime<'main.conversation'>
-  & PropsRenderSlots<'conversation.session.header'>
-  & PropsRenderFactories
-
-/** Inputs shared by main and embedded Conversation content occurrences. */
-export interface ConversationContentInputProps {
-  variant: 'main' | 'embedded'
-  phase: 'settling' | 'hero' | 'active'
-  hero: boolean
-}
-
-/** Values passed from shared content to its occurrence-selected width controls. */
-export interface ConversationWidthControlsInputProps {
-  /** Mounted Conversation body measured and styled by the selected controls. */
-  container: HTMLDivElement | null
-  /** Current body phase; handles render only for an active transcript. */
-  phase: ConversationContentInputProps['phase']
-}
-
-/** Full props of the reusable Conversation Factory definition. */
-export type ConversationContentProps = FactoryComponentPropsOf<'conversation.content'>
+  & PropsRenderSlots<
+    | 'conversation.session' | 'conversation.session.header'
+    | 'conversation.composer' | 'conversation.composer.bar'
+    | 'conversation.input.dock'
+    | 'conversation.hero.brand.mark'
+    | 'conversation.hero.workspace'
+    | 'conversation.hero.agentPreset'
+  >
+  & InjectFace<ConversationInjected>
+  & PropsLocale<'conversation'>
 
 /** Shared target-neutral Conversation store handle. */
 export type ConversationStore = ReturnType<typeof createConversationStore>
-
-/** Full props of the Factory's caller-selectable Conversation View position. */
-export type ConversationViewsProps = FactoryLocalComponentPropsOf<'conversation.content', 'views'>
-
-/** Full props of the Factory's caller-selected width-control position. */
-export type ConversationWidthControlsProps =
-  FactoryLocalComponentPropsOf<'conversation.content', 'widthControls'>
 
 /** Full props of the strict Session body. */
 export type ConversationSessionSlotProps =
@@ -467,9 +425,9 @@ export type ConversationSessionHeaderSlotProps =
   PropsRuntime<'conversation.session.header'>
   & PropsRenderSlots<
     'conversation.session.header.lineage'
-    | 'conversation.session.header.leading'
     | 'conversation.session.header.actions'
     | 'conversation.session.header.utilities'
+    | 'conversation.session.header.leading'
     | 'conversation.session.header.corner'
   >
   & PropsStore<ConversationStore>

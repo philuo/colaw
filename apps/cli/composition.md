@@ -8,10 +8,6 @@ The dsh-base bundle patch shared by the web, headless, sdk, and acp profiles; th
 ```mermaid
 flowchart LR
   cfg["packages/bundle/base/cordis.patch.yml<br/>cordis.yml"]
-  plugin_dsh_base_tool_plugin_manager["tool-plugin-manager<br/>@deepseek-ai/dsh-plugin-manager/tools"]
-  cfg --> plugin_dsh_base_tool_plugin_manager
-  plugin_dsh_base_plugin_manager["plugin-manager<br/>@deepseek-ai/dsh-plugin-manager"]
-  cfg --> plugin_dsh_base_plugin_manager
   plugin_dsh_base_timer["timer<br/>@deepseek-ai/cordis-plugin-timer"]
   cfg --> plugin_dsh_base_timer
   plugin_dsh_base_hmr["hmr<br/>@deepseek-ai/dsh-hmr"]
@@ -50,8 +46,8 @@ flowchart LR
   cfg --> plugin_dsh_base_settings
   plugin_dsh_base_credentials["credentials<br/>@deepseek-ai/dsh-credentials-local"]
   cfg --> plugin_dsh_base_credentials
-  plugin_dsh_base_llm_pi_ai["llm-pi-ai<br/>@deepseek-ai/dsh-llm-pi-ai"]
-  cfg --> plugin_dsh_base_llm_pi_ai
+  plugin_dsh_base_llm_provider["llm-provider<br/>@deepseek-ai/dsh-llm-provider"]
+  cfg --> plugin_dsh_base_llm_provider
   plugin_dsh_base_session_persistence_jsonl["session-persistence-jsonl<br/>@deepseek-ai/dsh-session-persistence-jsonl"]
   cfg --> plugin_dsh_base_session_persistence_jsonl
   plugin_dsh_base_attachment_local["attachment-local<br/>@deepseek-ai/dsh-attachment-local"]
@@ -168,8 +164,8 @@ flowchart LR
   cfg --> plugin_dsh_base_repeat_tool_reminder
   plugin_dsh_base_web["web<br/>@deepseek-ai/dsh-web"]
   cfg --> plugin_dsh_base_web
-  plugin_dsh_base_web_search_deepseek["web-search-deepseek<br/>@deepseek-ai/dsh-web-search-deepseek"]
-  cfg --> plugin_dsh_base_web_search_deepseek
+  plugin_dsh_base_web_search_anysearch["web-search-anysearch<br/>@deepseek-ai/dsh-web-search-anysearch"]
+  cfg --> plugin_dsh_base_web_search_anysearch
   plugin_dsh_base_web_fetch_http["web-fetch-http<br/>@deepseek-ai/dsh-web-fetch-http"]
   cfg --> plugin_dsh_base_web_fetch_http
   plugin_dsh_base_tool_web["tool-web<br/>@deepseek-ai/dsh-tool-web"]
@@ -190,8 +186,6 @@ flowchart LR
 
 | Plugin id | Package / module |
 | --- | --- |
-| `tool-plugin-manager` | `@deepseek-ai/dsh-plugin-manager/tools` |
-| `plugin-manager` | `@deepseek-ai/dsh-plugin-manager` |
 | `timer` | `@deepseek-ai/cordis-plugin-timer` |
 | `hmr` | `@deepseek-ai/dsh-hmr` |
 | `llm` | `@deepseek-ai/dsh-llm` |
@@ -211,7 +205,7 @@ flowchart LR
 | `llm-retry` | `@deepseek-ai/dsh-llm-retry` |
 | `settings` | `@deepseek-ai/dsh-settings-file` |
 | `credentials` | `@deepseek-ai/dsh-credentials-local` |
-| `llm-pi-ai` | `@deepseek-ai/dsh-llm-pi-ai` |
+| `llm-provider` | `@deepseek-ai/dsh-llm-provider` |
 | `session-persistence-jsonl` | `@deepseek-ai/dsh-session-persistence-jsonl` |
 | `attachment-local` | `@deepseek-ai/dsh-attachment-local` |
 | `session-query-sqlite` | `@deepseek-ai/dsh-session-query-sqlite` |
@@ -270,7 +264,7 @@ flowchart LR
 | `tool-ralph` | `@deepseek-ai/dsh-tool-ralph` |
 | `repeat-tool-reminder` | `@deepseek-ai/dsh-repeat-tool-reminder` |
 | `web` | `@deepseek-ai/dsh-web` |
-| `web-search-deepseek` | `@deepseek-ai/dsh-web-search-deepseek` |
+| `web-search-anysearch` | `@deepseek-ai/dsh-web-search-anysearch` |
 | `web-fetch-http` | `@deepseek-ai/dsh-web-fetch-http` |
 | `tool-web` | `@deepseek-ai/dsh-tool-web` |
 | `mcp-resources` | `@deepseek-ai/dsh-mcp-resources` |

@@ -56,6 +56,7 @@ import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
 import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
 import Lsp from '@deepseek-ai/dsh-lsp'
 import * as ToolLsp from '@deepseek-ai/dsh-tool-lsp'
+import * as ToolMineru from '@deepseek-ai/dsh-tool-mineru'
 import * as ToolSkill from '@deepseek-ai/dsh-tool-skill'
 import * as ToolSessionQuery from '@deepseek-ai/dsh-tool-session-query'
 import * as ToolJobs from '@deepseek-ai/dsh-tool-jobs'
@@ -64,9 +65,6 @@ import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-us
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
-import type PluginManager from '@deepseek-ai/dsh-plugin-manager'
-import * as PluginManagerTools from '@deepseek-ai/dsh-plugin-manager/tools'
-import SandboxPolicy from '@deepseek-ai/dsh-sandbox-policy'
 import McpResources from '@deepseek-ai/dsh-mcp-resources'
 import * as ToolSubagent from '@deepseek-ai/dsh-tool-subagent'
 import { registerListSubagentModels } from '../packages/subagent/tool-subagent/src/list-models.ts'
@@ -202,19 +200,6 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
-  {
-    pkg: '@deepseek-ai/dsh-plugin-manager',
-    dir: 'plugin-manager',
-    source: 'packages/boot/plugin-manager/src/tools.ts',
-    requires: ['ctx.tools', 'ctx.pluginManager', 'ctx.sandboxPolicy'],
-    writes: ['tool/call', 'tool/result', 'user/message'],
-    async mount(ctx) {
-      // Schema harvest never executes a management method or opens a profile.
-      ctx.provide('pluginManager', {} as PluginManager)
-      await ctx.plugin(SandboxPolicy)
-      await ctx.plugin(PluginManagerTools)
-    },
-  },
   {
     pkg: '@deepseek-ai/dsh-mcp-resources',
     dir: 'mcp-resources',
@@ -474,6 +459,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The lsp tool keeps provider selection and language-server subprocesses behind ctx.lsp, so its model-visible schema stays stable across providers. Requires a registered provider (e.g. `@deepseek-ai/dsh-lsp-stdio`) at runtime; without one, a query returns the structured `LSP_UNAVAILABLE` error rather than changing the schema.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-mineru',
+    dir: 'tool-mineru',
+    source: 'packages/tools/tool-mineru/src/index.ts',
+    requires: ['ctx.tools'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      // Schema registration performs no network call; the token is config.
+      await ctx.plugin(ToolMineru, { token: 'catalog-placeholder' })
+    },
+    note:
+      'mineru_parse_document uploads a workspace file to the MinerU cloud API and writes the extracted Markdown beside the source; the Bearer token is product configuration (or the MINERU_API_KEY managed credential), never an environment read.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-ralph',

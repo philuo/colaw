@@ -10,7 +10,13 @@ import { watchConfig } from '../src/watch-config.ts'
 import Hmr from '../src/index.ts'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
-import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterEach, describe, expect, it as vitestIt, onTestFinished, vi } from 'vitest'
+// dsh-hmr hot-reloads Node ESM/CJS loader internals (--expose-internals); Bun
+// exposes no equivalent, so tests that boot the real HMR service run on Node
+// only. Pure watcher-lifecycle and path-helper tests stay ungated below.
+const nodeLoaderHmr = process.versions.bun === undefined
+const it = nodeLoaderHmr ? vitestIt : vitestIt.skip
+const itFs = vitestIt
 import { FSWatcher, type ChokidarOptions } from 'chokidar'
 
 const configWatch = vi.hoisted(() => ({ create: undefined as ((options?: ChokidarOptions) => FSWatcher) | undefined }))
@@ -213,7 +219,7 @@ describe('HMR exact config paths', () => {
     expect(calls).toBe(2)
   })
 
-  it('observes consecutive writes after the previous configuration was applied', async () => {
+  itFs('observes consecutive writes after the previous configuration was applied', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-hmr-consecutive-'))
     hmrRoots.push(dir)
     const filename = join(dir, 'package.json')
@@ -244,7 +250,7 @@ describe('HMR exact config paths', () => {
     await vi.waitFor(() => { expect(observed).toEqual(['enabled', 'disabled']) }, { timeout: 6_000 })
   }, 10_000)
 
-  it('rejects a patch path whose parent is a regular file', async () => {
+  itFs('rejects a patch path whose parent is a regular file', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-patch-parent-'))
     hmrRoots.push(dir)
     const parent = join(dir, 'file')
@@ -255,7 +261,7 @@ describe('HMR exact config paths', () => {
       .rejects.toThrow('config watch parent is not a directory')
   })
 
-  it('stops searching when the filesystem root cannot be read', async () => {
+  itFs('stops searching when the filesystem root cannot be read', async () => {
     const failure = Object.assign(new Error('filesystem root unavailable'), { code: 'ENOENT' })
     const read = vi.mocked(fsPromises.stat).mockClear().mockRejectedValueOnce(failure)
     onTestFinished(() => { read.mockRestore() })
@@ -292,7 +298,7 @@ describe('HMR exact config paths', () => {
     expect(warn).toHaveBeenCalledWith(failure)
   })
 
-  it('closes a ready watcher when its context has already been disposed', async () => {
+  itFs('closes a ready watcher when its context has already been disposed', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'dsh-patch-disposed-'))
     hmrRoots.push(dir)
     const root = new Context()

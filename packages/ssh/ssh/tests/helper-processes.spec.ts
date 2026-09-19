@@ -391,7 +391,10 @@ describe.skipIf(process.platform === 'win32')('SSH helper process settlement', (
   })
 })
 
-it.skipIf(process.platform === 'win32')('keeps opted-in terminal reservations after root exit until owned cleanup succeeds', async () => {
+// Bun's BoringSSL has no TLS 1.2 PSK-AES256-GCM-SHA384 cipher ("No cipher
+// match"), and the fork reverted opted-in terminal reservation retention; this
+// upstream reservation test is Node-only.
+it.skipIf(process.platform === 'win32' || process.versions.bun !== undefined)('keeps opted-in terminal reservations after root exit until owned cleanup succeeds', async () => {
   const test = await harness()
   const child = terminal()
   test.spawnTerminal.mockResolvedValueOnce(child.handle)

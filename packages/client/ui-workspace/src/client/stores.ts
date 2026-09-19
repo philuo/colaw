@@ -78,19 +78,25 @@ export function createWorkspaceViewStore(): EngineStoreHandle<WorkspaceViewState
         d.orderBy = mode
       },
       setGroupExpanded: (d, key: string, expanded: boolean) => {
-        d.groupExpansion ??= {}
+        // Persisted state may predate a field; the cast marks the read as
+        // migration-tolerant even though the in-memory state always has it.
+        const legacy = d as Omit<WorkspaceViewState, 'groupExpansion'>
+          & Partial<Pick<WorkspaceViewState, 'groupExpansion'>>
+        legacy.groupExpansion ??= {}
         d.groupExpansion[key] = expanded
       },
       retainAccountKeys: (d, workspaceKeys: readonly string[]) => {
         const retained = new Set(workspaceKeys)
         // 持久化状态可能来自旧 schema 而缺字段：读取与写入都做兜底自愈。
-        d.groupExpansion ??= {}
-        d.sessionOrderByAccount ??= {}
+        const legacy = d as Omit<WorkspaceViewState, 'groupExpansion' | 'sessionOrderByAccount'>
+          & Partial<Pick<WorkspaceViewState, 'groupExpansion' | 'sessionOrderByAccount'>>
+        legacy.groupExpansion ??= {}
+        legacy.sessionOrderByAccount ??= {}
         d.groupExpansion = Object.fromEntries(
-          Object.entries(d.groupExpansion).filter(([key]) => retained.has(key)),
+          Object.entries(legacy.groupExpansion).filter(([key]) => retained.has(key)),
         )
         d.sessionOrderByAccount = Object.fromEntries(
-          Object.entries(d.sessionOrderByAccount).filter(([key]) => retained.has(key)),
+          Object.entries(legacy.sessionOrderByAccount).filter(([key]) => retained.has(key)),
         )
         delete (d as WorkspaceViewState & { sessionUpdatedAtByAccount?: unknown }).sessionUpdatedAtByAccount
       },

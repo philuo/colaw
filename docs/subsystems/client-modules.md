@@ -172,6 +172,18 @@ onRebuilt(listener: (id: string, rev: string) => void): () => void
  * @returns the unsubscriber.
  */
 onGraphChanged(listener: () => void): () => void
+
+/**
+ * Defer recomposition while a bulk mount runs (the desktop host mounts its
+ * deferred plugin tree in the background). Every arriving entry otherwise
+ * pays a full graph recompose — re-concatenating every client bundle and
+ * its identity source map — which costs ~200ms per arriving plugin and adds
+ * seconds of CPU that no request ever consumes: the boot page fetched its
+ * generation's batches long before. The served generation stays the last
+ * composed one; resuming recomposes the accumulated dirty set once.
+ * @param suspended - true to defer composition, false to flush the backlog.
+ */
+suspendComposition(suspended: boolean): void
 ```
 
 Source: [`packages/client/modules/src/index.ts`](../../packages/client/modules/src/index.ts)

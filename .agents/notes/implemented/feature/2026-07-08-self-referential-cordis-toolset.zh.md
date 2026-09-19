@@ -14,7 +14,7 @@ Status: implemented
 
 Host 和 Client runner 保留程序侧生命周期和浏览器消费者。Host 定义在新的 vm realm 中求值，并接收 context façade：服务访问需要声明注入，框架内部结构不可见，注册归定义的 fiber 所有。工具输出先回到 Host realm 进行归一化，再接受校验。释放会等待 fiber 所有的 effect。vm 防止意外污染全局变量；注入的文件系统、shell 和网络服务仍有真实权限，因此它不是安全边界。
 
-定义仅存在于进程中。重启和会话恢复不会从历史调用重建它们。[Creator 持久化插件决策](../architecture/2026-09-16-creator-persistent-plugin-management.zh.md)负责 agent 安装、审批和 profile 持久化。内置模型工具不创建或修改 runner 定义。
+定义仅存在于进程中。重启和会话恢复不会从历史调用重建它们。内置模型工具不创建或修改 runner 定义。
 
 ## Alternatives considered
 

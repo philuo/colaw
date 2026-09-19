@@ -155,7 +155,6 @@ export class FakeApiClient {
   /** Optional Host opening cursor override for stale-page and reconnect tests. */
   followCursor: number | undefined
   controlBaseline: SessionControlBaseline = {
-    queues: {},
     jobs: {},
     projections: {},
   }

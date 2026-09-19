@@ -24,7 +24,7 @@
 // assertConsumed for the teardown fixture-consumption check).
 import { existsSync, readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'

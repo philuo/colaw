@@ -81,7 +81,7 @@ export interface DeepSeekModelsValidationFailure {
 /** A row's stored array field, or `undefined` when unset or not a string array. */
 export function arrayOf(value: unknown): readonly string[] | undefined {
   return Array.isArray(value) && value.every(item => typeof item === 'string')
-    ? value as readonly string[]
+    ? value
     : undefined
 }
 

@@ -110,6 +110,7 @@ Semantics every implementation must honor:
 - saveText persists the FULL `content` verbatim and returns an opaque locator, exact byte length, and model-facing retrieval guidance.
 - Storage is scoped by the request's SaveTextSpill.owner session; the backend chooses a private (not world-readable) location and a collision-free name derived from — never equal to — the caller's `suggestedName`.
 - `saveText` REJECTS on a real storage failure (permissions, ENOSPC, backend unavailable); the caller decides how to degrade (the spill policy treats a rejection as best-effort and keeps the inline result).
+- `purgeSession` is best-effort and never rejects: it removes everything the implementation can attribute to that session and reports (never throws) what it cannot.
 
 ```ts cordis-catalog
 /**
@@ -118,6 +119,16 @@ Semantics every implementation must honor:
  * @returns the saved artifact's {@link SpillRef}; rejects on a storage failure.
  */
 abstract saveText(input: SaveTextSpill): Promise<SpillRef>
+
+/**
+ * Remove every stored artifact one session owns. The permanent-deletion
+ * path calls this so spilled temp files do not outlive their session;
+ * implementations are best-effort — this NEVER rejects, and a filesystem
+ * failure reports and swallows rather than failing the deletion it follows.
+ * @param sessionId - the session whose artifacts are removed.
+ * @returns resolution once every location was attempted (never rejects).
+ */
+abstract purgeSession(sessionId: string): Promise<void>
 ```
 
 Source: [`packages/spill/spill/src/index.ts`](../../packages/spill/spill/src/index.ts)

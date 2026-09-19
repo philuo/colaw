@@ -7,7 +7,12 @@
 import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest'
+import { afterAll, describe, expect, it as vitestIt, onTestFinished, vi } from 'vitest'
+// dsh-hmr hot-reloads Node's ESM/CJS loader internals (the --expose-internals
+// cascaded loader); Bun exposes no equivalent, so tests that construct the real
+// HMR service run on Node only. Pure watcher/path helpers keep ungated tests.
+const nodeLoaderHmr = process.versions.bun === undefined
+const it = nodeLoaderHmr ? vitestIt : vitestIt.skip
 import { FSWatcher, type ChokidarOptions } from 'chokidar'
 import { Context } from '@deepseek-ai/cordis'
 import Hmr from '../src/index.ts'

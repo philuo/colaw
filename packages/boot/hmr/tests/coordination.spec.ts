@@ -8,7 +8,13 @@ import Loader, { ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
 import { FSWatcher } from 'chokidar'
-import { expect, it, onTestFinished, vi } from 'vitest'
+import { expect, it as vitestIt, onTestFinished, vi } from 'vitest'
+// dsh-hmr hot-reloads Node ESM/CJS loader internals (--expose-internals); Bun
+// exposes no equivalent, so real-service tests run on Node only. The one test
+// that asserts the missing-internals rejection must pass on every runtime.
+const nodeLoaderHmr = process.versions.bun === undefined
+const it = nodeLoaderHmr ? vitestIt : vitestIt.skip
+const itOnAnyRuntime = vitestIt
 import Hmr from '../src/index.ts'
 
 const watchers = vi.hoisted(() => [] as FSWatcher[])
@@ -183,7 +189,7 @@ it('closes an exact watcher from its running transaction', async () => {
   await hmr.runExclusive(async () => { await dispose() })
 })
 
-it('rejects unavailable Node internals before starting a watcher', async () => {
+itOnAnyRuntime('rejects unavailable Node internals before starting a watcher', async () => {
   const native = vi.spyOn(ModuleLoader, 'fromInternal').mockReturnValue(undefined)
   onTestFinished(() => { native.mockRestore() })
   await expect(fixture()).rejects.toThrow('--expose-internals')

@@ -1804,13 +1804,13 @@ SHA-256: `0ddab4577db37a3e0d9e3a91761735c8ef6f5629d526ab8ecaeeea19c097c8f8`
 | `kind` | 必需 | `"plugin"` |
 | `plugin` | 必需 | `string` |
 
-<a id="persistence-type-eventagentinboxspliceddatainserted0source11"></a>
+<a id="persistence-type-eventagentinboxspliceddatainserted0source10"></a>
 
-### `event:agent/inbox/spliced.data.inserted[0].source[11]`
+### `event:agent/inbox/spliced.data.inserted[0].source[10]`
 
 SHA-256: `6a4f72e2e179e17b922f2a9392c0e1c8f8c707f32494372454850a3eb184a6e7`
 
-来源：[`packages/api/session-controller/src/types.ts:381`](../packages/api/session-controller/src/types.ts)
+来源：[`packages/api/session-controller/src/types.ts:383`](../packages/api/session-controller/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -1818,17 +1818,37 @@ SHA-256: `6a4f72e2e179e17b922f2a9392c0e1c8f8c707f32494372454850a3eb184a6e7`
 | `kind` | 必需 | `"user"` |
 | `rpcId` | 必需 | `string` |
 
-<a id="persistence-type-eventagentinboxspliceddatainserted0source15references"></a>
+<a id="persistence-type-eventagentinboxspliceddatainserted0source15changes"></a>
 
-### `event:agent/inbox/spliced.data.inserted[0].source[15].references`
+### `event:agent/inbox/spliced.data.inserted[0].source[15].changes`
+
+SHA-256: `2ab12a0e345658f9342816d773fe610f049982bcad82631f43b9205abe43e5ee`
+
+[`packages/context/agent-instructions/src/render.ts#AgentInstructionChange`](#persistence-type-packagescontextagent-instructionssrcrendertsagentinstructionchange) 的数组。
+
+<a id="persistence-type-eventagentinboxspliceddatainserted0source15changes0action"></a>
+
+### `event:agent/inbox/spliced.data.inserted[0].source[15].changes[0].action`
+
+SHA-256: `904bf499d98be4a3a5f836fcac533b6c4899569b018071e6604e1d32657d00fd`
+
+以下类型之一：
+
+- `"remove"`
+- `"replace"`
+- `"set"`
+
+<a id="persistence-type-eventagentinboxspliceddatainserted0source16references"></a>
+
+### `event:agent/inbox/spliced.data.inserted[0].source[16].references`
 
 SHA-256: `df843efd87c78cf8de98f8e0d0216956cd568d0d0e56a22c853663e274aa1a18`
 
-[`event:agent/inbox/spliced.data.inserted[0].source[15].references[0]`](#persistence-type-eventagentinboxspliceddatainserted0source15references0) 的数组。
+[`event:agent/inbox/spliced.data.inserted[0].source[16].references[0]`](#persistence-type-eventagentinboxspliceddatainserted0source16references0) 的数组。
 
-<a id="persistence-type-eventagentinboxspliceddatainserted0source15references0"></a>
+<a id="persistence-type-eventagentinboxspliceddatainserted0source16references0"></a>
 
-### `event:agent/inbox/spliced.data.inserted[0].source[15].references[0]`
+### `event:agent/inbox/spliced.data.inserted[0].source[16].references[0]`
 
 SHA-256: `4f91f187baeabef5c7950c4780d31bbe39f3345dff591a6cf26ac7e135ac1cf4`
 
@@ -1848,37 +1868,17 @@ SHA-256: `4f91f187baeabef5c7950c4780d31bbe39f3345dff591a6cf26ac7e135ac1cf4`
 | `sessionId` | 必需 | `string` |
 | `truncated` | 必需 | `boolean` |
 
-<a id="persistence-type-eventagentinboxspliceddatainserted0source16changes"></a>
+<a id="persistence-type-eventagentinboxspliceddatainserted0source18entries"></a>
 
-### `event:agent/inbox/spliced.data.inserted[0].source[16].changes`
-
-SHA-256: `2ab12a0e345658f9342816d773fe610f049982bcad82631f43b9205abe43e5ee`
-
-[`packages/context/agent-instructions/src/render.ts#AgentInstructionChange`](#persistence-type-packagescontextagent-instructionssrcrendertsagentinstructionchange) 的数组。
-
-<a id="persistence-type-eventagentinboxspliceddatainserted0source16changes0action"></a>
-
-### `event:agent/inbox/spliced.data.inserted[0].source[16].changes[0].action`
-
-SHA-256: `904bf499d98be4a3a5f836fcac533b6c4899569b018071e6604e1d32657d00fd`
-
-以下类型之一：
-
-- `"remove"`
-- `"replace"`
-- `"set"`
-
-<a id="persistence-type-eventagentinboxspliceddatainserted0source17entries"></a>
-
-### `event:agent/inbox/spliced.data.inserted[0].source[17].entries`
+### `event:agent/inbox/spliced.data.inserted[0].source[18].entries`
 
 SHA-256: `aba175fb20ffc71112c55efe70458ff5d7dbfb83501892b4ba8d077f0ea5d7ba`
 
-[`event:agent/inbox/spliced.data.inserted[0].source[17].entries[0]`](#persistence-type-eventagentinboxspliceddatainserted0source17entries0) 的数组。
+[`event:agent/inbox/spliced.data.inserted[0].source[18].entries[0]`](#persistence-type-eventagentinboxspliceddatainserted0source18entries0) 的数组。
 
-<a id="persistence-type-eventagentinboxspliceddatainserted0source17entries0"></a>
+<a id="persistence-type-eventagentinboxspliceddatainserted0source18entries0"></a>
 
-### `event:agent/inbox/spliced.data.inserted[0].source[17].entries[0]`
+### `event:agent/inbox/spliced.data.inserted[0].source[18].entries[0]`
 
 SHA-256: `83079c8a3f733ac3fa603eefa0fbb4737ca4d8b69e7e2e7298b60f9ac4098693`
 
@@ -2186,7 +2186,7 @@ SHA-256: `c93b6f51b399607349b4bcc66b58e848a44250ffc1e2537207bd092dfff94192`
 
 SHA-256: `647cb2e3aeb58e27d1d4d60011f208bb66dce257e8654193c533b47c4c22c253`
 
-来源：[`packages/llm/llm/src/types.ts:427`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:431`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -2200,7 +2200,7 @@ SHA-256: `647cb2e3aeb58e27d1d4d60011f208bb66dce257e8654193c533b47c4c22c253`
 
 SHA-256: `95080295115fbd83544520ba247b68a03790131f6a2eac323d388758cb542f65`
 
-来源：[`packages/llm/llm/src/types.ts:428`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:432`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -2214,7 +2214,7 @@ SHA-256: `95080295115fbd83544520ba247b68a03790131f6a2eac323d388758cb542f65`
 
 SHA-256: `2abb711460e6238d851c30f3e4bdd87a2aa1887ee70575b3d3b7b25610673095`
 
-来源：[`packages/llm/llm/src/types.ts:429`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:433`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -2228,7 +2228,7 @@ SHA-256: `2abb711460e6238d851c30f3e4bdd87a2aa1887ee70575b3d3b7b25610673095`
 
 SHA-256: `88a610b831be6d92612a464be5c7d0b88ec24d97bd299837bf74bf7672183c9a`
 
-来源：[`packages/llm/llm/src/types.ts:430`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:434`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -2244,7 +2244,7 @@ SHA-256: `88a610b831be6d92612a464be5c7d0b88ec24d97bd299837bf74bf7672183c9a`
 
 SHA-256: `90c811b8c2668898515e69a24e82caffeb08517f9c7aa193867ff0380f3b535d`
 
-来源：[`packages/llm/llm/src/types.ts:431`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:435`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -2258,7 +2258,7 @@ SHA-256: `90c811b8c2668898515e69a24e82caffeb08517f9c7aa193867ff0380f3b535d`
 
 SHA-256: `f1a96afe7503ac1817de769cd0ba13d9b80111c7034c50106b3344ecc14cc515`
 
-来源：[`packages/llm/llm/src/types.ts:432`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:436`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -2271,7 +2271,7 @@ SHA-256: `f1a96afe7503ac1817de769cd0ba13d9b80111c7034c50106b3344ecc14cc515`
 
 SHA-256: `a2b49331716ba0a7078b026d145306a70eae64b7313c3e6204bd931e75ec3bb1`
 
-来源：[`packages/llm/llm/src/types.ts:433`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:437`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -4239,7 +4239,7 @@ SHA-256: `ebb768d85ec87fb68e42fc14fd7d8535b5ac11791b14d04c6770180f0a719bf8`
 
 SHA-256: `f311671e07bc7fa645a0b6597de9966b97147956565296ba76a36543801b66c5`
 
-来源：[`packages/llm/llm/src/types.ts:383`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:387`](../packages/llm/llm/src/types.ts)
 
 `"in-history"`
 
@@ -4497,7 +4497,7 @@ SHA-256: `83da72c6857601c75da11212ef847f57d457b9c99f0a82246dcdff3e26700239`
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
-| `action` | 必需 | [`event:agent/inbox/spliced.data.inserted[0].source[16].changes[0].action`](#persistence-type-eventagentinboxspliceddatainserted0source16changes0action) |
+| `action` | 必需 | [`event:agent/inbox/spliced.data.inserted[0].source[15].changes[0].action`](#persistence-type-eventagentinboxspliceddatainserted0source15changes0action) |
 | `digest` | 可选 | `string` |
 | `path` | 必需 | `string` |
 | `scope` | 必需 | `string` |
@@ -4514,7 +4514,7 @@ SHA-256: `6f22a9d02b9a1f1157f3b0e7bdccd7e7b12b085c4efdb709dfc74a465cd4e590`
 |---|---|---|
 | `baseline` | 可选 | `true` |
 | `baselineIdentity` | 可选 | `string` |
-| `changes` | 必需 | [`event:agent/inbox/spliced.data.inserted[0].source[16].changes`](#persistence-type-eventagentinboxspliceddatainserted0source16changes) |
+| `changes` | 必需 | [`event:agent/inbox/spliced.data.inserted[0].source[15].changes`](#persistence-type-eventagentinboxspliceddatainserted0source15changes) |
 | `form` | 必需 | `"instructions"` |
 | `kind` | 必需 | `"agent-instructions"` |
 
@@ -4530,7 +4530,7 @@ SHA-256: `f56c5b59ca0161310c338d31dd16cf14287ccd602ff4181058df178c1c286d7f`
 |---|---|---|
 | `form` | 必需 | `"recall"` |
 | `kind` | 必需 | `"session-reference"` |
-| `references` | 必需 | [`event:agent/inbox/spliced.data.inserted[0].source[15].references`](#persistence-type-eventagentinboxspliceddatainserted0source15references) |
+| `references` | 必需 | [`event:agent/inbox/spliced.data.inserted[0].source[16].references`](#persistence-type-eventagentinboxspliceddatainserted0source16references) |
 | `version` | 必需 | `1` |
 
 <a id="persistence-type-packagescoreagentsrctypestsinboxtarget"></a>
@@ -5174,7 +5174,7 @@ SHA-256: `4c965666d5b42116945bc356087cd5e1fd549e6dece560785ed60511059a8283`
 
 - [`packages/context/agent-instructions/src/state.ts#AgentInstructionSource`](#persistence-type-packagescontextagent-instructionssrcstatetsagentinstructionsource)
 - [`packages/llm/llm/src/message.ts#ToolMessageSource`](#persistence-type-packagesllmllmsrcmessagetstoolmessagesource)
-- [`event:agent/inbox/spliced.data.inserted[0].source[11]`](#persistence-type-eventagentinboxspliceddatainserted0source11)
+- [`event:agent/inbox/spliced.data.inserted[0].source[10]`](#persistence-type-eventagentinboxspliceddatainserted0source10)
 - [`event:agent/inbox/spliced.data.inserted[0].source[19]`](#persistence-type-eventagentinboxspliceddatainserted0source19)
 - [`packages/skill/tool-skill/src/index.ts#SkillCatalogSource`](#persistence-type-packagesskilltool-skillsrcindextsskillcatalogsource)
 - [`packages/skill/skill/src/index.ts#SkillInvocationSource`](#persistence-type-packagesskillskillsrcindextsskillinvocationsource)
@@ -5379,7 +5379,7 @@ SHA-256: `814d9434e1ddf9078612b3b34322f26e9363b469213335007f7e9ba7fee9464e`
 
 SHA-256: `0acd94fe8794574c9ae72c7855ee16d29c546096d4af760d16d1225385764555`
 
-来源：[`packages/llm/llm/src/types.ts:404`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:408`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -5392,7 +5392,7 @@ SHA-256: `0acd94fe8794574c9ae72c7855ee16d29c546096d4af760d16d1225385764555`
 
 SHA-256: `071d92b9dac661fcc826c678cf64d188f26fb93aab79c627b11a03acdd34dfca`
 
-来源：[`packages/llm/llm/src/types.ts:426`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:430`](../packages/llm/llm/src/types.ts)
 
 以下类型之一：
 
@@ -5457,7 +5457,7 @@ SHA-256: `d61574d68558c5a184429e70b04da393dd5460bf5cc3ddef814546e659bd5127`
 
 SHA-256: `7f5f2a8618c2ece530a18b1358b890fb57fb8c35705e47b66bff2296f8c6e889`
 
-来源：[`packages/llm/llm/src/types.ts:447`](../packages/llm/llm/src/types.ts)
+来源：[`packages/llm/llm/src/types.ts:451`](../packages/llm/llm/src/types.ts)
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
@@ -5715,7 +5715,7 @@ SHA-256: `fc2ae6962f9f8801c2b1e414668e1e17cbb7544c4f39381198977a38bd10c093`
 
 | 属性 | 存在性 | 类型 |
 |---|---|---|
-| `entries` | 必需 | [`event:agent/inbox/spliced.data.inserted[0].source[17].entries`](#persistence-type-eventagentinboxspliceddatainserted0source17entries) |
+| `entries` | 必需 | [`event:agent/inbox/spliced.data.inserted[0].source[18].entries`](#persistence-type-eventagentinboxspliceddatainserted0source18entries) |
 | `form` | 必需 | `"catalog"` |
 | `kind` | 必需 | `"skill-catalog"` |
 | `update` | 可选 | `true` |
@@ -6339,7 +6339,7 @@ SHA-256: `57f3f606ff8b6c84d9c443faace9d1dd10cca0354f37a4f515ef075f7c351b90`
 
 SHA-256: `4cd48f3e5108bd6ebedf7301c3638839b8b2b9db8dbd493974177fbdeb91a01b`
 
-来源：[`packages/api/session-controller/src/types.ts:376`](../packages/api/session-controller/src/types.ts) · [`packages/attachment/attachment/src/brand.ts:6`](../packages/attachment/attachment/src/brand.ts) · [`packages/compaction/compaction/src/brand.ts:4`](../packages/compaction/compaction/src/brand.ts) · [`packages/core/session/src/types.ts:19`](../packages/core/session/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:20`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:32`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:8`](../packages/experimental/agent-team/src/types.ts) · [`packages/feedback/message-feedback/src/types.ts:14`](../packages/feedback/message-feedback/src/types.ts) · [`packages/goal/goal/src/types.ts:17`](../packages/goal/goal/src/types.ts) · [`packages/interaction/commands/src/brand.ts:31`](../packages/interaction/commands/src/brand.ts) · [`packages/interaction/user-approval/src/types.ts:17`](../packages/interaction/user-approval/src/types.ts) · [`packages/llm/llm-retry/src/brand.ts:4`](../packages/llm/llm-retry/src/brand.ts) · [`packages/llm/llm/src/brand.ts:16`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:31`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:43`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:67`](../packages/llm/llm/src/brand.ts) · [`packages/schedule/schedule/src/types.ts:10`](../packages/schedule/schedule/src/types.ts) · [`packages/session/session-title/src/index.ts:42`](../packages/session/session-title/src/index.ts) · [`packages/session/session-title/src/types.ts:17`](../packages/session/session-title/src/types.ts) · [`packages/webhook/webhook/src/brand.ts:12`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:6`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:9`](../packages/webhook/webhook/src/brand.ts) · [`packages/workflow/workflow/src/types.ts:13`](../packages/workflow/workflow/src/types.ts)
+来源：[`packages/api/session-controller/src/types.ts:378`](../packages/api/session-controller/src/types.ts) · [`packages/attachment/attachment/src/brand.ts:6`](../packages/attachment/attachment/src/brand.ts) · [`packages/compaction/compaction/src/brand.ts:4`](../packages/compaction/compaction/src/brand.ts) · [`packages/core/session/src/types.ts:19`](../packages/core/session/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:20`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:32`](../packages/experimental/agent-team/src/types.ts) · [`packages/experimental/agent-team/src/types.ts:8`](../packages/experimental/agent-team/src/types.ts) · [`packages/feedback/message-feedback/src/types.ts:14`](../packages/feedback/message-feedback/src/types.ts) · [`packages/goal/goal/src/types.ts:17`](../packages/goal/goal/src/types.ts) · [`packages/interaction/commands/src/brand.ts:31`](../packages/interaction/commands/src/brand.ts) · [`packages/interaction/user-approval/src/types.ts:17`](../packages/interaction/user-approval/src/types.ts) · [`packages/llm/llm-retry/src/brand.ts:4`](../packages/llm/llm-retry/src/brand.ts) · [`packages/llm/llm/src/brand.ts:16`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:31`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:43`](../packages/llm/llm/src/brand.ts) · [`packages/llm/llm/src/brand.ts:67`](../packages/llm/llm/src/brand.ts) · [`packages/schedule/schedule/src/types.ts:10`](../packages/schedule/schedule/src/types.ts) · [`packages/session/session-title/src/index.ts:42`](../packages/session/session-title/src/index.ts) · [`packages/session/session-title/src/types.ts:17`](../packages/session/session-title/src/types.ts) · [`packages/webhook/webhook/src/brand.ts:12`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:6`](../packages/webhook/webhook/src/brand.ts) · [`packages/webhook/webhook/src/brand.ts:9`](../packages/webhook/webhook/src/brand.ts) · [`packages/workflow/workflow/src/types.ts:13`](../packages/workflow/workflow/src/types.ts)
 
 `string`
 

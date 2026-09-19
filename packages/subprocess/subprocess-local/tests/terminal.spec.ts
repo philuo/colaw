@@ -52,7 +52,7 @@ class FakePty {
   }
 
   asPty(): IPty {
-    return this as unknown as IPty
+    return this
   }
 }
 
@@ -187,7 +187,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: () => stopped.promise,
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, 'darwin', owner)
 
     await handle.terminate()
 
@@ -212,7 +212,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: () => stopped.promise,
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 100, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 100, 'darwin', owner)
 
     const terminating = handle.terminate()
     await vi.advanceTimersByTimeAsync(1)
@@ -239,7 +239,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: () => stopped.promise,
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, 'darwin', owner)
 
     const terminating = handle.terminate()
     await vi.advanceTimersByTimeAsync(10)
@@ -260,7 +260,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit,
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, 'darwin', owner)
 
     await expect(handle.terminate()).rejects.toBe(failure)
     expect(signals).toEqual(['SIGTERM', 'SIGKILL'])
@@ -279,7 +279,7 @@ describe('LocalTerminalHandle', () => {
         .mockRejectedValueOnce(finalFailure),
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, 'darwin', owner)
 
     await expect(handle.terminate()).rejects.toMatchObject({
       errors: [firstFailure, finalFailure],
@@ -294,7 +294,7 @@ describe('LocalTerminalHandle', () => {
     const signal = vi.fn()
     const terminateForHostExit = vi.fn()
     const owner: BoundProcessOwner = { signal, waitForExit: async () => {}, terminateForHostExit }
-    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), inspector, 10, 'darwin', owner)
 
     handle.terminateForHostExit()
 
@@ -318,6 +318,7 @@ describe('LocalTerminalHandle', () => {
       pty.asPty(),
       new FakeInspector(),
       10,
+      'darwin',
       owner,
       () => { throw failure },
     )
@@ -339,7 +340,7 @@ describe('LocalTerminalHandle', () => {
       terminateForHostExit: vi.fn(),
       cleanup,
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, 'darwin', owner)
 
     await expect(handle.terminate()).rejects.toThrow('terminal managed-range cleanup failed')
     await expect(handle.terminate()).rejects.toThrow('terminal managed-range cleanup failed')
@@ -356,7 +357,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: async () => {},
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 100, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 100, 'darwin', owner)
     let settled = false
 
     const terminating = handle.terminate().then(() => { settled = true })
@@ -376,7 +377,7 @@ describe('LocalTerminalHandle', () => {
       waitForExit: async () => {},
       terminateForHostExit: vi.fn(),
     }
-    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, owner)
+    const handle = new LocalTerminalHandle(pty.asPty(), new FakeInspector(), 10, 'darwin', owner)
 
     const terminating = handle.terminate()
     const rejected = expect(terminating).rejects.toThrow('terminal cleanup failed; surviving pid: 123')

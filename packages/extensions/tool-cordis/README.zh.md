@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-创造模式包含这组工具。其他组合需要同时挂载 `@deepseek-ai/dsh-tool-cordis` 和提供 `cordisInspect` 的 host runner。调用 `cordis_inspect_list` 发现 provider，再用 `cordis_inspect_query` 查询其具体方法和类型。通过 [Plugin Manager](../../boot/plugin-manager/README.zh.md) 安装包含插件代码或 MCP 配置的组合包。
+创造模式包含这组工具。其他组合需要同时挂载 `@deepseek-ai/dsh-tool-cordis` 和提供 `cordisInspect` 的 host runner。调用 `cordis_inspect_list` 发现 provider，再用 `cordis_inspect_query` 查询其具体方法和类型。
 
 -----
 
@@ -44,7 +44,6 @@ Host provider 结合生成的 Service/Event 目录与请求 agent 的工具注�
 <a id="further-exploration"></a>
 ## 进一步探索
 
-- [Plugin Manager](../../boot/plugin-manager/README.zh.md) — 持久化组合包安装和启停。
 - [Cordis host runner](../cordis-host-runner/README.zh.md) — 检查注册表和现有运行时消费者。
 
 <a id="model-experience"></a>

@@ -39,6 +39,7 @@ export interface KeyringServer {
 
 /** Plugin configuration: the built-in servers this deployment ships. */
 export interface Config {
+  /** Built-in remote MCP servers this deployment mounts, each with its credential reference. */
   servers: KeyringServer[]
   /** Per-tool-call timeout forwarded to every mounted server (default 180s). */
   toolCallTimeoutMs?: number

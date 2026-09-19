@@ -6,7 +6,7 @@
 
 | 页面 | 负责内容 |
 |---|---|
-| [boot.md](boot.zh.md) | 当前 profile 插件管理与 launcher 重载协调 |
+| [boot.md](boot.zh.md) | launcher 提供的 profile 数据、配置/patch 组合输入，以及统一的模块/配置重载队列（HMR） |
 | [core.md](core.zh.md) | `packages/core` 如何控制 agent loop（智能体循环）：逐包的循环说明、agent 创建与所有权（`AgentHandle`）、`Agent` 句柄的投递/取消/拦截约定，以及全仓通用类型模式（`…Map → derived-union`、品牌化 id） |
 | [llm-streaming.md](llm-streaming.zh.md) | `packages/llm` 的对话类型——`Message`/`ContentBlock`、组装完成的模型请求、`StreamChunk` wire protocol 和适配器约定（adapter contract）、`BlockAssembler`，以及 `LlmAdapter` 提供方约定 |
 | [token-meter.md](token-meter.zh.md) | 不可变的标量与位置回放度量，附带已消费日志修订号 |
@@ -30,7 +30,6 @@
 | [mcp.md](mcp.zh.md) | 外部 MCP 连接、作用域工具与资源、服务器指令、协议结果与配置归属 |
 | [user-questions.md](user-questions.zh.md) | UI 支持的人工问答 seam：`AskUserQuestionRequest`、answer/options 词汇、提供方 API、错误分类体系 |
 | [approval.md](approval.zh.md) | 一次性用户审批 seam：`ApprovalRequest`、`ApprovalOutcome`、逐会话策略、审计事件和 answerer 约定 |
-| [office-to-pdf.md](office-to-pdf.zh.md) | 已授权的 Office 到 PDF 转换、原生/WASM 引擎与有界共享复用 |
 | [attachment.md](attachment.zh.md) | 持久图片标识与元数据、校验输入、经校验读取，以及 `AttachmentStore` seam |
 | [shell.md](shell.zh.md) | shell 执行器 seam：`ShellExecRequest`/`Spec`、`ShellRunResult`、后台 `ShellProcess` 句柄 |
 | [subprocess.md](subprocess.zh.md) | 子进程 seam：完全显式的 `SubprocessSpawnSpec`、基于偏移的输出读取器、不含分类的 `SubprocessOutcome`，以及受管 `DSH_*` 环境词汇 |

@@ -7,7 +7,12 @@ import NodeModule, { createRequire } from 'node:module'
 import { Context, type Plugin } from '@deepseek-ai/cordis'
 import Loader, { type ModuleJob, type ModuleLoader } from '@deepseek-ai/cordis-plugin-loader'
 import Timer from '@deepseek-ai/cordis-plugin-timer'
-import { expect, it, onTestFinished, vi } from 'vitest'
+import { expect, it as vitestIt, onTestFinished, vi } from 'vitest'
+// dsh-hmr hot-reloads Node's ESM/CJS loader internals (the --expose-internals
+// cascaded loader); Bun exposes no equivalent, so tests that construct the real
+// HMR service run on Node only. Pure watcher/path helpers keep ungated tests.
+const nodeLoaderHmr = process.versions.bun === undefined
+const it = nodeLoaderHmr ? vitestIt : vitestIt.skip
 import Hmr from '../src/index.ts'
 
 interface ModuleReload {

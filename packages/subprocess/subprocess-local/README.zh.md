@@ -40,8 +40,6 @@ kind: "package-reference"
 
 绝对可执行文件路径会被验证；裸名称根据清理后的 PATH 并以平台感知的可执行文件扩展名（Windows 上为 `.COM`/`.EXE`/`.BAT`/`.CMD`）解析。含分隔符的相对路径会被拒绝——请提供绝对路径或裸 PATH 名称——相对 PATH 条目从宿主进程 cwd 解析。
 
-Windows 普通子进程通过 `windowsHide` 启动私有 Job runner，并为原生目标请求隐藏初始窗口。标准流和 Job 归属不依赖窗口可见性；显式创建自身窗口的命令不在此保证范围内。
-
 ### 收集输出
 
 收集模式在内存中保留一条流的最后 `maxBytes`——错误与最终结果通常聚集在末尾——并在配置了 `spill` 上限时把完整流追加到 OS 临时目录下每进程目录中的私有文件（`0700` 目录、`0600` 随机命名文件）。某条流大于 spill 上限时，会丢弃不完整的 spill，只返回带截断标记的尾部。读取基于偏移量且从不消费，因此后台读取与批量读取在退出前后都可以共存。
@@ -52,14 +50,9 @@ Windows 普通子进程通过 `windowsHide` 启动私有 Job runner，并为原�
 
 普通 spawn 可以请求 [subprocess 控制管道](../subprocess/README.zh.md#using-a-control-pipe)。Node 目标在所有受支持的宿主上均收到 fd 7；Windows 描述符编号依赖 CRT 初始化。POSIX runner 在 `execve` 时保留该描述符；Windows Job 和 ACL runner 在 Node 初始化前通过子进程的 CRT 启动表建立它，并在 spawn 后关闭自身的承载副本。标准流与 runner 的私有管理通道保持独立。
 
-<a id="running-terminal-sessions"></a>
 ### 运行终端会话
 
 `spawnTerminal` 分配真实 PTY 并桥接 UTF-8 文本；你可以检查当前前台进程组并向其发送信号，还可以等待一次 `terminate()` 操作。在受支持的 Linux 宿主上，原始终端 argv 直接在 user-systemd scope 内运行；node-pty PID、会话 leader、控制终端、前台 `inputWaiting` 与就绪状态保持不变，而 scope 会拥有已重新设定父进程或调用 `setsid` 的后代。在 fallback 宿主上，清理会保留根进程树和可观察会话中的精确身份，但无法重新发现每个已经逃逸的后代。Linux 的精确输入等待要求前台线程的 fd 0 标识 shell 的控制终端，且线程当前的 syscall 正在等待该 fd；如果内核拒绝 syscall 探测，上层 PTY 后端会改用空闲推断。在 Windows 上，SIGINT 以 Ctrl-C 输入写入投递，SIGTSTP 与 SIGHUP 不受支持，拆卸会通过进程表验证 shell 已终止，因为被外部终止的 shell 可能永远不会触发 PTY 退出通知。
-
-使用 `shellActivity: true` 时，普通非登录的 `bash -i` 与 `zsh -i` 会安装私有生命周期记录，同时保留用户启动文件和提示符配置。Bash 需要 4.4 或更高版本，并允许写入提示符 hook；Zsh 观察空的顶层 ZLE 提示符，排除 `vared`、选择和续行提示符。输入、shell 状态迁移和进程观察变化都会推进活动 revision。前台、后台及停止的后代任务阻止空闲判断；原生 Linux 还要求 systemd scope 中恰好只有一个 task，覆盖进程树以外仍归其所有的工作；进程表扫描不完整、自定义 trap 和 Zsh 异步文件描述符 handler 会返回 unknown。进程表枚举失败会拒绝本次观察；活动保持 unknown，清理保留所有权，直到进程表可读并能完成验证。进程清理成功后删除私有文件。其他 shell、Windows、自定义参数以及经 sandbox 包装的可执行文件仍可使用，但活动为 unknown。
-
-启用后，根进程退出不会终止仍在运行的后代。明确为空的 Linux 受管范围或完整且为空的 Linux 会话可允许回收保留的记录；macOS 无法在根进程退出后确认未观察到的进程范围，会将该记录保持为 unknown。原有 fallback 可见性限制仍然适用：shell 生命周期记录不能让已逃逸且未观察到的后代变得可发现。这些记录协调普通 shell 行为，不用于防御同一用户的恶意进程。
 
 ### 关闭行为
 
@@ -92,15 +85,14 @@ Linux 普通进程和终端进程即使在 bootstrap 消费启动请求前被取
 | [`src/index.ts`](src/index.ts) | 服务接线：存活句柄集合、dispose、宿主退出最终清理、可执行文件查找 |
 | [`src/spawn.ts`](src/spawn.ts) | 共享进程管道：直接结果、保尾收集、spill 文件与 fallback spawn |
 | [`src/managed-owner.ts`](src/managed-owner.ts) | 每个普通句柄使用的私有信号与等待 owner |
-| [`src/linux-scope.ts`](src/linux-scope.ts) | Linux user-systemd 能力检查、scope 启动、信号发送与完全停稳 |
-| [`src/linux-execve.ts`](src/linux-execve.ts) | Linux libc 进程映像替换与继承标准文件描述符保留 |
-| [`src/windows-job.ts`](src/windows-job.ts) | Windows Job 能力检查与 helper 启动 |
 | [`src/runner-launch.ts`](src/runner-launch.ts) | source、built 与 packaged 私有 runner 选择 |
-| [`src/spawn-runner.ts`](src/spawn-runner.ts) | Linux 一次性 exec bootstrap 与 Windows Job runner |
-| [`src/runner-protocol.ts`](src/runner-protocol.ts) | 严格定义的 Linux launch／startup 文件与 Windows IPC 消息 |
-| [`src/terminal.ts`](src/terminal.ts) | `node-pty` 终端句柄：Linux scope 绑定、前台检查与 fallback 清理 |
-| [`src/process-inspector.ts`](src/process-inspector.ts) | POSIX 进程树与会话检查 |
-| [`src/windows-inspector.ts`](src/windows-inspector.ts) | 经 koffi 的 Windows Toolhelp32 进程表检查 |
+| [`src/control-spawn.ts`](src/control-spawn.ts) | 直接启动与 runner 启动共用的控制管子进程 spawn |
+| [`src/pty-adapter.ts`](src/pty-adapter.ts) | 终端句柄驱动的 PTY 端口 |
+| [`src/bun-pty-adapter.ts`](src/bun-pty-adapter.ts) | Bun 原生 PTY 后端（仅 macOS arm64；无 `node-pty`） |
+| [`src/output.ts`](src/output.ts) | 有界内存输出保尾与 spill 文件恢复 |
+| [`src/shell-activity.ts`](src/shell-activity.ts) | 基于进程检查器的 shell 空闲／忙碌活动推断 |
+| [`src/terminal.ts`](src/terminal.ts) | PTY 终端句柄：前台检查、shell 活动与 fallback 清理 |
+| [`src/process-inspector.ts`](src/process-inspector.ts) | macOS 进程树与会话检查 |
 | — | 不发布运行时不变式伴生入口；除所属 seam 强制执行的约定外，本包不公开独立的事件序列或可变数据关系。 |
 
 ### 主流程

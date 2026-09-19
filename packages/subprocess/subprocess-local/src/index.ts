@@ -31,6 +31,7 @@ import { targetEnvironment } from './runner-launch.ts'
 import { createProcessInspector } from './process-inspector.ts'
 import type { ProcessInspector } from './process-inspector.ts'
 import { LocalTerminalHandle } from './terminal.ts'
+import { prepareShellActivity } from './shell-activity.ts'
 
 /**
  * Local subprocess service: detached POSIX process groups, Node-shaped stdio
@@ -204,24 +205,41 @@ export class LocalSubprocessRuntime extends SubprocessRuntime {
         ? undefined
         : env.LC_ALL,
     }
+    const baseEnv: Record<string, string> = {
+      ...env,
+      TERM: spec.terminalType,
+      LANG: locale.LANG,
+      ...(locale.LC_ALL !== undefined ? { LC_ALL: locale.LC_ALL } : {}),
+    }
+    // Opt-in shell activity integration rewrites the launch argv/env for a
+    // plain interactive bash/zsh; unsupported launches stay untouched.
+    const activity = prepareShellActivity(spec, baseEnv, process.platform)
+    const launchArgv = activity?.argv ?? spec.argv
     const options: IPtyForkOptions = {
       name: spec.terminalType,
       rows: spec.rows,
       cols: spec.cols,
       cwd: spec.cwd,
-      env: {
-        ...env,
-        TERM: spec.terminalType,
-        LANG: locale.LANG,
-        ...(locale.LC_ALL !== undefined ? { LC_ALL: locale.LC_ALL } : {}),
-      },
+      env: activity?.env ?? baseEnv,
     }
     const inspector = this.terminalInspector ?? createProcessInspector()
-    const terminal = getPtyModule().spawn(file, [...spec.argv.slice(1)], options)
-    const handle = new LocalTerminalHandle(terminal, inspector, spec.graceMs)
+    const terminal = getPtyModule().spawn(launchArgv[0] as string, [...launchArgv.slice(1)], options)
+    const handle = new LocalTerminalHandle(
+      terminal,
+      inspector,
+      spec.graceMs,
+      process.platform,
+      undefined,
+      undefined,
+      activity,
+      () => { this.terminals.delete(handle) },
+      spec.shellActivity === true,
+    )
     this.terminals.add(handle)
     const release = async (): Promise<void> => {
-      await handle.terminate()
+      // Activity-tracked shells own their lifecycle: natural exit only removes
+      // the handle; explicit terminate() still runs through onQuiescence.
+      if (spec.shellActivity !== true) await handle.terminate()
       this.terminals.delete(handle)
     }
     void handle.done.then(release, release).catch(() => {})

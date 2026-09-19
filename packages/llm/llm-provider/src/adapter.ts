@@ -62,6 +62,7 @@ export interface OpenAICatalogModel {
   reasoning?: boolean
   /** zai-dialect thinking toggle + `tool_stream` side channel (zai gateways). */
   thinkingFormat?: 'zai'
+  /** Enables the zai `tool_stream` side channel alongside the zai thinking dialect for this model. */
   zaiToolStream?: boolean
   /** Accepted request modalities; omission is text-only. Chat completions carries only text and image. */
   inputModalities?: ModelModality[]

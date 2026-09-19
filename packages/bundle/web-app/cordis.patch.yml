@@ -224,19 +224,16 @@
     - id: ui-sidebar-right
       name: '@deepseek-ai/dsh-client-ui-sidebar-right'
 
-
-    - id: office-to-pdf
-      name: '@deepseek-ai/dsh-office-to-pdf'
-
     # The right Sidebar's document tab: bounded file reads with selectable
-    # Markdown, code, HTML, PDF, Office, and plain-text renderers.
+    # Markdown, code, HTML, PDF, and plain-text renderers. The upstream
+    # Office-to-PDF converter (libreoffice-kit) is not shipped; the fork renders
+    # OOXML natively through its own documentpreview path.
     - id: ui-sidebar-documentpreview
       name: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 
-    # Sandboxed HTTP(S) Browser tabs, including loopback targets.
-    - id: ui-sidebar-browser
-      name: '@deepseek-ai/dsh-client-ui-sidebar-browser'
-
+    # Upstream's sandboxed-browser sidebar tab is deliberately not mounted:
+    # the fork has not integrated the browser-use host surface. The package
+    # stays in the tree, unmounted, like ui-message-feedback.
     - id: ui-sidebar-terminal
       name: '@deepseek-ai/dsh-client-ui-sidebar-terminal'
     # The right Sidebar's workspace file tree tab type.
@@ -252,11 +249,9 @@
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
 
-    # Plugin management: the sidebar Plugins page installs, enables, disables,
-    # and removes the profile's bundles through the `pluginManager` Remote.
-    # Without a profile-backed Host it reports itself unavailable.
-    - id: ui-plugin-manager
-      name: '@deepseek-ai/dsh-client-ui-plugin-manager'
+    # Upstream's sidebar plugin-management page (install/enable/disable/remove
+    # profile bundles through the pluginManager Remote) is not shipped: the
+    # fork is a packaged application with no third-party plugin installation.
 
     # Read-only Plugin list tab in the Settings Plugins section; the built-in
     # bundles the sidebar page leaves out are inspected here.
@@ -387,9 +382,6 @@
 # the criterion for host-plane ownership — injection resolves before any session
 # exists, so there is no agent to key by. Behind a preset realm those variables
 # would never reach the model's shell at all.
-
-- id: tool-plugin-manager
-  disabled: true
 
 - id: tool-bash
   disabled: true

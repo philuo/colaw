@@ -654,6 +654,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'listener', description: 'notified with no payload.' }],
         returns: 'the unsubscriber.',
       },
+      {
+        signature: 'suspendComposition(suspended: boolean): void',
+        description: 'Defer recomposition while a bulk mount runs (the desktop host mounts its deferred plugin tree in the background). Every arriving entry otherwise pays a full graph recompose — re-concatenating every client bundle and its identity source map — which costs ~200ms per arriving plugin and adds seconds of CPU that no request ever consumes: the boot page fetched its generation\'s batches long before. The served generation stays the last composed one; resuming recomposes the accumulated dirty set once.',
+        parameters: [{ name: 'suspended', description: 'true to defer composition, false to flush the backlog.' }],
+      },
     ],
   },
   {
@@ -730,47 +735,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Reserve the sole provider slot until the contribution is disposed. A second registration fails even when it repeats the current name. Providers must stop their tools and await owned work before releasing this registration.',
         parameters: [{ name: 'name', description: 'provider-owned name used in registration diagnostics.' }],
         returns: 'the effect disposer for this exact registration.',
-      },
-    ],
-  },
-  {
-    key: 'connection',
-    summary: 'Host `ctx.connection` shape consumed by transport-independent adapters.',
-    description: 'Host `ctx.connection` shape consumed by transport-independent adapters.',
-    methods: [
-      {
-        signature: 'readonly rpc: HostConnectionRpc',
-        description: 'Generic RPC channel registry.',
-        parameters: [],
-      },
-      {
-        signature: 'readonly fetch: HostConnectionFetch',
-        description: 'Exact Fetch routes for streaming or browser-native responses.',
-        parameters: [],
-      },
-      {
-        signature: 'createSharedFetchHandler(channel: \'/api\'): ConnectionFetchHandler',
-        description: 'Compose exact Fetch routes and the shared-channel RPC interceptor.',
-        parameters: [{ name: 'channel', description: 'shared channel mounted by Connection.' }],
-        returns: 'Fetch handler for trusted, authenticated requests.',
-      },
-      {
-        signature: 'requestRejection(request: ConnectionTrustRequest): ConnectionRequestRejection',
-        description: 'Apply Connection\'s Host/Origin checks and browser authentication to another Web route.',
-        parameters: [{ name: 'request', description: 'request headers from the HTTP or upgrade request.' }],
-        returns: 'rejection status, or undefined when the route may accept the request.',
-      },
-      {
-        signature: 'authorizeIndex(request: ConnectionIndexRequest, response: ConnectionIndexResponse): boolean',
-        description: 'Authenticate one frontend index request, owning a token redirect or 401.',
-        parameters: [{ name: 'request', description: 'root or configured-index HTTP request.' }, { name: 'response', description: 'response owned when the result is false.' }],
-        returns: 'true only when the frontend may serve index.html.',
-      },
-      {
-        signature: 'authenticatedUrl(baseUrl: string): string',
-        description: 'Add the fresh process token to an ordinary Web application URL.',
-        parameters: [{ name: 'baseUrl', description: 'clean canonical browser origin.' }],
-        returns: 'root URL accepted by {@link authorizeIndex} for initial login.',
       },
     ],
   },
@@ -1323,8 +1287,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the same deterministic handle text used at adapter dispatch.',
       },
       {
-        signature: 'async listModels(provider: string): Promise<LlmModelInfo[]>',
-        description: 'Discover models advertised by one registered provider. Catalog membership is advisory and never changes routing or request validation.',
+        signature: '@Remote async listModels(provider: string): Promise<LlmModelInfo[]>',
+        description: 'Discover models advertised by one registered provider. Catalog membership is advisory and never changes routing or request validation. Exposed as a Remote so a configuration surface can show each row\'s effective facts (modalities included) instead of guessing what an undeclared field inherits from.',
         parameters: [{ name: 'provider', description: 'registered provider route to inspect.' }],
         returns: 'detached model metadata in adapter-preferred order.',
       },
@@ -1412,37 +1376,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
-    key: 'officeToPdf',
-    summary: 'A provider lifetime owns all converters, queued calls, and temporary files.',
-    description: 'A provider lifetime owns all converters, queued calls, and temporary files.',
-    methods: [
-      {
-        signature: 'readonly generation: OfficeToPdfGeneration = OfficeToPdfGeneration(randomUUID())',
-        description: 'Changes whenever engine, font, or conversion configuration is replaced.',
-        parameters: [],
-      },
-      {
-        signature: 'convert(request: OfficeToPdfRequest, signal?: AbortSignal): Promise<OfficeToPdfResult>',
-        description: 'Convert Office bytes without modifying the source or writing Session events.',
-        parameters: [{ name: 'request', description: 'authorized metadata and deferred bounded source read.' }, { name: 'signal', description: 'caller cancellation; provider disposal also stops active work.' }],
-        returns: 'caller-owned PDF bytes after conversion and scratch cleanup settle; canceled readers reject independently.',
-        throws: ['{OfficeToPdfError} Invalid input, unusable output, or engine failure; cancellation rejects with its reason.'],
-      },
-      {
-        signature: '@Remote async render( workspaceFileScope: WorkspaceFileScope, path: string, priority: OfficeToPdfPriority, signal: AbortSignal, ): Promise<RenderedDocumentBytes>',
-        description: 'Read and convert one Office file using the Session\'s ordinary filesystem authorization.',
-        parameters: [{ name: 'workspaceFileScope', description: 'Session header lookup shared with workspaceFiles.' }, { name: 'path', description: 'absolute or workspace-relative Office path.' }, { name: 'priority', description: 'foreground preview or speculative background work.' }, { name: 'signal', description: 'Remote cancellation; disposal also cancels outstanding reads and conversions.' }],
-        returns: 'complete base64 PDF with original source identity and missing font families.',
-      },
-      {
-        signature: '@Remote(\'generation\') getGeneration(signal: AbortSignal): OfficeToPdfGeneration',
-        description: 'Read the current rendering generation before reusing a Client PDF.',
-        parameters: [{ name: 'signal', description: 'Remote caller cancellation.' }],
-        returns: 'provider lifetime, replaced with rendering, font, or engine configuration.',
-      },
-    ],
-  },
-  {
     key: 'permissionPresets',
     summary: 'Owns the deployment\'s configured permission presets, the fixed Auto integration hook, and their write path.',
     description: 'Owns the deployment\'s configured permission presets, the fixed Auto integration hook, and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
@@ -1502,61 +1435,6 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Select whether plan mode should be active. Between turns the method appends the change immediately because no in-turn pre-step will run until another prompt starts a turn. The open-turn fold is the idle signal: agent status stays `running` through post-turn checkpointing, when no further in-turn pre-step runs. During an open turn the selection remains pending until the next accepted in-turn pre-step. Repeated selection of the current or already-pending state is a no-op.',
         parameters: [{ name: 'agent', description: 'The agent to switch.' }, { name: 'active', description: 'Whether plan mode should be active.' }],
         returns: 'what happened: `committed` (logged now), `queued` (awaiting the next accepted in-turn pre-step), `cancelled` (an opposite pending selection was cleared; the logged state already matches), or `noop` (already in that state).',
-      },
-    ],
-  },
-  {
-    key: 'pluginManager',
-    summary: 'Manage profile files and apply their declared reload lifecycle.',
-    description: 'Manage profile files and apply their declared reload lifecycle.',
-    methods: [
-      {
-        signature: '@Remote async listPlugins(): Promise<PluginInfo[]>',
-        description: 'Read current plugins, including why a row cannot be changed through the profile patch.',
-        parameters: [],
-        returns: 'Current runtime entries with persistent patch targets.',
-      },
-      {
-        signature: '@Remote listBundles(): Promise<BundleInfo[]>',
-        description: 'Read the profile\'s installed bundles, the bundles this dsh installation supplies, and the selected names that are not bundles. A dependency without a bundle patch is listed, as a `not-bundle` problem, only while it is selected.',
-        parameters: [],
-        returns: 'Package versions, one-liners, rows, activation selections, whether the installation offers the bundle, and removal availability.',
-      },
-      {
-        signature: '@Remote async inspect(spec: string, signal?: AbortSignal): Promise<PluginSpecInspection>',
-        description: 'Read what a spec names before installing it.',
-        parameters: [{ name: 'spec', description: 'One package spec: a registry name, an absolute path, a git address, or a tarball.' }, { name: 'signal', description: 'Ends a registry lookup early.' }],
-        returns: 'The package the spec names, or why it is refused.',
-      },
-      {
-        signature: '@Remote setPluginEnabled(id: PluginEntryId, enabled: boolean): Promise<ChangeResult>',
-        description: 'Persist a plugin entry\'s desired enablement and apply it on live profiles.',
-        parameters: [{ name: 'id', description: 'Loader entry identity returned by listPlugins.' }, { name: 'enabled', description: 'Whether the plugin should run.' }],
-        returns: 'Saved and runtime outcomes, including higher-priority overrides.',
-      },
-      {
-        signature: '@Remote setBundleEnabled(name: string, enabled: boolean): Promise<ChangeResult>',
-        description: 'Select or remove a bundle layer while retaining installed dependencies.',
-        parameters: [{ name: 'name', description: 'Bundle package name.' }, { name: 'enabled', description: 'Whether the bundle contributes its patch layer.' }],
-        returns: 'Persisted and runtime outcomes.',
-      },
-      {
-        signature: '@Remote installBundle(spec: string, options?: InstallBundleOptions): Promise<ChangeResult>',
-        description: 'Install a package using the same pnpm implementation as dsh plugin. A run that fails, is cancelled, or adds a package without a bundle patch restores `package.json` and `pnpm-lock.yaml` as they were; downloaded files can stay.',
-        parameters: [{ name: 'spec', description: 'One package spec, including local paths relative to the invocation directory.' }, { name: 'options', description: 'Whether to activate the installed bundle (defaults to true), the request id a cancellation names, and the pending build scripts to allow for this profile before pnpm runs.' }],
-        returns: 'Package-manager diagnostics and observed activation outcome.',
-      },
-      {
-        signature: '@Remote async cancelInstall(requestId: PluginInstallRequestId): Promise<PluginInstallCancellation>',
-        description: 'Stop an installation this manager owns and wait until its files are back.',
-        parameters: [{ name: 'requestId', description: 'The id the installation was started with.' }],
-        returns: '`cancelled` once pnpm exited and the files are restored, `too-late` once the bundle is being applied, `not-running` for any other id.',
-      },
-      {
-        signature: '@Remote removeBundle(name: string): Promise<ChangeResult>',
-        description: 'Unload and remove a profile-owned bundle dependency through dsh plugin\'s pnpm path.',
-        parameters: [{ name: 'name', description: 'Installed dependency name.' }],
-        returns: 'Removal diagnostics and the remaining profile state.',
       },
     ],
   },
@@ -1845,6 +1723,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'options', description: 'optional cancellation.' }],
         returns: 'one snapshot per stored session.',
       },
+      {
+        signature: 'remove(_id: SessionId, _options?: SessionPersistenceListOptions): Promise<void>',
+        description: 'Remove one stored session\'s durable artifact for good.\n\nBackend-optional: a backend without a deletable medium keeps this base refusal. There is no tombstone, no trash, and no undo — the bytes leave the disk; callers own every accounting cleanup around the removal.',
+        parameters: [{ name: '_id', description: 'the stored session to remove.' }, { name: '_options', description: 'optional cancellation; unused by the base refusal.' }],
+        throws: ['{SessionPersistenceNotFoundError} when the session does not exist.'],
+      },
     ],
   },
   {
@@ -2117,6 +2001,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         throws: ['if a session with this id is already in the store.'],
       },
       {
+        signature: 'retire(id: SessionId): boolean',
+        description: 'End one live session\'s store lifecycle NOW, without waiting for the fiber that entered it (permanent deletion: the callers\' durable artifact is already gone, and a surviving entry would keep the id listed and let its writer re-materialize the very log being removed). Removal is the same single lifecycle edge as a normal teardown — the entry leaves the store, its attachment is dropped, `session/disposed` publishes once, and every later `get()` misses.',
+        parameters: [{ name: 'id', description: 'the live session to retire.' }],
+        returns: 'whether an entered session was retired; an unknown id is a no-op, so repeated deletions stay idempotent.',
+      },
+      {
         signature: 'announce(session: Session): void',
         description: 'Emit `session/created` exactly once for an entered session (with the carrier enter captured). Separate from enter so the caller can yield the detach disposer first (rollback safety — see enter).',
         parameters: [{ name: 'session', description: 'the entered session to announce to listeners.' }],
@@ -2251,6 +2141,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'Attach one optional-settings consumer to this provider. The consumer registers its composition entry as the base layer while this provider is present, then falls back to that entry if the provider detaches.',
         parameters: [{ name: 'owner', description: 'consumer context whose unload suppresses fallback work.' }, { name: 'ns', description: 'consumer-owned settings namespace.' }, { name: 'schema', description: 'schema resolving the namespace.' }, { name: 'entry', description: 'composition entry used as the base and fallback value.' }, { name: 'hooks', description: 'source sink, change notification, and optional validation.' }],
         throws: ['{TypeError} when `ns` is not a lowercase hyphenated identifier.'],
+      },
+      {
+        signature: 'rawSection(ns: string): Record<string, unknown> | undefined',
+        description: 'Read one namespace\'s stored raw user section, whether the namespace is registered or not. Configuration surfaces only ever see registered namespaces through describe, so this is the one read a one-shot document migration can use to inspect a section whose owning plugin was unmounted — without reaching around the provider at the storage layer. The section stays exactly as stored: no schema resolution, no redaction.',
+        parameters: [{ name: 'ns', description: 'the namespace key to read.' }],
+        returns: 'the detached raw section, or `undefined` when nothing is stored.',
+        throws: ['{TypeError} when the stored section is not an object of keys.'],
       },
       {
         signature: 'describe(options?: SettingsDescribeOptions): SettingsDescriptor[]',
@@ -2431,13 +2328,19 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
   {
     key: 'spillStore',
     summary: 'Abstract spill storage service.',
-    description: 'Abstract spill storage service. Subclass, implement saveText, and load the subclass as a plugin — it registers as `ctx.spillStore` (one implementation per context; loading a second throws, cordis\' standard duplicate-service behavior).\n\nSemantics every implementation must honor:\n\n- saveText persists the FULL `content` verbatim and returns an opaque locator, exact byte length, and model-facing retrieval guidance.\n- Storage is scoped by the request\'s SaveTextSpill.owner session; the backend chooses a private (not world-readable) location and a collision-free name derived from — never equal to — the caller\'s `suggestedName`.\n- `saveText` REJECTS on a real storage failure (permissions, ENOSPC, backend unavailable); the caller decides how to degrade (the spill policy treats a rejection as best-effort and keeps the inline result).',
+    description: 'Abstract spill storage service. Subclass, implement saveText, and load the subclass as a plugin — it registers as `ctx.spillStore` (one implementation per context; loading a second throws, cordis\' standard duplicate-service behavior).\n\nSemantics every implementation must honor:\n\n- saveText persists the FULL `content` verbatim and returns an opaque locator, exact byte length, and model-facing retrieval guidance.\n- Storage is scoped by the request\'s SaveTextSpill.owner session; the backend chooses a private (not world-readable) location and a collision-free name derived from — never equal to — the caller\'s `suggestedName`.\n- `saveText` REJECTS on a real storage failure (permissions, ENOSPC, backend unavailable); the caller decides how to degrade (the spill policy treats a rejection as best-effort and keeps the inline result).\n- `purgeSession` is best-effort and never rejects: it removes everything the implementation can attribute to that session and reports (never throws) what it cannot.',
     methods: [
       {
         signature: 'abstract saveText(input: SaveTextSpill): Promise<SpillRef>',
         description: 'Persist `input.content` to a session-scoped spill artifact.',
         parameters: [{ name: 'input', description: 'the owner, caller-supplied source fields, suggested name, and full text to save.' }],
         returns: 'the saved artifact\'s {@link SpillRef}; rejects on a storage failure.',
+      },
+      {
+        signature: 'abstract purgeSession(sessionId: string): Promise<void>',
+        description: 'Remove every stored artifact one session owns. The permanent-deletion path calls this so spilled temp files do not outlive their session; implementations are best-effort — this NEVER rejects, and a filesystem failure reports and swallows rather than failing the deletion it follows.',
+        parameters: [{ name: 'sessionId', description: 'the session whose artifacts are removed.' }],
+        returns: 'resolution once every location was attempted (never rejects).',
       },
     ],
   },
@@ -2750,15 +2653,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote async create(agent: Agent, request: TerminalCreateRequest, signal: AbortSignal): Promise<WebTerminalInfo>',
-        description: 'Allocate a user shell once for a caller-generated identity, without Agent sandbox or approval restrictions.',
+        description: 'Allocate an interactive shell once for a caller-generated identity.',
         parameters: [{ name: 'agent', description: 'Session owner supplied by the Gateway.' }, { name: 'request', description: 'initial dimensions and idempotency identity.' }, { name: 'signal', description: 'allocation cancellation; committed terminals survive disconnection.' }],
         returns: 'the existing or newly committed terminal.',
-      },
-      {
-        signature: '@Remote({ mode: \'stream\' }) retain(sessionId: SessionId, id: WebTerminalId, signal: AbortSignal): AsyncIterable<TerminalRetentionFrame>',
-        description: 'Retain an existing terminal for a window without activating its Agent or taking input control.',
-        parameters: [{ name: 'sessionId', description: 'owning Session identity, including an inactive saved layout.' }, { name: 'id', description: 'retained Host terminal identity.' }, { name: 'signal', description: 'physical Remote stream cancellation.' }],
-        returns: 'a hold acknowledgement followed by an open lifetime stream.',
       },
       {
         signature: '@Remote({ mode: \'stream\' }) follow(agent: Agent, id: WebTerminalId, attachmentId: TerminalAttachmentId, signal: AbortSignal): AsyncIterable<TerminalFrame>',
@@ -3263,10 +3160,28 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete resulting archive set.',
       },
       {
+        signature: '@Remote(\'trashEntries\') trashEntries(): Promise<WorkspaceTrashValue>',
+        description: 'Read the complete trash listing with per-entry previews.',
+        parameters: [],
+        returns: 'one entry per archived session, newest archive first.',
+      },
+      {
         signature: '@Remote(\'unarchiveSession\') unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue>',
-        description: 'Restore one archived Session to Workspace grouping surfaces.',
-        parameters: [{ name: 'request', description: 'Session identity to unarchive.' }],
+        description: 'Restore one archived session to its grouping surfaces.',
+        parameters: [{ name: 'request', description: 'the archived session to restore.' }],
         returns: 'the complete resulting archive set.',
+      },
+      {
+        signature: '@Remote(\'deleteArchivedSession\') deleteArchivedSession(request: WorkspaceDeleteSessionRequest): Promise<WorkspaceArchiveValue>',
+        description: 'Remove one archived session from disk for good.',
+        parameters: [{ name: 'request', description: 'the archived session to delete permanently.' }],
+        returns: 'the complete resulting archive set.',
+      },
+      {
+        signature: '@Remote(\'clearTrash\') clearTrash(): Promise<WorkspaceArchiveValue>',
+        description: 'Remove every archived session from disk for good.',
+        parameters: [],
+        returns: 'the complete resulting archive set (empty on success).',
       },
       {
         signature: '@Remote({ mode: \'stream\' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>',
@@ -3316,6 +3231,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List the direct children of one directory inside the Session\'s workspace.',
         parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'path', description: 'workspace path, absolute or relative to the workspace root.' }, { name: 'signal', description: 'caller cancellation.' }],
         returns: 'the directory\'s children in the backend\'s stable name order, bounded by the entry cap.',
+      },
+      {
+        signature: '@Remote({ mode: \'stream\' }) async *searchTree( workspaceFileScope: WorkspaceFileScope, root: string, query: string, signal: AbortSignal, ): AsyncIterable<WorkspaceTreeSearchFrame>',
+        description: 'Search the workspace tree for entries whose name contains the query — case-insensitively, walking directories breadth-first inside the Host so the Client never blocks. The walk reads raw dirent names (no per-entry stat), scans each breadth level concurrently, never descends into dependency/VCS directories, and does not follow directory symlinks (cycle guard), so every walked path stays under the root the containment gate accepted. The walk stops at the entry, directory, or time caps, and `truncated` says when it was cut short so more matches may exist.',
+        parameters: [{ name: 'workspaceFileScope', description: 'header-derived workspace root for the Session identity on the wire.' }, { name: 'root', description: 'workspace path to search under, absolute or workspace-relative.' }, { name: 'query', description: 'the name substring to match, case-insensitively.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'a stream: `ready`, then shallow-first `matches` batches, then `done`.',
       },
       {
         signature: '@Remote({ mode: \'stream\' }) changes(workspaceFileScope: WorkspaceFileScope, signal: AbortSignal): AsyncIterable<WorkspaceFileWatchFrame>',
@@ -3368,8 +3289,14 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: 'unarchiveSession(sessionId: SessionId): Promise<void>',
-        description: 'Unarchive one session durably by dropping it from the registry-global archive set; the accounting slot was never touched, so the session returns to its recorded position. Unarchiving runs no session-existence check because removing an id cannot introduce an unknown one, so an entry whose session is gone still resolves. An id that is not archived resolves without writing.',
-        parameters: [{ name: 'sessionId', description: 'The session to unarchive.' }],
+        description: 'Restore one archived session to its grouping surfaces: the archive-set slot and its recorded time both leave, and the session\'s workspace accounting is untouched — its `sessionIds` position survived the archive. An id that is not archived resolves without writing.',
+        parameters: [{ name: 'sessionId', description: 'The session to restore.' }],
+        returns: 'resolution after durability.',
+      },
+      {
+        signature: 'purgeSession(sessionId: SessionId): Promise<void>',
+        description: 'Drop every registry trace of one session: the archive-set slot with its recorded time, and the `sessionIds` membership of any workspace whose accounting holds it. The durable session artifact is the caller\'s to remove — this is the accounting half of a permanent deletion, so an id that leaves nothing behind resolves without writing.',
+        parameters: [{ name: 'sessionId', description: 'The session whose registry traces are dropped.' }],
         returns: 'resolution after durability.',
       },
       {
@@ -3569,14 +3496,6 @@ export const EVENT_API: readonly EventApiEntry[] = [
     parameters: [{ name: 'payload', description: '.signal - optional compaction cancellation signal.' }, { name: 'next', description: 'delegate to the next recovery listener.' }],
   },
   {
-    name: 'connection/request',
-    mode: 'waterfall',
-    signature: '\'connection/request\'(request: IncomingMessage, response: ServerResponse, next: () => Promise<void>): Promise<void>',
-    summary: 'Admit or wrap an authenticated shared API request, including body transfer.',
-    description: 'Admit or wrap an authenticated shared API request, including body transfer. Existing requests continue when a listener refuses subsequent requests.',
-    parameters: [{ name: 'request', description: 'Authenticated incoming HTTP request.' }, { name: 'response', description: 'Response owned until the delegated bridge settles.' }, { name: 'next', description: 'Delegate to the next listener or the shared API bridge.' }],
-  },
-  {
     name: 'cordis/dynamic-package',
     mode: 'emit',
     signature: '\'cordis/dynamic-package\'(pkg: DynamicCordisPackage): void',
@@ -3735,30 +3654,6 @@ export const EVENT_API: readonly EventApiEntry[] = [
     summary: 'The selectable process catalog changed.',
     description: 'The selectable process catalog changed. Payload-free by design: consumers subscribe first, then re-read the complete catalog.',
     parameters: [],
-  },
-  {
-    name: 'plugin-manager/changed',
-    mode: 'emit',
-    signature: '\'plugin-manager/changed\'(change: PluginChange): void',
-    summary: 'The profile\'s plugins, bundles, or composition changed: a manager operation completed.',
-    description: 'The profile\'s plugins, bundles, or composition changed: a manager operation completed. A patch generation applied outside the manager, by HMR\'s watcher after a CLI or hand edit, announces nothing here.',
-    parameters: [{ name: 'change', description: 'what changed.' }],
-  },
-  {
-    name: 'plugin-manager/install-log',
-    mode: 'emit',
-    signature: '\'plugin-manager/install-log\'(chunk: PluginInstallLogChunk): void',
-    summary: 'One chunk of a pnpm run\'s output, streamed as the run produces it.',
-    description: 'One chunk of a pnpm run\'s output, streamed as the run produces it.',
-    parameters: [{ name: 'chunk', description: 'the chunk and the run it belongs to.' }],
-  },
-  {
-    name: 'plugin-manager/install-state',
-    mode: 'emit',
-    signature: '\'plugin-manager/install-state\'(progress: PluginInstallProgress): void',
-    summary: 'An installation moved between its Host phases.',
-    description: 'An installation moved between its Host phases.',
-    parameters: [{ name: 'progress', description: 'the installation\'s request id and phase.' }],
   },
   {
     name: 'session-telemetry/record',
@@ -4237,18 +4132,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type BrowserUseProviderName = Branded<\'BrowserUseProviderName\'>;',
   },
   {
-    name: 'BundleInfo',
-    declaration: 'export interface BundleInfo {\n    name: string;\n    version?: string;\n    description?: string;\n    enabled: boolean;\n    installed: boolean;\n    optional: boolean;\n    removable: boolean;\n    readOnlyReason?: ReadOnlyReason;\n    error?: ManagementError;\n    rows: BundleRowInfo[];\n    overrides: string[];\n}',
-  },
-  {
-    name: 'BundleRowInfo',
-    declaration: 'export interface BundleRowInfo {\n    rowId: string;\n    moduleName: string;\n    entryId?: PluginEntryId;\n}',
-  },
-  {
-    name: 'ChangeResult',
-    declaration: 'export interface ChangeResult {\n    changed: boolean;\n    application: \'applied\' | \'restart-required\' | \'overridden\' | \'failed\' | \'cancelled\';\n    stage: \'install\' | \'enable\' | \'remove\';\n    target: string;\n    enabled?: boolean;\n    error?: ManagementError;\n    warnings?: string[];\n    packageResult?: PackageResult;\n    bundle?: string;\n    pendingBuilds?: string[];\n    approvedBuilds?: string[];\n}',
-  },
-  {
     name: 'ClientArtifactBaseline',
     declaration: 'export interface ClientArtifactBaseline {\n    readonly path: string;\n    readonly mtimeMs: number;\n    readonly size: number;\n}',
   },
@@ -4327,54 +4210,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ConfinedSandboxMode',
     declaration: 'export type ConfinedSandboxMode = Exclude<SandboxMode, \'danger-full-access\'>;',
-  },
-  {
-    name: 'ConnectionFetchHandler',
-    declaration: 'export interface ConnectionFetchHandler {\n    requestBodyMode(request: {\n        readonly method: string;\n        readonly url: URL;\n    }): ConnectionRequestBodyMode;\n    fetch(request: Request): Promise<Response>;\n}',
-  },
-  {
-    name: 'ConnectionFetchMethod',
-    declaration: 'export type ConnectionFetchMethod = \'GET\' | \'HEAD\' | \'POST\';',
-  },
-  {
-    name: 'ConnectionFetchRoute',
-    declaration: 'export interface ConnectionFetchRoute {\n    readonly path: string;\n    readonly methods: readonly ConnectionFetchMethod[];\n    readonly requestBody: ConnectionRequestBodyMode;\n    readonly fetch: (request: Request) => Promise<Response>;\n}',
-  },
-  {
-    name: 'ConnectionIndexRequest',
-    declaration: 'export interface ConnectionIndexRequest extends ConnectionTrustRequest {\n    readonly method?: string | undefined;\n    readonly url?: string | undefined;\n}',
-  },
-  {
-    name: 'ConnectionIndexResponse',
-    declaration: 'export interface ConnectionIndexResponse {\n    writeHead(status: number, headers?: Readonly<Record<string, string>>): unknown;\n    end(body?: string): unknown;\n}',
-  },
-  {
-    name: 'ConnectionRequestBodyMode',
-    declaration: 'export type ConnectionRequestBodyMode = \'buffered\' | \'streaming\';',
-  },
-  {
-    name: 'ConnectionRequestRejection',
-    declaration: 'export type ConnectionRequestRejection = 401 | 403 | undefined;',
-  },
-  {
-    name: 'ConnectionRpcEndpointMatcher',
-    declaration: 'export type ConnectionRpcEndpointMatcher = (endpoint: string) => boolean;',
-  },
-  {
-    name: 'ConnectionRpcFailure',
-    declaration: 'export interface ConnectionRpcFailure {\n    readonly code: string;\n    readonly message: string;\n    readonly details: object;\n}',
-  },
-  {
-    name: 'ConnectionRpcHandler',
-    declaration: 'export type ConnectionRpcHandler = (endpoint: string, payload: unknown, signal: AbortSignal) => Promise<ConnectionRpcResult<unknown>>;',
-  },
-  {
-    name: 'ConnectionRpcResult',
-    declaration: 'export type ConnectionRpcResult<T> = {\n    readonly ok: true;\n    readonly value: T;\n} | {\n    readonly ok: false;\n    readonly error: ConnectionRpcFailure;\n};',
-  },
-  {
-    name: 'ConnectionTrustRequest',
-    declaration: 'export interface ConnectionTrustRequest {\n    readonly headers: Headers | Readonly<Record<string, string | readonly string[] | undefined>>;\n}',
   },
   {
     name: 'ContentBlockMap',
@@ -4809,14 +4644,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface GrantRecord {\n    readonly kind: \'grant\';\n    readonly payload: unknown;\n}',
   },
   {
-    name: 'HostConnectionFetch',
-    declaration: 'export interface HostConnectionFetch {\n    register(route: ConnectionFetchRoute): () => Promise<void>;\n}',
-  },
-  {
-    name: 'HostConnectionRpc',
-    declaration: 'export interface HostConnectionRpc {\n    handle(channel: string, handler: ConnectionRpcHandler): () => Promise<void>;\n    intercept(channel: \'/api\', matches: ConnectionRpcEndpointMatcher, handler: ConnectionRpcHandler): () => Promise<void>;\n}',
-  },
-  {
     name: 'ImageAttachmentLimits',
     declaration: 'export interface ImageAttachmentLimits {\n    maxImageBytes: number;\n    maxImagesPerMessage: number;\n    maxMessageImageBytes: number;\n    maxImagePixels: number;\n    maxImageDimension: number;\n    mediaTypes: readonly ImageMediaType[];\n}',
   },
@@ -4863,14 +4690,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'InspectorJsonValue',
     declaration: 'export type InspectorJsonValue = InspectorJsonPrimitive | readonly InspectorJsonValue[] | InspectorJsonObject;',
-  },
-  {
-    name: 'InstallBundleOptions',
-    declaration: 'export interface InstallBundleOptions {\n    enabled?: boolean;\n    requestId?: PluginInstallRequestId;\n    approvedBuilds?: string[];\n}',
-  },
-  {
-    name: 'InstallSpecKind',
-    declaration: 'export type InstallSpecKind = \'registry\' | \'path\' | \'git\' | \'tarball\';',
   },
   {
     name: 'InvariantFailure',
@@ -4974,7 +4793,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmAdapter',
-    declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
+    declaration: 'export abstract class LlmAdapter {\n    providerInfo(provider: string): LlmProviderInfo;\n    providerRetryPolicy(_provider: string): ResolvedRetryPolicy | undefined;\n    imageRequestPricing(_provider: string, _model: string): LlmImageRequestPricing | undefined;\n    nativeAttachments(_provider: string, _model: string): readonly NativeAttachmentFamily[];\n    listModels(_provider: string): Promise<readonly LlmModelInfo[]>;\n    resolveModel(provider: string, model: string, _signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async prepareCall(provider: string, model: string, signal?: AbortSignal): Promise<PreparedAdapterCall>;\n    abstract stream(options: GenerateOptions): AsyncIterable<StreamChunk>;\n}',
   },
   {
     name: 'LlmAttemptId',
@@ -5038,7 +4857,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'LlmRuntime',
-    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    fileRequestText(ref: FileAttachmentRef): string;\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: GenerateOptions) /* …truncated — full shape in source */',
+    declaration: 'export class LlmRuntime extends TypertRemoteService {\n    constructor(ctx: Context);\n    registerAdapter(providers: string[], adapter: LlmAdapter): AdapterRegistrationHandle;\n    @Remote\n    listProviders(): LlmProviderInfo[];\n    registerConfigurableProviders(entries: readonly LlmConfigurableProvider[]): DirectoryRegistrationHandle;\n    @Remote\n    listConfigurableProviders(): LlmConfigurableProvider[];\n    registerModelDiscovery(settingsNs: string, discover: (request: LlmModelDiscoveryRequest, signal?: AbortSignal) => Promise<readonly LlmDiscoveredModel[]>): () => void;\n    async discoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal?: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    @Remote(\'discoverModels\')\n    async remoteDiscoverModels(settingsNs: string, request: LlmModelDiscoveryRequest, signal: AbortSignal): Promise<LlmDiscoveredModel[]>;\n    providerRetryPolicy(provider: string): ResolvedRetryPolicy;\n    imageRequestPricing(provider: string, model: string): LlmImageRequestPricing | undefined;\n    fileRequestText(ref: FileAttachmentRef): string;\n    @Remote\n    async listModels(provider: string): Promise<LlmModelInfo[]>;\n    async resolveModelInfo(provider: string, model: string, signal?: AbortSignal): Promise<LlmResolvedModelInfo>;\n    async resolveCallConfig(config: LlmCallConfig, signal?: AbortSignal): Promise<LlmCallConfig>;\n    async prepareCall(config: LlmCallConfig, signal?: AbortSignal): Promise<PreparedLlmCall>;\n    stream(options: Gene /* …truncated — full shape in source */',
   },
   {
     name: 'LspHover',
@@ -5079,10 +4898,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'LspRange',
     declaration: 'export interface LspRange {\n    readonly start: LspPosition;\n    readonly end: LspPosition;\n}',
-  },
-  {
-    name: 'ManagementError',
-    declaration: 'export interface ManagementError {\n    code: ReadOnlyReason | \'unknown-plugin\' | \'invalid-spec\' | \'ambiguous-install\' | \'not-bundle\' | \'not-removable\' | \'stop-profile\' | \'bundle-in-use\' | \'stale-approval\' | \'operation-error\';\n    diagnostic?: string;\n}',
   },
   {
     name: 'ManualCompactAgentContext',
@@ -5198,7 +5013,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelCatalogModel',
-    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n}',
+    declaration: 'export interface ModelCatalogModel {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n    readonly reasoning?: ModelReasoning;\n    readonly inputModalities?: readonly string[];\n}',
   },
   {
     name: 'ModelMessageSource',
@@ -5210,7 +5025,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'ModelModalityMap',
-    declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n}',
+    declaration: 'export interface ModelModalityMap {\n    text: \'text\';\n    image: \'image\';\n    video: \'video\';\n    file: \'file\';\n}',
   },
   {
     name: 'ModelProviderGroup',
@@ -5225,36 +5040,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ModelReasoningEffort {\n    readonly id: string;\n    readonly name: string;\n    readonly description?: string;\n}',
   },
   {
+    name: 'NativeAttachmentFamily',
+    declaration: 'export type NativeAttachmentFamily = \'video\' | \'document\';',
+  },
+  {
     name: 'ObjectJsonSchema',
     declaration: 'export type ObjectJsonSchema = JsonSchemaNode & {\n    type: \'object\';\n};',
-  },
-  {
-    name: 'OfficeExtension',
-    declaration: 'export type OfficeExtension = \'doc\' | \'docx\' | \'xls\' | \'xlsx\' | \'ppt\' | \'pptx\';',
-  },
-  {
-    name: 'OfficeSourceKey',
-    declaration: 'export type OfficeSourceKey = Branded<\'OfficeSourceKey\'>;',
-  },
-  {
-    name: 'OfficeToPdfGeneration',
-    declaration: 'export type OfficeToPdfGeneration = Branded<\'OfficeToPdfGeneration\'>;',
-  },
-  {
-    name: 'OfficeToPdfKey',
-    declaration: 'export type OfficeToPdfKey = Branded<\'OfficeToPdfKey\'>;',
-  },
-  {
-    name: 'OfficeToPdfPriority',
-    declaration: 'export type OfficeToPdfPriority = \'foreground\' | \'background\';',
-  },
-  {
-    name: 'OfficeToPdfRequest',
-    declaration: 'export interface OfficeToPdfRequest {\n    readonly extension: OfficeExtension;\n    readonly priority: OfficeToPdfPriority;\n    readonly source: {\n        readonly key: OfficeSourceKey;\n        readonly version: string;\n        readonly bytes?: number;\n        read(signal: AbortSignal, maxBytes: number): Promise<{\n            readonly bytes: Uint8Array;\n            readonly version: string;\n        }>;\n    };\n}',
-  },
-  {
-    name: 'OfficeToPdfResult',
-    declaration: 'export interface OfficeToPdfResult {\n    readonly pdf: Uint8Array;\n    readonly missingFonts: string[];\n    readonly cacheKey: OfficeToPdfKey;\n    readonly generation: OfficeToPdfGeneration;\n}',
   },
   {
     name: 'OneShotSubagentDescriptorData',
@@ -5265,60 +5056,8 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
   },
   {
-    name: 'PackageResult',
-    declaration: 'export interface PackageResult {\n    exitCode: number;\n    output: string;\n    truncated: boolean;\n    logPath: string;\n    kind?: PluginInstallFailureKind;\n}',
-  },
-  {
     name: 'PermissionCatalog',
     declaration: 'export interface PermissionCatalog {\n    options: PresetOption[];\n}',
-  },
-  {
-    name: 'PluginChange',
-    declaration: 'export interface PluginChange {\n    readonly reason: \'plugin\' | \'bundle\' | \'install\' | \'remove\';\n}',
-  },
-  {
-    name: 'PluginEntryId',
-    declaration: 'export type PluginEntryId = Branded<\'PluginEntryId\'>;',
-  },
-  {
-    name: 'PluginFiberPhase',
-    declaration: 'export type PluginFiberPhase = \'pending\' | \'loading\' | \'active\' | \'failed\' | \'unloading\' | null;',
-  },
-  {
-    name: 'PluginInfo',
-    declaration: 'export type PluginInfo = PluginInventoryEntry & ({\n    patchId: string;\n    readOnlyReason?: never;\n} | {\n    patchId?: never;\n    readOnlyReason: ReadOnlyReason;\n});',
-  },
-  {
-    name: 'PluginInspectProblem',
-    declaration: 'export type PluginInspectProblem = \'invalid-spec\' | \'already-installed\' | \'not-found\' | \'not-a-package\' | \'not-a-bundle\' | \'network\' | \'unknown\';',
-  },
-  {
-    name: 'PluginInstallCancellation',
-    declaration: 'export interface PluginInstallCancellation {\n    readonly status: \'cancelled\' | \'too-late\' | \'not-running\';\n}',
-  },
-  {
-    name: 'PluginInstallFailureKind',
-    declaration: 'export type PluginInstallFailureKind = \'pnpm-missing\' | \'timeout\' | \'not-found\' | \'no-matching-version\' | \'network\' | \'disk-full\' | \'permission\' | \'build-blocked\' | \'integrity\' | \'unknown\';',
-  },
-  {
-    name: 'PluginInstallLogChunk',
-    declaration: 'export interface PluginInstallLogChunk {\n    readonly requestId?: PluginInstallRequestId;\n    readonly jobId: string;\n    readonly argv: readonly string[];\n    readonly cwd: string;\n    readonly stream: \'stdout\' | \'stderr\';\n    readonly text: string;\n    readonly exitCode?: number | null;\n}',
-  },
-  {
-    name: 'PluginInstallProgress',
-    declaration: 'export interface PluginInstallProgress {\n    readonly requestId: PluginInstallRequestId;\n    readonly phase: \'installing\' | \'cancelling\' | \'applying\';\n}',
-  },
-  {
-    name: 'PluginInstallRequestId',
-    declaration: 'export type PluginInstallRequestId = Branded<\'PluginInstallRequestId\'>;',
-  },
-  {
-    name: 'PluginInventoryEntry',
-    declaration: 'export interface PluginInventoryEntry {\n    readonly entryId: PluginEntryId;\n    readonly moduleName: string;\n    readonly enabled: boolean;\n    readonly fiberPhase: PluginFiberPhase;\n}',
-  },
-  {
-    name: 'PluginSpecInspection',
-    declaration: 'export type PluginSpecInspection = {\n    readonly status: \'accepted\';\n    readonly kind: InstallSpecKind;\n    readonly name?: string;\n    readonly version?: string;\n    readonly description?: string;\n    readonly bundle: boolean | null;\n} | {\n    readonly status: \'refused\';\n    readonly problem: PluginInspectProblem;\n    readonly reason: string;\n};',
   },
   {
     name: 'PostToolDecision',
@@ -5477,10 +5216,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface ReadFileLine {\n    number: number;\n    text: string;\n}',
   },
   {
-    name: 'ReadOnlyReason',
-    declaration: 'export type ReadOnlyReason = \'management-required\' | \'unaddressable\';',
-  },
-  {
     name: 'ReadResultView',
     declaration: 'export interface ReadResultView {\n    card: \'read\';\n    title?: string;\n    path: string;\n    offset: number;\n    lines: ReadFileLine[];\n    totalLines: number;\n    lang?: string;\n    content?: ContentBlock[];\n}',
   },
@@ -5515,10 +5250,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'RemoteEventHostInfo',
     declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
-  },
-  {
-    name: 'RenderedDocumentBytes',
-    declaration: 'export interface RenderedDocumentBytes extends WorkspaceFileBytes {\n    readonly missingFonts: string[];\n    readonly generation: OfficeToPdfGeneration;\n}',
   },
   {
     name: 'ReplayEnvelope',
@@ -5575,10 +5306,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'ResumeAgentOptions',
     declaration: 'export interface ResumeAgentOptions {\n    readonly resumeSessionId: SessionId;\n    readonly parentAgent?: Agent;\n    readonly agentOptions?: AgentOptions;\n    readonly signal?: AbortSignal;\n    readonly setup?: AgentSetup;\n}',
-  },
-  {
-    name: 'RpcId',
-    declaration: 'export type RpcId = Branded<\'rpc-id\'>;',
   },
   {
     name: 'RunnerFailureRule',
@@ -5663,10 +5390,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'SendTeamMessageResult',
     declaration: 'export interface SendTeamMessageResult {\n    readonly messageId: TeamMessageId;\n    readonly status: \'accepted\' | \'queued\';\n}',
-  },
-  {
-    name: 'ServerResponse',
-    declaration: 'export interface ServerResponse {\n    readonly type: \'server-response\';\n    readonly rpcId: RpcId;\n    readonly result: ConnectionRpcResult<unknown>;\n}',
   },
   {
     name: 'Session',
@@ -6621,10 +6344,6 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface TerminalResultView {\n    card: \'terminal\';\n    title?: string;\n    output?: string;\n    exitCode?: number;\n    signal?: string;\n}',
   },
   {
-    name: 'TerminalRetentionFrame',
-    declaration: 'export interface TerminalRetentionFrame {\n    readonly type: \'retained\';\n}',
-  },
-  {
     name: 'TerminalSendOperation',
     declaration: 'export interface TerminalSendOperation {\n    done: Promise<TerminalSendResult>;\n    readOutput(): TerminalSendRead;\n    cancel(): boolean;\n}',
   },
@@ -7137,6 +6856,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceDeleteRequest {\n    readonly workspaceId: WorkspaceId;\n}',
   },
   {
+    name: 'WorkspaceDeleteSessionRequest',
+    declaration: 'export interface WorkspaceDeleteSessionRequest {\n    readonly sessionId: SessionId;\n}',
+  },
+  {
     name: 'WorkspaceDeleteValue',
     declaration: 'export interface WorkspaceDeleteValue {\n    readonly deleted: true;\n}',
   },
@@ -7209,8 +6932,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceRenameRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n}',
   },
   {
-    name: 'WorkspaceUnarchiveSessionRequest',
-    declaration: 'export interface WorkspaceUnarchiveSessionRequest {\n    readonly sessionId: SessionId;\n}',
+    name: 'WorkspaceTrashEntry',
+    declaration: 'export interface WorkspaceTrashEntry {\n    readonly sessionId: SessionId;\n    readonly archivedAt?: number;\n    readonly title?: string;\n    readonly digest?: string;\n}',
+  },
+  {
+    name: 'WorkspaceTrashValue',
+    declaration: 'export interface WorkspaceTrashValue {\n    readonly entries: readonly WorkspaceTrashEntry[];\n}',
+  },
+  {
+    name: 'WorkspaceTreeMatch',
+    declaration: 'export interface WorkspaceTreeMatch {\n    readonly path: string;\n    readonly name: string;\n    readonly type: \'file\' | \'directory\' | \'other\';\n}',
+  },
+  {
+    name: 'WorkspaceTreeSearchFrame',
+    declaration: 'export type WorkspaceTreeSearchFrame = {\n    readonly kind: \'ready\';\n} | {\n    readonly kind: \'matches\';\n    readonly matches: readonly WorkspaceTreeMatch[];\n} | {\n    readonly kind: \'done\';\n    readonly truncated: boolean;\n};',
   },
   {
     name: 'WorkspaceValue',

@@ -105,7 +105,6 @@ kind: "package-reference"
 - [shell-env](../shell-env/README.zh.md)——每次调用都会收到的受管 `DSH_*` 环境。
 - [tool-jobs](../../jobs/tool-jobs/README.zh.md)——后台运行的 `job_output`、`job_list` 与 `job_kill` 控制。
 - [pwsh 工具与 bash 对齐 Agent Note](../../../.agents/notes/implemented/feature/2026-08-02-pwsh-tool-bash-parity.zh.md)——为什么工具镜像 bash 工具。
-- [Windows ACL 受限令牌沙箱 Agent Note](../../../.agents/notes/implemented/feature/2026-08-08-windows-acl-restricted-token-sandbox.zh.md)——语言模式与命名管道约定。
 - [生成的工具目录](../../../docs/tool-catalog.zh.md#deepseek-aidsh-tool-pwsh)——`pwsh` 参数 schema 的确切内容。
 - [生成的配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-tool-pwsh)——每个受支持配置字段及其源声明。
 

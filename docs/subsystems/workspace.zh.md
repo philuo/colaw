@@ -214,22 +214,13 @@ Typed Remote control of transient Session-owned terminal processes.
 @Remote list(sessionId: SessionId): WebTerminalInfo[]
 
 /**
- * Allocate a user shell once for a caller-generated identity, without Agent sandbox or approval restrictions.
+ * Allocate an interactive shell once for a caller-generated identity.
  * @param agent - Session owner supplied by the Gateway.
  * @param request - initial dimensions and idempotency identity.
  * @param signal - allocation cancellation; committed terminals survive disconnection.
  * @returns the existing or newly committed terminal.
  */
 @Remote async create(agent: Agent, request: TerminalCreateRequest, signal: AbortSignal): Promise<WebTerminalInfo>
-
-/**
- * Retain an existing terminal for a window without activating its Agent or taking input control.
- * @param sessionId - owning Session identity, including an inactive saved layout.
- * @param id - retained Host terminal identity.
- * @param signal - physical Remote stream cancellation.
- * @returns a hold acknowledgement followed by an open lifetime stream.
- */
-@Remote({ mode: 'stream' }) retain(sessionId: SessionId, id: WebTerminalId, signal: AbortSignal): AsyncIterable<TerminalRetentionFrame>
 
 /**
  * Attach to a terminal without binding its process lifetime to the transport.
@@ -333,11 +324,30 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
 
 /**
- * Restore one archived Session to Workspace grouping surfaces.
- * @param request - Session identity to unarchive.
+ * Read the complete trash listing with per-entry previews.
+ * @returns one entry per archived session, newest archive first.
+ */
+@Remote('trashEntries') trashEntries(): Promise<WorkspaceTrashValue>
+
+/**
+ * Restore one archived session to its grouping surfaces.
+ * @param request - the archived session to restore.
  * @returns the complete resulting archive set.
  */
 @Remote('unarchiveSession') unarchiveSession(request: WorkspaceUnarchiveSessionRequest): Promise<WorkspaceArchiveValue>
+
+/**
+ * Remove one archived session from disk for good.
+ * @param request - the archived session to delete permanently.
+ * @returns the complete resulting archive set.
+ */
+@Remote('deleteArchivedSession') deleteArchivedSession(request: WorkspaceDeleteSessionRequest): Promise<WorkspaceArchiveValue>
+
+/**
+ * Remove every archived session from disk for good.
+ * @returns the complete resulting archive set (empty on success).
+ */
+@Remote('clearTrash') clearTrash(): Promise<WorkspaceArchiveValue>
 
 /**
  * Stream a complete Workspace baseline followed by ordered increments.
@@ -413,6 +423,23 @@ Host Remote file reads and workspace directory observations over the composed fi
  * @returns the directory's children in the backend's stable name order, bounded by the entry cap.
  */
 @Remote async list(workspaceFileScope: WorkspaceFileScope, path: string, signal: AbortSignal): Promise<WorkspaceDirectoryListing>
+
+/**
+ * Search the workspace tree for entries whose name contains the query —
+ * case-insensitively, walking directories breadth-first inside the Host so
+ * the Client never blocks. The walk reads raw dirent names (no per-entry
+ * stat), scans each breadth level concurrently, never descends into
+ * dependency/VCS directories, and does not follow directory symlinks (cycle
+ * guard), so every walked path stays under the root the containment gate
+ * accepted. The walk stops at the entry, directory, or time caps, and
+ * `truncated` says when it was cut short so more matches may exist.
+ * @param workspaceFileScope - header-derived workspace root for the Session identity on the wire.
+ * @param root - workspace path to search under, absolute or workspace-relative.
+ * @param query - the name substring to match, case-insensitively.
+ * @param signal - caller cancellation.
+ * @returns a stream: `ready`, then shallow-first `matches` batches, then `done`.
+ */
+@Remote({ mode: 'stream' }) async *searchTree( workspaceFileScope: WorkspaceFileScope, root: string, query: string, signal: AbortSignal, ): AsyncIterable<WorkspaceTreeSearchFrame>
 
 /**
  * Stream every `fs/observed` observation of a file inside the Session's
@@ -492,16 +519,25 @@ insertBefore(id: WorkspaceId, beforeId?: WorkspaceId): Promise<readonly Workspac
 archiveSession(sessionId: SessionId): Promise<void>
 
 /**
- * Unarchive one session durably by dropping it from the registry-global
- * archive set; the accounting slot was never touched, so the session
- * returns to its recorded position. Unarchiving runs no session-existence
- * check because removing an id cannot introduce an unknown one, so an
- * entry whose session is gone still resolves. An id that is not archived
- * resolves without writing.
- * @param sessionId - The session to unarchive.
+ * Restore one archived session to its grouping surfaces: the archive-set
+ * slot and its recorded time both leave, and the session's workspace
+ * accounting is untouched — its `sessionIds` position survived the archive.
+ * An id that is not archived resolves without writing.
+ * @param sessionId - The session to restore.
  * @returns resolution after durability.
  */
 unarchiveSession(sessionId: SessionId): Promise<void>
+
+/**
+ * Drop every registry trace of one session: the archive-set slot with its
+ * recorded time, and the `sessionIds` membership of any workspace whose
+ * accounting holds it. The durable session artifact is the caller's to
+ * remove — this is the accounting half of a permanent deletion, so an id
+ * that leaves nothing behind resolves without writing.
+ * @param sessionId - The session whose registry traces are dropped.
+ * @returns resolution after durability.
+ */
+purgeSession(sessionId: SessionId): Promise<void>
 
 /**
  * Resolve by canonical directory path without creating or mutating a

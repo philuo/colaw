@@ -25,7 +25,7 @@ Inspect Host and Client runtime APIs before writing plugin code. Creator mode pr
 <a id="use-this-package"></a>
 ## Use this package
 
-Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-tool-cordis` alongside the host runner that provides `cordisInspect`. Call `cordis_inspect_list` to discover providers, then `cordis_inspect_query` for a provider's exact methods and types. Use [Plugin Manager](../../boot/plugin-manager/README.md) to install bundles containing plugin code or MCP configuration.
+Creator mode includes this toolset. Other compositions mount `@deepseek-ai/dsh-tool-cordis` alongside the host runner that provides `cordisInspect`. Call `cordis_inspect_list` to discover providers, then `cordis_inspect_query` for a provider's exact methods and types.
 
 -----
 
@@ -44,7 +44,6 @@ Host providers combine generated Service/Event catalogs and the requesting agent
 <a id="further-exploration"></a>
 ## Further Exploration
 
-- [Plugin Manager](../../boot/plugin-manager/README.md) — persistent bundle installation and enablement.
 - [Cordis host runner](../cordis-host-runner/README.md) — inspection registry and existing runtime consumers.
 
 <a id="model-experience"></a>

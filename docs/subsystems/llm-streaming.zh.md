@@ -998,11 +998,14 @@ fileRequestText(ref: FileAttachmentRef): string
 
 /**
  * Discover models advertised by one registered provider. Catalog membership
- * is advisory and never changes routing or request validation.
+ * is advisory and never changes routing or request validation. Exposed as a
+ * Remote so a configuration surface can show each row's effective facts
+ * (modalities included) instead of guessing what an undeclared field
+ * inherits from.
  * @param provider - registered provider route to inspect.
  * @returns detached model metadata in adapter-preferred order.
  */
-async listModels(provider: string): Promise<LlmModelInfo[]>
+@Remote async listModels(provider: string): Promise<LlmModelInfo[]>
 
 /**
  * Resolve and validate all metadata from the adapter that owns one exact

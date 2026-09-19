@@ -42,7 +42,7 @@ function mountBrowser(navigation?: { readonly url?: string }) {
     useResource: vi.fn(),
     useWorkspaces: vi.fn(),
     usePanelInfo: vi.fn(),
-    useSessionPendingInteraction: vi.fn(),
+    useSessionStatus: vi.fn(),
     useTabInfo: () => ({
       sidebar: { expanded: true, fullscreen: false }, panel: { id: 'pane' },
       tab: {

@@ -19,7 +19,6 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
-| `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-experimental-browser-use-stagehand-native` | `stagehand_act`、`stagehand_extract`、`stagehand_navigate`、`stagehand_observe`、`stagehand_screenshot`、`stagehand_tabs` | `ctx.browserUse`、`ctx.agents`、`ctx.tools`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-ask-user` | `ask_user_question` | `ctx.tools`、`ctx.userQuestions` | `tool/call`、`tool/result after a UI/provider answers the question` | - | ask_user_question 会暂停工具调用，直到当前 UI 提供方返回人类答案。 |
@@ -38,6 +37,7 @@
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
+| `@deepseek-ai/dsh-tool-mineru` | `mineru_parse_document` | `ctx.tools` | `tool/call`、`tool/result` | - | mineru_parse_document 将工作区文件上传到 MinerU 云 API，并把抽取得到的 Markdown 写到源文件旁；Bearer token 属于产品配置（或 `MINERU_API_KEY` 托管凭证），绝不从环境变量读取。 |
 | `@deepseek-ai/dsh-tool-ralph` | `ralph` | `ctx.tools`、`ctx.workflowEngine`、`ctx.subagents`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents every fresh round)` | `tool/call`、`tool/result`、`workflow and child session events during execution` | - | 固定的前台工作流会在每个 Round 启动一个全新的结构化子级；模型只能选择不可变目标和可选的 Round 上限。 |
 | `@deepseek-ai/dsh-tool-skill` | `skill` | `ctx.tools`、`ctx.agents`、`ctx.skills` | `tool/call`、`tool/result`、`user/message replacement catalogs via agent.inject()` | - | - |
 | `@deepseek-ai/dsh-tool-session-query` | `session_event_read`、`session_event_search`、`session_event_trace`、`session_search`、`session_trace` | `ctx.tools`、`ctx.systemPrompt`、`ctx.sessionQuery`、`a calling Agent for workspace authority` | `tool/call`、`tool/result` | - | 这 5 个只读工具会隐藏提供方游标，并根据不可变的调用 agent 会话为每个结果授权。该包需要选择启用；需要强制截止时间或限制行内输出的组合还会挂载通用超时或 spill 策略。 |
@@ -48,62 +48,6 @@
 | `@deepseek-ai/dsh-tool-todo` | `todo_write` | `ctx.tools`、`owning Agent session` | `tool/call`、`todo/write`、`tool/result` | - | todo_write 是会话所有的状态；UI 将最新的 todo/write 事件渲染为检查清单。`allowParallelInProgress` 是没有默认值的必填项，因此本目录明确选择 `true`，对应描述允许同时存在多个 `in_progress` 项。选择 `false` 的部署会获得同一工具，但描述会要求只能有 1 个活动任务。 |
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
-
-<a id="deepseek-aidsh-plugin-manager"></a>
-
-## `@deepseek-ai/dsh-plugin-manager`
-
-### `plugin_manager`
-
-列出当前 profile 中的插件或组合包，启用或禁用它们，安装组合包或移除已安装的组合包。每项操作都要求 danger-full-access 权限或本次调用的批准。批准不改变会话权限模式。变更影响该 profile 的所有会话。先列出条目以获取准确标识。包安装可能运行已获批准的构建脚本。支持热更新的 profile 立即应用变更；仅启动时加载的 profile 需要重启。
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "action": {
-      "type": "string",
-      "description": "Management operation.",
-      "enum": [
-        "list_plugins",
-        "list_bundles",
-        "set_plugin",
-        "set_bundle",
-        "install_bundle",
-        "remove_bundle"
-      ]
-    },
-    "target": {
-      "type": "string",
-      "description": "Plugin entry id, bundle package name, or installation spec, according to action."
-    },
-    "enabled": {
-      "type": "boolean",
-      "description": "Required for set operations; defaults to true for installation."
-    },
-    "approvedBuilds": {
-      "type": "array",
-      "description": "For install_bundle: pass names from pendingBuilds only after the user explicitly approves running their install scripts in the conversation. This grants persistent permission for this profile.",
-      "items": {
-        "type": "string"
-      }
-    },
-    "offset": {
-      "type": "number",
-      "description": "Zero-based list offset; defaults to 0."
-    },
-    "limit": {
-      "type": "number",
-      "description": "List page size, from 1 to 100; defaults to 25."
-    }
-  },
-  "required": [
-    "action"
-  ]
-}
-```
-
-来源： [`packages/boot/plugin-manager/src/tools.ts`](../packages/boot/plugin-manager/src/tools.ts)
 
 <a id="deepseek-aidsh-mcp-resources"></a>
 
@@ -1511,6 +1455,39 @@ create、edit、pause 和 resume 要求直接来自人类的根权限；complete
 来源：[`packages/lsp/tool-lsp/src/index.ts`](../packages/lsp/tool-lsp/src/index.ts)
 
 lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。
+
+<a id="deepseek-aidsh-tool-mineru"></a>
+
+## `@deepseek-ai/dsh-tool-mineru`
+
+### `mineru_parse_document`
+
+使用 MinerU 云服务将文档文件（含扫描件的 PDF、图片或 Office 文档）解析为 Markdown。当用户要求把文档的文本/版面抽取、OCR 或转换为 Markdown，或 PDF 的文本层不可用时使用。解析得到的 Markdown 以 `<name>.mineru.md` 写到源文件旁。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "path": {
+      "type": "string",
+      "description": "Workspace-relative (or absolute) path of the document to parse."
+    },
+    "is_ocr": {
+      "type": "boolean",
+      "description": "Force OCR. Defaults to the service's automatic detection."
+    },
+    "language": {
+      "type": "string",
+      "description": "Document language hint, e.g. \"ch\" (Chinese) or \"en\" (English)."
+    }
+  },
+  "required": [
+    "path"
+  ]
+}
+```
+
+来源： [`packages/tools/tool-mineru/src/index.ts`](../packages/tools/tool-mineru/src/index.ts)
 
 <a id="deepseek-aidsh-tool-ralph"></a>
 
