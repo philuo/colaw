@@ -44,7 +44,7 @@ import {
 } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { createRequire } from 'node:module'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
@@ -78,6 +78,19 @@ const hostDir = join(repoRoot, 'apps', 'electrobun-host')
 const devkitDir = join(hostDir, '.hutch', 'devkit')
 const builtApp = join(hostDir, 'build', 'dev-macos-arm64', 'Colaw-dev.app')
 const stableApp = join(hostDir, 'build', 'stable-macos-arm64', 'Colaw.app')
+
+/**
+ * The Bun the desktop shell ships, pinned exactly.
+ *
+ * The terminal pane's PTY behaviour, the subprocess seam, and every other
+ * runtime surface this app depends on are verified against one Bun version, and
+ * the app is handed to other people — so "whatever the toolchain resolved on
+ * the building machine" is not acceptable. Hutch pins its own products but not
+ * Bun (that version is compiled into the orchestrator), which is why the
+ * enforcement lives here: whatever the shell was born with is replaced by this
+ * build, and the pin is re-verified afterwards. Keep `.bun-version` in step.
+ */
+const PINNED_BUN_VERSION = '1.4.2'
 const appResourcesApp = join(stableApp, 'Contents', 'Resources', 'app')
 const closureRoot = join(appResourcesApp, 'node_modules')
 const installDir = join(appResourcesApp, 'install')
@@ -1512,6 +1525,7 @@ function reportSize(): void {
     walk(dir)
     return bytes
   }
+  ensurePinnedBun()
   const total = sizeOf(stableApp)
   const modules = sizeOf(join(appResourcesApp, 'node_modules'))
   const install = sizeOf(installDir)
@@ -1519,6 +1533,61 @@ function reportSize(): void {
   console.log(`pack-stable-app: published ${stableApp}`)
   console.log(`pack-stable-app: shell ${mb(total - modules - install)}, node_modules ${mb(modules)}, install ${mb(install)}`)
   console.log(`pack-stable-app: app size ${mb(total)}`)
+}
+
+/**
+ * Replace the shell's Bun with the pinned build and prove the result.
+ *
+ * Sources are tried in order: an explicit `DSH_BUN_BINARY`, the toolchain cache
+ * (where Hutch stages downloaded Bun builds), then a system Bun that already is
+ * the pinned version. A pinned build must be found: shipping an unverified
+ * runtime silently is the failure this exists to prevent, so the pack fails
+ * loud instead.
+ */
+function ensurePinnedBun(): void {
+  const target = join(stableApp, 'Contents', 'MacOS', 'bun')
+  if (!existsSync(target)) {
+    console.error(`pack-stable-app: the shell has no runtime at ${target}`)
+    process.exit(1)
+  }
+  const versionOf = (path: string): string | undefined => {
+    const result = (globalThis as unknown as { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null; stdout: Uint8Array } } })
+      .Bun.spawnSync([path, '--version'], { stdout: 'pipe', stderr: 'pipe' })
+    if (result.exitCode !== 0) return undefined
+    return new TextDecoder().decode(result.stdout).trim()
+  }
+
+  const current = versionOf(target)
+  if (current === PINNED_BUN_VERSION) {
+    console.log(`pack-stable-app: runtime bun ${current} (pinned)`)
+    return
+  }
+
+  const candidates: string[] = []
+  const explicit = process.env.DSH_BUN_BINARY
+  if (explicit !== undefined && explicit !== '') candidates.push(explicit)
+  candidates.push(join(homedir(), '.hutch', 'toolchains', 'bun', PINNED_BUN_VERSION, 'macos-arm64', 'bun'))
+  const systemBun = (globalThis as unknown as { Bun: { which: (cmd: string) => string | null } }).Bun.which('bun')
+  if (systemBun !== null) candidates.push(systemBun)
+
+  const source = candidates.find(candidate => existsSync(candidate) && versionOf(candidate) === PINNED_BUN_VERSION)
+  if (source === undefined) {
+    console.error(
+      `pack-stable-app: the shell carries bun ${String(current ?? 'unknown')} but this product pins ${PINNED_BUN_VERSION}.\n`
+      + `  Provide one of: DSH_BUN_BINARY=<path to bun ${PINNED_BUN_VERSION}>, `
+      + `~/.hutch/toolchains/bun/${PINNED_BUN_VERSION}/macos-arm64/bun, or bun ${PINNED_BUN_VERSION} on PATH.`,
+    )
+    process.exit(1)
+  }
+
+  copyFileSync(source, target)
+  chmodSync(target, 0o755)
+  const verified = versionOf(target)
+  if (verified !== PINNED_BUN_VERSION) {
+    console.error(`pack-stable-app: replacement runtime reports ${String(verified ?? 'nothing')}, expected ${PINNED_BUN_VERSION}`)
+    process.exit(1)
+  }
+  console.log(`pack-stable-app: runtime bun ${String(current ?? 'unknown')} → ${verified} (pinned)`)
 }
 
 /** Copy the packed payload out of the build tree before the official stable build replaces it. */
