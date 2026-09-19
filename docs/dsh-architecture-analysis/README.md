@@ -25,7 +25,7 @@
 
 ### Q: dsh 升级后抛弃 Cordis 改用 Pi 了吗？
 
-**没有。** Cordis 是 dsh 的元框架（插件运行时、依赖注入、事件总线、生命周期管理），被 vendor 到本地（v4.0.2，rescope 为 `@deepseek-ai/cordis`），是整个系统的骨架。Pi-ai（`@earendil-works/pi-ai`）是一个可选的多供应商 LLM API 客户端库，作为 `dsh-llm-pi-ai` 插件的依赖，默认休眠，用户配置后才激活。二者处于完全不同的架构层级，不存在替换关系。
+**没有。** Cordis 是 dsh 的元框架（插件运行时、依赖注入、事件总线、生命周期管理），被 vendor 到本地（v4.0.2，rescope 为 `@deepseek-ai/cordis`），是整个系统的骨架。Pi-ai（`@earendil-works/pi-ai`）是一个可选的多供应商 LLM API 客户端库，作为 `dsh-llm-provider` 插件的依赖，默认休眠，用户配置后才激活。二者处于完全不同的架构层级，不存在替换关系。
 
 详见 [01-cordis-vs-pi-ai.md](./01-cordis-vs-pi-ai.md)。
 
@@ -68,7 +68,7 @@ dsh 是一个**全插件化的 AI Agent 运行时**，基于 Cordis 元框架。
 - 根目录 `package.json`、`pnpm-workspace.yaml`、`AGENTS.md`
 - `vendor/cordis/` 核心框架源码（Context、Fiber、Service、Events、Registry）
 - `packages/core/` 核心包（agent-loop、session、tools、system-prompt、agent）
-- `packages/llm/` LLM 包（llm、llm-deepseek、llm-pi-ai）
+- `packages/llm/` LLM 包（llm、llm-deepseek、llm-provider）
 - `packages/bundle/base/cordis.patch.yml` 基础组合（~80 个插件行）
 - `packages/boot/app-boot/src/index.ts` 启动流程
 - `apps/desktop/` 和 `apps/desktop-host/` 桌面端实现

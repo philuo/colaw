@@ -111,7 +111,7 @@ dsh 严格区分三种依赖：
 | `compression`              | ^1.8.1        | HTTP 压缩                 | host-webserver                      |
 | `negotiator`               | ^1.0.0        | HTTP 内容协商               | host-webserver                      |
 | `resolve.exports`          | ^2.0.3        | package.json exports 解析 | app-boot                            |
-| `@earendil-works/pi-ai`    | ^0.85.1       | 多供应商 LLM API 客户端        | llm-pi-ai（可选）                       |
+| `@earendil-works/pi-ai`    | ^0.85.1       | 多供应商 LLM API 客户端        | llm-provider（可选）                       |
 | `electron`                 | ^44.0.0       | 桌面应用框架                  | desktop（dev）                        |
 | `electron-builder`         | ^26.15.3      | 桌面应用打包                  | desktop（dev）                        |
 | `electron-updater`         | ^6.8.9        | 自动更新                    | desktop                             |
@@ -242,7 +242,7 @@ dsh-base (cordis.patch.yml 插入 \~80 个插件行)
 
 │   ├── dsh-llm-deepseek (默认，直连 DeepSeek)
 
-│   └── dsh-llm-pi-ai (可选，默认休眠，pi-ai 多供应商)
+│   └── dsh-llm-provider (可选，默认休眠，pi-ai 多供应商)
 
 │
 

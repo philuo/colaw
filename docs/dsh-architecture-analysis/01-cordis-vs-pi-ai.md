@@ -7,7 +7,7 @@
 | 框架 | 层级 | 角色 | 状态 |
 |---|---|---|---|
 | **Cordis** | 元框架（Meta-Framework） | 整个 dsh 的插件运行时、依赖注入、事件总线、生命周期管理 | **核心，被 vendor 到本地**（v4.0.2，rescope 为 `@deepseek-ai/cordis`） |
-| **Pi-ai**（`@earendil-works/pi-ai`） | LLM 客户端库 | 多供应商 LLM API 适配器的底层 HTTP/协议客户端 | **可选，作为 `dsh-llm-pi-ai` 插件的依赖** |
+| **Pi-ai**（`@earendil-works/pi-ai`） | LLM 客户端库 | 多供应商 LLM API 适配器的底层 HTTP/协议客户端 | **可选，作为 `dsh-llm-provider` 插件的依赖** |
 
 ## Cordis：dsh 的骨架
 
@@ -66,10 +66,10 @@ Vendor 的完整包列表：
 
 ### 包定位
 
-`@earendil-works/pi-ai` 是 `packages/llm/llm-pi-ai` 包的**唯一外部运行时依赖**：
+`@earendil-works/pi-ai` 是 `packages/llm/llm-provider` 包的**唯一外部运行时依赖**：
 
 ```json
-// packages/llm/llm-pi-ai/package.json
+// packages/llm/llm-provider/package.json
 "dependencies": {
   "@deepseek-ai/dsh-brand": "workspace:^",
   "@deepseek-ai/dsh-util-values": "workspace:^",
@@ -80,14 +80,14 @@ Vendor 的完整包列表：
 
 ### 它是什么
 
-Pi-ai 是一个**多供应商 LLM API 客户端库**，内置了多家 LLM 提供商的端点、协议和模型目录（OpenAI、Anthropic 等）。dsh 的 `llm-pi-ai` 插件将其包装为 dsh LLM 服务（`ctx.llm`）的一个适配器。
+Pi-ai 是一个**多供应商 LLM API 客户端库**，内置了多家 LLM 提供商的端点、协议和模型目录（OpenAI、Anthropic 等）。dsh 的 `llm-provider` 插件将其包装为 dsh LLM 服务（`ctx.llm`）的一个适配器。
 
 ### 与 `dsh-llm-deepseek` 的关系
 
-`llm-pi-ai` 被明确定义为 `dsh-llm-deepseek` 的 **"design-verification twin"**（设计验证孪生）：
+`llm-provider` 被明确定义为 `dsh-llm-deepseek` 的 **"design-verification twin"**（设计验证孪生）：
 
 - `dsh-llm-deepseek`：直连 DeepSeek 官方 API 的适配器，**默认启用**
-- `dsh-llm-pi-ai`：通过 pi-ai 库连接多供应商的适配器，**默认休眠（dormant）**
+- `dsh-llm-provider`：通过 pi-ai 库连接多供应商的适配器，**默认休眠（dormant）**
 
 二者可以同时挂载，因为它们的路由名称（provider route name）不冲突。注册另一个适配器已拥有的路由会导致插件加载失败。
 
@@ -96,19 +96,19 @@ Pi-ai 是一个**多供应商 LLM API 客户端库**，内置了多家 LLM 提�
 在 `packages/bundle/base/cordis.patch.yml` 中：
 
 ```yaml
-- id: llm-pi-ai
-  name: '@deepseek-ai/dsh-llm-pi-ai'
-  # 零路由（和模型选择器中无额外模型），直到 `llm-pi-ai:` 设置段提供 provider 配置
+- id: llm-provider
+  name: '@deepseek-ai/dsh-llm-provider'
+  # 零路由（和模型选择器中无额外模型），直到 `llm-provider:` 设置段提供 provider 配置
   # — 然后这些路由实时注册，密钥通过 apiKeyEnv 引用按请求解析，段清空时再次卸载
 ```
 
-即：pi-ai 插件启动时**不注册任何 LLM 路由**，只有当用户在设置文档（`$DSH_HOME/settings.yaml`）中添加 `llm-pi-ai:` 段并配置 provider 时，才会激活对应路由。Web 端的 Models 页面就是通过写入这个设置段来启用 pi-ai 提供商的。
+即：pi-ai 插件启动时**不注册任何 LLM 路由**，只有当用户在设置文档（`$DSH_HOME/settings.yaml`）中添加 `llm-provider:` 段并配置 provider 时，才会激活对应路由。Web 端的 Models 页面就是通过写入这个设置段来启用 pi-ai 提供商的。
 
 ### pi-ai 的配置示例
 
 ```yaml
-# $DSH_HOME/settings.yaml 中的 llm-pi-ai 段
-llm-pi-ai:
+# $DSH_HOME/settings.yaml 中的 llm-provider 段
+llm-provider:
   providers:
     openai:
       apiKeyEnv: OPENAI_API_KEY
@@ -154,7 +154,7 @@ llm-pi-ai:
 │  │llm-deepseek  │ │     │  ctx.web / ctx.skill / ...        │
 │  │(默认,直连DS)  │ │     └───────────────────────────────────┘
 │  ├──────────────┤ │
-│  │llm-pi-ai     │ │◄── @earendil-works/pi-ai (多供应商客户端)
+│  │llm-provider     │ │◄── @earendil-works/pi-ai (多供应商客户端)
 │  │(可选,休眠)    │ │
 │  └──────────────┘ │
 └───────────────────┘

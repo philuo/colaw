@@ -141,7 +141,7 @@
 | 包名 | 原因 |
 |------|------|
 | `@deepseek-ai/dsh-llm-deepseek` | 纯HTTP调用，Bun和Node无差异，且涉及复杂流式处理 |
-| `@deepseek-ai/dsh-llm-pi-ai` | 第三方库，重构无收益 |
+| `@deepseek-ai/dsh-llm-provider` | 第三方库，重构无收益 |
 | `@deepseek-ai/dsh-agent-loop` | 纯逻辑，无IO，运行时无差异 |
 | `@deepseek-ai/dsh-core/*` | 核心逻辑，重构风险大于收益 |
 | `@deepseek-ai/dsh-sandbox-*` | 涉及系统级安全，需谨慎 |

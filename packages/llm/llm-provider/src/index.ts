@@ -24,8 +24,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { assertUsableApiKey, convertLegacyPiAiModels, convertLegacyPiAiProfile, LlmError, migrateLegacyPiAiProfiles, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
-import type { LlmConfigurableProvider, LegacyMigrationSettings, LegacyPiAiProfile, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
+import { assertUsableApiKey, LlmError, resolveImageAttachmentAccess, resolveRetryPolicy, RetryPolicySchema } from '@deepseek-ai/dsh-llm'
+import type { LlmConfigurableProvider, ModelModality, RetryPolicyConfig } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-fs'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { launchEnvironmentOf, type LaunchEnvironmentSnapshot } from '@deepseek-ai/dsh-launch-environment'
@@ -461,11 +461,52 @@ export function resolveAnthropicAdapterOptions(
  * @param settings - the settings service, with this plugin's section installed.
  * @param log - line function for the one diagnostic per outcome.
  */
+/** The settings surface the two-package era's fold reads. */
+interface EraFoldSettings {
+  rawSection(ns: string): Record<string, unknown> | undefined
+  update(ns: string, section: object): Promise<void>
+  register(ns: string, schema: z<unknown>, options: { base: object }): { replace(section: object): Promise<void> }
+}
+
+function eraString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined
+}
+
+/**
+ * Convert a stored model list from the two-package era's spelling (the list
+ * field was named `input`) onto this schema's `inputModalities` — same
+ * strings, same order.
+ */
+function convertEraModels(models: unknown): Record<string, unknown>[] | undefined {
+  if (!Array.isArray(models)) return undefined
+  const converted: Record<string, unknown>[] = []
+  for (const raw of models) {
+    if (typeof raw !== 'object' || raw === null) continue
+    const model = raw as Record<string, unknown>
+    const id = eraString(model['id'])
+    if (id === undefined) continue
+    const input = Array.isArray(model['inputModalities']) ? model['inputModalities'] : model['input']
+    const modalities = Array.isArray(input) && input.every(item => typeof item === 'string') && input.length > 0
+      ? [...input as string[]]
+      : undefined
+    converted.push({
+      id,
+      ...eraString(model['name']) === undefined ? {} : { name: eraString(model['name']) },
+      ...typeof model['contextWindow'] === 'number' && Number.isInteger(model['contextWindow']) && model['contextWindow'] > 0
+        ? { contextWindow: model['contextWindow'] }
+        : {},
+      ...typeof model['maxTokens'] === 'number' && Number.isInteger(model['maxTokens']) && model['maxTokens'] > 0
+        ? { maxTokens: model['maxTokens'] }
+        : {},
+      ...modalities === undefined ? {} : { inputModalities: modalities },
+    })
+  }
+  return converted.length > 0 ? converted : undefined
+}
+
 export async function foldLegacySection(
   legacy: 'llm-anthropic' | 'llm-openai',
-  settings: LegacyMigrationSettings & {
-    register(ns: string, schema: z<unknown>, options: { base: object }): { replace(section: object): Promise<void> }
-  },
+  settings: EraFoldSettings,
   log: (line: string) => void,
 ): Promise<void> {
   const source = settings.rawSection(legacy)
@@ -487,7 +528,7 @@ export async function foldLegacySection(
     // this schema's `inputModalities`, the same conversion the pi-ai import
     // performs; rows already in this schema's spelling pass through it
     // unchanged.
-    const models = convertLegacyPiAiModels((value as { models?: unknown }).models)
+    const models = convertEraModels((value as { models?: unknown }).models)
     picked[route] = {
       ...value,
       ...(legacy === 'llm-anthropic' ? { api: 'anthropic-messages' } : {}),
@@ -711,36 +752,12 @@ export function apply(ctx: Context, config: Config): void {
         }
       },
     })
-    // One-shot upgrade imports, after installSection so the writes' namespace
+    // One-shot upgrade import for the two-package era's llm-openai and
+    // llm-anthropic sections, after installSection so the writes' namespace
     // is registered; the resulting change notifications drive registration
-    // through the onChange hook above. First the retired pi-ai section, then
-    // the two-package era's llm-anthropic section.
-    const settings = settingsCtx.settings as unknown as Parameters<typeof migrateLegacyPiAiProfiles>[0]
-      & Parameters<typeof foldLegacySection>[1]
-    void migrateLegacyPiAiProfiles(
-      settings,
-      {
-        ns: NS,
-        accepts: (route: string, profile: LegacyPiAiProfile): boolean =>
-          profile.api === 'openai-completions'
-          || profile.api === 'openai-responses'
-          || profile.api === 'anthropic-messages'
-          // No stored protocol means a pi-ai catalog route; the ones the
-          // retired catalog served under their own key land here keyed by
-          // route, and a hand-declared profile without an endpoint named no
-          // wire to serve.
-          || (profile.api === undefined && (route === 'openai' || route === 'anthropic' || typeof profile.baseURL === 'string')),
-        convert: (route: string, profile: LegacyPiAiProfile) => convertLegacyPiAiProfile(profile, {
-          // Catalog routes named no protocol because the catalog was their
-          // default; each catalog key's protocol is what the default restores.
-          api: typeof profile.api === 'string'
-            ? profile.api
-            : (route === 'anthropic' ? 'anthropic-messages' : 'openai-completions'),
-        }),
-      },
-      (line) => { ctx.logger.info(line) },
-    )
-      .then(() => foldLegacySection('llm-openai', settings, (line) => { ctx.logger.info(line) }))
+    // through the onChange hook above.
+    const settings = settingsCtx.settings as unknown as EraFoldSettings
+    void foldLegacySection('llm-openai', settings, (line) => { ctx.logger.info(line) })
       .then(() => foldLegacySection('llm-anthropic', settings, (line) => { ctx.logger.info(line) }))
       .catch((error) => {
         ctx.logger.warn('llm-provider: migrating the retired settings sections failed; their routes stay there')

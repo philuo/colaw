@@ -10,7 +10,7 @@
 
 dsh 的核心设计哲学是：**没有特权核心，一切皆插件**。
 
-- 模型适配器是插件（`dsh-llm-deepseek`、`dsh-llm-pi-ai`）
+- 模型适配器是插件（`dsh-llm-deepseek`、`dsh-llm-provider`）
 - 工具注册表是插件（`dsh-tools`）
 - 会话日志是插件（`dsh-session`）
 - **Agent 循环本身也是插件**（`dsh-agent-loop`）

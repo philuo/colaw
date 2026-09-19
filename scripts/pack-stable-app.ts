@@ -334,6 +334,50 @@ function entryOfManifest(packageDir: string, manifest: Record<string, unknown>, 
 }
 
 /**
+ * Workspace package roots keyed by package name. Bun's isolated install links
+ * a workspace package only into the node_modules of workspaces that declare
+ * it; pnpm additionally links every workspace package at the root node_modules.
+ * The closure seeds mounted plugin entries from the CLI anchor, where bundle
+ * plugins that only a bundle declares miss under Bun, so after the upward walk
+ * fails resolve in-repo workspace packages directly — against their built
+ * `lib/` manifest entry, the same plane the walk finds. Third-party misses keep
+ * throwing so the closure matches the install's own resolution failure.
+ */
+const workspacePackageDirs = new Map<string, string>()
+let workspacePackagesScanned = false
+function scanWorkspacePackages(): Map<string, string> {
+  if (workspacePackagesScanned) return workspacePackageDirs
+  workspacePackagesScanned = true
+  const rootManifest = JSON.parse(readFileSync(join(repoRoot, 'package.json'), 'utf8')) as { workspaces?: unknown }
+  const patterns = Array.isArray(rootManifest.workspaces) ? rootManifest.workspaces as string[] : []
+  const expandPattern = (pattern: string): string[] => {
+    const segments = pattern.split('/')
+    const walk = (base: string, index: number): string[] => {
+      if (index === segments.length) return [base]
+      const segment = segments[index]!
+      if (!segment.includes('*')) return walk(join(base, segment), index + 1)
+      if (!isDirectory(base)) return []
+      const found: string[] = []
+      for (const entry of readdirSync(base, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue
+        if (segment === '*') found.push(...walk(join(base, entry.name), index + 1))
+      }
+      return found
+    }
+    return walk(repoRoot, 0)
+  }
+  for (const pattern of patterns) {
+    for (const dir of expandPattern(pattern)) {
+      const manifestPath = join(dir, 'package.json')
+      if (!isFile(manifestPath)) continue
+      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown }
+      if (typeof manifest.name === 'string') workspacePackageDirs.set(manifest.name, dir)
+    }
+  }
+  return workspacePackageDirs
+}
+
+/**
  * Resolve a bare specifier by walking node_modules directories from the
  * importing file — Node's own algorithm, deliberately without Bun's resolver
  * (which applies tsconfig `paths` and would resolve onto the src plane).
@@ -354,6 +398,16 @@ function resolveBareFile(spec: string, fromFile: string): { file: string; wildca
     const parent = dirname(dir)
     if (parent === dir) break
     dir = parent
+  }
+  const workspaceDir = scanWorkspacePackages().get(root)
+  if (workspaceDir !== undefined) {
+    const workspaceManifestPath = join(workspaceDir, 'package.json')
+    const resolved = entryOfManifest(
+      workspaceDir,
+      JSON.parse(readFileSync(workspaceManifestPath, 'utf8')) as Record<string, unknown>,
+      subpath,
+    )
+    if (resolved !== undefined) return { file: realpathSync(resolved.entry), wildcard: resolved.wildcard }
   }
   throw new Error(`pack-stable-app: cannot resolve ${JSON.stringify(spec)} from ${fromFile} by node_modules walk`)
 }

@@ -216,7 +216,7 @@ turn/start (持久会话事件)
   │     - 选择 LLM 适配器（基于 provider 路由）
   │     - 适配器执行实际 HTTP 请求（SSE 流）
   │     - llm-deepseek: 直连 DeepSeek API
-  │     - llm-pi-ai: 通过 pi-ai 库连接多供应商
+  │     - llm-provider: 通过 pi-ai 库连接多供应商
   │     - llm-retry: 重试策略包装
   │
   ├─ 9. agent/assistant-stream start (实时事件，仅进程内)
@@ -329,7 +329,7 @@ agent-loop 构造 LLM 请求 (GenerateOptions)
        │
        ├─ options.provider = "openai" (用户配置了 pi-ai)
        │     → ctx.llm 查找已注册的 "openai" 路由
-       │     → llm-pi-ai 适配器处理 (通过 @earendil-works/pi-ai)
+       │     → llm-provider 适配器处理 (通过 @earendil-works/pi-ai)
        │
        └─ 未找到 provider → 报错 MISSING_PROVIDER
 ```

@@ -43,7 +43,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 declare const ctx: Context
 declare const exchangeCode: (code: string, signal: AbortSignal) => Promise<{ token: string }>
 
-const key = credentialKey('llm-pi-ai', 'openai-codex') // <scope>/<id> — your plugin / this credential
+const key = credentialKey('llm-provider', 'openai-codex') // <scope>/<id> — your plugin / this credential
 
 const dispose = ctx.authorization.registerFlow({
   key,

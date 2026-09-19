@@ -388,7 +388,7 @@ interface LlmAdapter {
 
 // 内置适配器
 // - llm-deepseek: DeepSeek 官方 API
-// - llm-pi-ai: 多提供商客户端（OpenAI/Anthropic等），默认休眠
+// - llm-provider: 多提供商客户端（OpenAI/Anthropic等），默认休眠
 
 // 自定义适配器
 class MyLlmAdapter implements LlmAdapter {

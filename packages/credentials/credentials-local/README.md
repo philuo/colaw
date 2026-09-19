@@ -91,18 +91,18 @@ refs:
   OPENAI_API_KEY: sk-…
 
 records:
-  llm-pi-ai/openai-codex:
+  llm-provider/openai-codex:
     kind: grant
     payload:                    # written verbatim; this provider does not interpret it
       type: oauth
       access: eyJhbGciOi…
       refresh: rft_9f8e7d…
       expires: 1786000000000
-  llm-pi-ai/amazon-bedrock:
+  llm-provider/amazon-bedrock:
     kind: api-key               # environment values, no key: this route uses an AWS profile
     env:
       AWS_PROFILE: prod
-  llm-pi-ai/amazon-bedrock-dev:
+  llm-provider/amazon-bedrock-dev:
     kind: api-key               # neither: the owner confirmed the ambient credential chain
 ```
 

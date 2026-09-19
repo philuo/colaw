@@ -308,7 +308,7 @@ LLM 服务定义和适配器接缝：
 - `ctx.llm`：LLM 服务，管理适配器注册表
 - 适配器实现 `LLMAdapter` 接口：`stream()` 方法返回异步生成器
 - `llm-deepseek`：默认 DeepSeek 直连适配器
-- `llm-pi-ai`：可选 pi-ai 多供应商适配器（默认休眠）
+- `llm-provider`：可选 pi-ai 多供应商适配器（默认休眠）
 - `llm-retry`：重试策略包装
 
 #### System Prompt（`packages/core/system-prompt`）

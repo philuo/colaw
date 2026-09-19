@@ -146,7 +146,7 @@
 | dsh-agent | ✅ | 8 个导出 |
 | dsh-agent-loop | ✅ | 7 个导出 |
 | dsh-llm-deepseek | ✅ | 37 个导出 |
-| dsh-llm-pi-ai | ✅ | 7 个导出 |
+| dsh-llm-provider | ✅ | 7 个导出 |
 | **dsh-subprocess-local** | ✅ | **含 node-pty 原生模块，成功导入！** |
 | dsh-fs-sandbox | ✅ | 2 个导出 |
 | dsh-api-gateway | ✅ | 3 个导出 |

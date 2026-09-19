@@ -1233,9 +1233,9 @@ Depends on: [`ModelModality`](../packages/llm/llm/src/index.ts) · [`RetryPolicy
 
 来源：[`packages/llm/llm-deepseek/src/config.ts:28`](../packages/llm/llm-deepseek/src/config.ts)
 
-<a id="deepseek-aidsh-llm-pi-ai"></a>
+<a id="deepseek-aidsh-llm-provider"></a>
 
-## `@deepseek-ai/dsh-llm-pi-ai`
+## `@deepseek-ai/dsh-llm-provider`
 
 需要：`llm`
 
@@ -1513,7 +1513,7 @@ export type PiAiThinkingTokenBudgetField = NonNullable<OpenAICompletionsCompat['
 
 Depends on: `Api` (`@earendil-works/pi-ai`) · `CacheRetention` (`@earendil-works/pi-ai`) · `Model` (`@earendil-works/pi-ai`) · `ModelThinkingLevel` (`@earendil-works/pi-ai`) · `OpenAICompletionsCompat` (`@earendil-works/pi-ai`) · [`RetryPolicyConfig`](../packages/llm/llm/src/index.ts) · `ThinkingBudgets` (`@earendil-works/pi-ai`) · `Transport` (`@earendil-works/pi-ai`)
 
-来源：[`packages/llm/llm-pi-ai/src/config.ts:223`](../packages/llm/llm-pi-ai/src/config.ts)
+来源：[`packages/llm/llm-provider/src/index.ts:223`](../packages/llm/llm-provider/src/index.ts)
 
 <a id="deepseek-aidsh-llm-provider"></a>
 

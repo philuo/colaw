@@ -66,7 +66,7 @@ No runtime invariant companion is published: the pure projection rejects invalid
 - [compaction seam](../compaction/README.md) — the neighboring summary and text-pruning operations.
 - [compaction-tool-result-pruner](../compaction-tool-result-pruner/README.md) — the sibling executor that trims tool outputs while preserving image selections.
 - [dsh-llm](../../llm/llm/README.md) — `ImageBlock.offloaded`, `IMAGE_OFFLOAD_REQUIRED`, and the placeholder projection.
-- [llm-deepseek adapter](../../llm/llm-deepseek/README.md) and [llm-pi-ai adapter](../../llm/llm-pi-ai/README.md) — the route budgets that report offload counts.
+- [llm-deepseek adapter](../../llm/llm-deepseek/README.md) and [llm-provider adapter](../../llm/llm-provider/README.md) — the route budgets that report offload counts.
 
 -----
 

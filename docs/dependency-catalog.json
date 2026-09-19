@@ -1849,11 +1849,11 @@
       ]
     },
     {
-      "name": "@deepseek-ai/dsh-llm-pi-ai",
+      "name": "@deepseek-ai/dsh-llm-provider",
       "version": "0.1.5-rc.2",
       "installations": [
         {
-          "location": "node_modules/@deepseek-ai/dsh-llm-pi-ai",
+          "location": "node_modules/@deepseek-ai/dsh-llm-provider",
           "direct": false,
           "optional": false,
           "peer": false

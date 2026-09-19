@@ -70,7 +70,7 @@ import { credentialKey } from '@deepseek-ai/dsh-credentials'
 
 declare const ctx: Context
 
-const key = credentialKey('llm-pi-ai', 'openai-codex')   // <owner>/<id>, branded
+const key = credentialKey('llm-provider', 'openai-codex')   // <owner>/<id>, branded
 const hit = await ctx.credentials.readRecord(key)        // CredentialRecord | undefined
 await ctx.credentials.describeRecord(key)                // { configured, kind?, writable } — never the value
 await ctx.credentials.listRecords()                      // [{ key, kind }] — never values
