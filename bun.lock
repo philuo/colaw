@@ -249,6 +249,44 @@
         "ws": "8.21.0",
       },
     },
+    "benchmarks": {
+      "name": "@deepseek-ai/dsh-benchmarks",
+      "version": "0.1.3-alpha.1",
+      "devDependencies": {
+        "@deepseek-ai/cordis": "workspace:^",
+        "@deepseek-ai/dsh-agent": "workspace:^",
+        "@deepseek-ai/dsh-agent-loop": "workspace:^",
+        "@deepseek-ai/dsh-agent-loop-testkit": "workspace:^",
+        "@deepseek-ai/dsh-agent-presets": "workspace:^",
+        "@deepseek-ai/dsh-api-session-controller": "workspace:^",
+        "@deepseek-ai/dsh-client-store": "workspace:^",
+        "@deepseek-ai/dsh-client-ui-chat": "workspace:^",
+        "@deepseek-ai/dsh-deque": "workspace:^",
+        "@deepseek-ai/dsh-lazy-require": "workspace:^",
+        "@deepseek-ai/dsh-llm": "workspace:^",
+        "@deepseek-ai/dsh-llm-replay": "workspace:^",
+        "@deepseek-ai/dsh-sdk-client": "workspace:^",
+        "@deepseek-ai/dsh-session": "workspace:^",
+        "@deepseek-ai/dsh-session-persistence": "workspace:^",
+        "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
+        "@deepseek-ai/dsh-session-projection": "workspace:^",
+        "@deepseek-ai/dsh-session-query": "workspace:^",
+        "@deepseek-ai/dsh-session-stats": "workspace:^",
+        "@deepseek-ai/dsh-session-title": "workspace:^",
+        "@deepseek-ai/dsh-session-turn-outline": "workspace:^",
+        "@deepseek-ai/dsh-subagent": "workspace:^",
+        "@deepseek-ai/dsh-subprocess": "workspace:^",
+        "@deepseek-ai/dsh-terminal": "workspace:^",
+        "@deepseek-ai/dsh-token-meter": "workspace:^",
+        "@deepseek-ai/dsh-tools": "workspace:^",
+        "@deepseek-ai/dsh-typert-protocol": "workspace:^",
+        "@xterm/headless": "^6.0.0",
+        "playwright": "^1.49.0",
+      },
+      "peerDependencies": {
+        "@deepseek-ai/cordis": "workspace:^",
+      },
+    },
     "native/system": {
       "name": "@deepseek-ai/node-addon-system-workspace",
       "version": "0.1.2",
@@ -2020,7 +2058,7 @@
     },
     "packages/client/ui-sidebar-documentpreview": {
       "name": "@deepseek-ai/dsh-client-ui-sidebar-documentpreview",
-      "version": "0.1.6-alpha.1",
+      "version": "0.1.6-alpha.2",
       "devDependencies": {
         "@deepseek-ai/cordis": "workspace:^",
         "@deepseek-ai/dsh-api-gateway": "workspace:^",
@@ -2116,7 +2154,7 @@
     },
     "packages/client/ui-sidebar-terminal": {
       "name": "@deepseek-ai/dsh-client-ui-sidebar-terminal",
-      "version": "0.1.6-alpha.1",
+      "version": "0.1.6-alpha.2",
       "devDependencies": {
         "@deepseek-ai/cordis": "workspace:^",
         "@deepseek-ai/dsh-api-remotes": "workspace:^",
@@ -3267,7 +3305,7 @@
         "@deepseek-ai/dsh-util-values": "workspace:^",
         "@deepseek-ai/schemastery": "workspace:^",
         "@puppeteer/browsers": "3.2.2",
-        "zod": "^4.4.3",
+        "zod": "4.4.3",
       },
       "devDependencies": {
         "@deepseek-ai/cordis": "workspace:^",
@@ -4610,7 +4648,6 @@
         "@deepseek-ai/dsh-llm-mock-server": "workspace:^",
         "@deepseek-ai/dsh-session": "workspace:^",
         "@deepseek-ai/dsh-session-persistence-jsonl": "workspace:^",
-        "@deepseek-ai/dsh-session-projection": "workspace:^",
         "@deepseek-ai/dsh-session-projection": "workspace:^",
         "@deepseek-ai/dsh-system-prompt": "workspace:^",
         "@deepseek-ai/dsh-timeout": "workspace:^",
@@ -8058,6 +8095,8 @@
 
     "@deepseek-ai/dsh-bash-sandbox": ["@deepseek-ai/dsh-bash-sandbox@workspace:packages/shell/bash-sandbox"],
 
+    "@deepseek-ai/dsh-benchmarks": ["@deepseek-ai/dsh-benchmarks@workspace:benchmarks"],
+
     "@deepseek-ai/dsh-brand": ["@deepseek-ai/dsh-brand@workspace:packages/util/brand"],
 
     "@deepseek-ai/dsh-browser-use": ["@deepseek-ai/dsh-browser-use@workspace:packages/browser-use/browser-use"],
@@ -10444,7 +10483,7 @@
 
     "playwright": ["playwright@1.63.0", "https://registry.npmmirror.com/playwright/-/playwright-1.63.0.tgz", { "dependencies": { "playwright-core": "1.63.0" }, "bin": { "playwright": "cli.js" } }, "sha512-+7ziBLidS4NaNCdt57SUDT+wYmmd5fmiQejUic/kb+YsYSCPyOOE9sebzMjNmQrsnNpDJqd4WHvV/8lfKfUDUg=="],
 
-    "playwright-core": ["playwright-core@1.63.0-alpha-2026-08-31", "https://registry.npmmirror.com/playwright-core/-/playwright-core-1.63.0-alpha-2026-08-31.tgz", { "bin": { "playwright-core": "cli.js" } }, "sha512-1ek0Lyr12h6jcs/WTcNoVtzZkQp7D/90PsMuBW/Rm6h3AsWAbzpqj0geMv8+8Tzzr9CSUYvg9kznrVZINQMXXw=="],
+    "playwright-core": ["playwright-core@1.63.0", "https://registry.npmmirror.com/playwright-core/-/playwright-core-1.63.0.tgz", { "bin": { "playwright-core": "cli.js" } }, "sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg=="],
 
     "points-on-curve": ["points-on-curve@0.2.0", "https://registry.npmmirror.com/points-on-curve/-/points-on-curve-0.2.0.tgz", {}, "sha512-0mYKnYYe9ZcqMCWhUjItv/oHjvgEsfKvnUTg8sAtnHr3GVy7rGkXCb6d5cSyqrWqL4k81b9CPg3urd+T7aop3A=="],
 
@@ -10820,7 +10859,7 @@
 
     "yuku-parser": ["yuku-parser@0.8.7", "https://registry.npmmirror.com/yuku-parser/-/yuku-parser-0.8.7.tgz", { "dependencies": { "@yuku-toolchain/types": "^0.8.7", "yuku-ast": "^0.8.7" }, "optionalDependencies": { "@yuku-parser/binding-android-arm64": "0.8.7", "@yuku-parser/binding-darwin-arm64": "0.8.7", "@yuku-parser/binding-darwin-x64": "0.8.7", "@yuku-parser/binding-freebsd-x64": "0.8.7", "@yuku-parser/binding-linux-arm-gnu": "0.8.7", "@yuku-parser/binding-linux-arm-musl": "0.8.7", "@yuku-parser/binding-linux-arm64-gnu": "0.8.7", "@yuku-parser/binding-linux-arm64-musl": "0.8.7", "@yuku-parser/binding-linux-x64-gnu": "0.8.7", "@yuku-parser/binding-linux-x64-musl": "0.8.7", "@yuku-parser/binding-win32-arm64": "0.8.7", "@yuku-parser/binding-win32-x64": "0.8.7" } }, "sha512-vRD9nwt4L3aYpxNqeSC4WqLv58xrXef0Ong1Mc45CTXTIpvLafx7JO05sczmQZwdLEZvywrLOGdNC5+Rp5N1BQ=="],
 
-    "zod": ["zod@4.6.2", "https://registry.npmmirror.com/zod/-/zod-4.6.2.tgz", {}, "sha512-lh5RCAGFa1Cm2hjtNwLQhSs/AsqdWnTQaBER9fEwN/88pSh7KOtJavtBx/0VlkN/uFd61SwYmljLMDAsHlvzBQ=="],
+    "zod": ["zod@4.4.3", "https://registry.npmmirror.com/zod/-/zod-4.4.3.tgz", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "zod-to-json-schema": ["zod-to-json-schema@3.25.2", "https://registry.npmmirror.com/zod-to-json-schema/-/zod-to-json-schema-3.25.2.tgz", { "peerDependencies": { "zod": "^3.25.28 || ^4" } }, "sha512-O/PgfnpT1xKSDeQYSCfRI5Gy3hPf91mKVDuYLUHZJMiDFptvP41MSnWofm8dnCm0256ZNfZIM7DSzuSMAFnjHA=="],
 
@@ -10841,8 +10880,6 @@
     "@babel/helper-compilation-targets/semver": ["semver@6.3.1", "https://registry.npmmirror.com/semver/-/semver-6.3.1.tgz", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
     "@browserbasehq/sdk/@types/node": ["@types/node@18.19.130", "https://registry.npmmirror.com/@types/node/-/node-18.19.130.tgz", { "dependencies": { "undici-types": "~5.26.4" } }, "sha512-GRaXQx6jGfL8sKfaIDD6OupbIHBr9jv7Jnaml9tB7l4v068PAOXqfcujMMo5PhbIs6ggR1XODELqahT2R8v0fg=="],
-
-    "@browserbasehq/stagehand/zod": ["zod@4.4.3", "https://registry.npmmirror.com/zod/-/zod-4.4.3.tgz", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
 
     "@deepseek-ai/dsh-client-ui-sidebar-right/@types/picomatch": ["@types/picomatch@4.0.3", "https://registry.npmmirror.com/@types/picomatch/-/picomatch-4.0.3.tgz", {}, "sha512-iG0T6+nYJ9FAPmx9SsUlnwcq1ZVRuCXcVEvWnntoPlrOpwtSTKNDC9uVAxTsC3PUvJ+99n4RpAcNgBbHX3JSnQ=="],
 
@@ -10875,6 +10912,8 @@
     "@opentelemetry/sdk-trace/@opentelemetry/resources": ["@opentelemetry/resources@2.9.0", "https://registry.npmmirror.com/@opentelemetry/resources/-/resources-2.9.0.tgz", { "dependencies": { "@opentelemetry/core": "2.9.0", "@opentelemetry/semantic-conventions": "^1.29.0" }, "peerDependencies": { "@opentelemetry/api": ">=1.3.0 <1.10.0" } }, "sha512-jyA5MBLQ+Dkl3+JsZkUoUvL7yHvU64kLsvpXKarWm6347Sl1t1bXFTFykUePNpT5WH5pm9a2Qtt03iIYQhZ1Fg=="],
 
     "@playwright/mcp/playwright": ["playwright@1.63.0-alpha-2026-08-31", "https://registry.npmmirror.com/playwright/-/playwright-1.63.0-alpha-2026-08-31.tgz", { "dependencies": { "playwright-core": "1.63.0-alpha-2026-08-31" }, "bin": { "playwright": "cli.js" } }, "sha512-3XAsuznfu8jBVJ4QxdGvBkt0+b8ZFwuwJYyOfiIw5ZjUOrNLNRhKxzLzLuydou3gJ9c6eMwVqgzdiOwhy54Kzw=="],
+
+    "@playwright/mcp/playwright-core": ["playwright-core@1.63.0-alpha-2026-08-31", "https://registry.npmmirror.com/playwright-core/-/playwright-core-1.63.0-alpha-2026-08-31.tgz", { "bin": { "playwright-core": "cli.js" } }, "sha512-1ek0Lyr12h6jcs/WTcNoVtzZkQp7D/90PsMuBW/Rm6h3AsWAbzpqj0geMv8+8Tzzr9CSUYvg9kznrVZINQMXXw=="],
 
     "@shikijs/transformers/@shikijs/core": ["@shikijs/core@2.5.0", "https://registry.npmmirror.com/@shikijs/core/-/core-2.5.0.tgz", { "dependencies": { "@shikijs/engine-javascript": "2.5.0", "@shikijs/engine-oniguruma": "2.5.0", "@shikijs/types": "2.5.0", "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4", "hast-util-to-html": "^9.0.4" } }, "sha512-uu/8RExTKtavlpH7XqnVYBrfBkUc20ngXiX9NSrBhOVZYv/7XQRKUyhtkeflY5QsxC0GbJThCerruZfsUaSldg=="],
 
@@ -11007,8 +11046,6 @@
     "multistream/readable-stream": ["readable-stream@3.6.2", "https://registry.npmmirror.com/readable-stream/-/readable-stream-3.6.2.tgz", { "dependencies": { "inherits": "^2.0.3", "string_decoder": "^1.1.1", "util-deprecate": "^1.0.1" } }, "sha512-9u/sniCrY3D5WdsERHzHE4G2YCXqoG5FTHUiCC4SIbr6XcLZBY05ya9EKjYek9O5xOAwjGq+1JdGBAS7Q9ScoA=="],
 
     "node-fetch/whatwg-url": ["whatwg-url@5.0.0", "https://registry.npmmirror.com/whatwg-url/-/whatwg-url-5.0.0.tgz", { "dependencies": { "tr46": "~0.0.3", "webidl-conversions": "^3.0.0" } }, "sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw=="],
-
-    "playwright/playwright-core": ["playwright-core@1.63.0", "https://registry.npmmirror.com/playwright-core/-/playwright-core-1.63.0.tgz", { "bin": { "playwright-core": "cli.js" } }, "sha512-rYCsBF/M5HjUch52bbtVONEFjv6Xu8sm8h72dNlR5bzIE1fvC/bxgspzkjSfU+MweEMmPM8KJebG6nnyxo5mCg=="],
 
     "postject/commander": ["commander@9.5.0", "https://registry.npmmirror.com/commander/-/commander-9.5.0.tgz", {}, "sha512-KRs7WVDKg86PWiuAqhDrAQnTXZKraVcCc6vFdL14qrZ/DcWwuRo7VoiYXalXO7S5GKpqYiVEwCbgFDfxNHKJBQ=="],
 
