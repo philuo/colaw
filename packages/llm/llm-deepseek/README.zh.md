@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-通过 `deepseek-official` 流式调用 DeepSeek 模型，默认使用 Messages，也可在 Cordis YAML 中选择 Chat Completions。两种协议共用凭据、端点配置、图片处理和模型目录。有效的设置更改在后续请求生效，进行中的请求保留原配置。Web 显示一个 DeepSeek 提供方，并提供 API 地址和密钥编辑。本包可与 [pi-ai 适配器](../llm-provider/README.zh.md)并用。
+通过 `deepseek-official` 流式调用 DeepSeek 模型，默认使用 Messages，也可在 Cordis YAML 中选择 Chat Completions。两种协议共用凭据、端点配置、图片处理和模型目录。有效的设置更改在后续请求生效，进行中的请求保留原配置。Web 显示一个 DeepSeek 提供方，并提供 API 地址和密钥编辑。本包可与 [pi-ai 适配器](../llm-pi-ai/README.zh.md)并用。
 
 ## 目录
 
@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 何时选择
 
-面向 DeepSeek 官方 API，或通过 `baseURL` 连接支持所选协议的网关时，选择本适配器。当同一组合还要通过 pi-ai 目录路由其他提供方或手工声明的网关时，选择 `dsh-llm-provider`；两个适配器可以同时挂载，因为它们的路由名不冲突。为 `deepseek-official` 注册任何其他适配器会以 `DUPLICATE_ADAPTER` 失败。
+面向 DeepSeek 官方 API，或通过 `baseURL` 连接支持所选协议的网关时，选择本适配器。当同一组合还要通过 pi-ai 目录路由其他提供方或手工声明的网关时，选择 `dsh-llm-pi-ai`；两个适配器可以同时挂载，因为它们的路由名不冲突。为 `deepseek-official` 注册任何其他适配器会以 `DUPLICATE_ADAPTER` 失败。
 
 ### 最小配置
 
@@ -45,7 +45,7 @@ kind: "package-reference"
     filesApiTimeoutMs: 60000
 ```
 
-请求用 `provider: deepseek-official` 选择路由；模型 id 原样传到协议，因此新增 DeepSeek 模型无需重新注册。省略 `models` 时公布支持文本和图像的 `deepseek-flash`，以及仅支持文本的 `deepseek-v4-pro`，各自的上下文窗口均为 1,000,000 token。显式列表会替换这些默认值，未列出的模型 id 仍作为纯文本路由原样通过。包括模型发现工具在内的客户端可通过 `ctx.llm.listModels('deepseek-official')` 读取这些建议性条目。支持图片的条目可把 `imagePixelBudget` 设置为正整数或 `low`，也可以设置 `imageMaxBytes`。当端点把 `messages` 中任意位置最新的 `system` 消息读作完整的有效系统提示词时，条目可以声明 `systemPromptUpdate: in-history`；适配器会在已解析模型与已准备调用上报告该模式，agent loop（智能体循环）随后把变化后的提示词追加到已缓存历史之后，而不是改写开头的 system 消息（[决策规则](../../core/agent-loop/README.zh.md#understand-the-implementation)）。默认的 `deepseek-flash` 条目声明该模式；其他模型需通过 `models` 显式声明，`in-history` 以外的任何值都会在加载时以 `llm-deepseek: catalog model "<id>" systemPromptUpdate must be "in-history" when present` 失败。
+请求用 `provider: deepseek-official` 选择路由；模型 id 原样传到协议，因此新增 DeepSeek 模型无需重新注册。省略 `models` 时公布支持文本和图像的 `deepseek-flash` 和 `deepseek-v4-flash-vision-exp`，以及仅支持文本的 `deepseek-v4-flash` 和 `deepseek-v4-pro`，各自的上下文窗口均为 1,000,000 token。显式列表会替换这些默认值，未列出的模型 id 仍作为纯文本路由原样通过。包括模型发现工具在内的客户端可通过 `ctx.llm.listModels('deepseek-official')` 读取这些建议性条目。支持图片的条目可把 `imagePixelBudget` 设置为正整数或 `low`，也可以设置 `imageMaxBytes`。当端点把 `messages` 中任意位置最新的 `system` 消息读作完整的有效系统提示词时，条目可以声明 `systemPromptUpdate: in-history`；适配器会在已解析模型与已准备调用上报告该模式，agent loop（智能体循环）随后把变化后的提示词追加到已缓存历史之后，而不是改写开头的 system 消息（[决策规则](../../core/agent-loop/README.zh.md#understand-the-implementation)）。默认的 `deepseek-flash` 条目声明该模式；其他模型需通过 `models` 显式声明，`in-history` 以外的任何值都会在加载时以 `llm-deepseek: catalog model "<id>" systemPromptUpdate must be "in-history" when present` 失败。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
@@ -56,7 +56,7 @@ kind: "package-reference"
 | `reasoningEffort` | `high` | 默认强度：`off`、`low`、`high` 或 `max` |
 | `maxTokens` | `256,000` | 单次请求输出上限；模型自身上限与显式请求值优先 |
 | `defaultContextWindow` | `1,000,000` | 无精确值模型的容量回退 |
-| `models` | V41 Flash + V4 Pro | 供发现消费方查看的建议性目录 |
+| `models` | V41 Flash + V4 Flash + V4 Pro + V4 Flash Vision Exp | 供发现消费方查看的建议性目录 |
 | `streamIdleTimeoutMs` | `300,000` | 单次流读取未完成的最大提供方空闲时间 |
 | `maxRequestFilesBytes` | `128 MiB` | file 模式请求图片字节预算，保留图片超过时请求以 `IMAGE_OFFLOAD_REQUIRED` 失败 |
 | `maxInlineRequestImageBytes` | `20 MiB` | 独立的 base64 回退高水位 |
@@ -83,7 +83,7 @@ kind: "package-reference"
     protocol: chat-completions
 ```
 
-`protocol` 默认为 `messages`，官方根地址为 `https://api.deepseek.com/anthropic`；`chat-completions` 使用 `https://api.deepseek.com`。随产品交付的官方组合继承该默认值。两种协议都不要求填写 `baseURL`：当 `baseURL` 与 `$DEEPSEEK_BASE_URL` 均未设置时使用当前协议的官方默认值。切换协议保留已有端点覆盖，用户需要填写与选定协议兼容的地址。显式填写的 `https://api.deepseek.com` 是 Chat 根地址：删除该覆盖即可使用官方 Messages 默认值，也可以改填 `https://api.deepseek.com/anthropic`。Chat 追加 `/chat/completions`。Messages 与其 Files API 仅把末尾严格匹配的 `/v1` 路径段视为已有 Anthropic API 版本，并追加 `/messages` 或 `/files`；其他基址均追加 `/v1/messages` 或 `/v1/files`。因此，官方 Messages 根地址仍使用推荐的 `/anthropic/v1` 请求路径，同时不为任意版本式后缀提供兼容性。末尾斜线不改变这些结果。两种协议共用 `llm-deepseek` 设置、`apiKeyEnv` 与 `deepseek-official`，因此已保存的模型选择仍然有效。
+`protocol` 默认为 `messages`，官方根地址为 `https://api.deepseek.com/anthropic`；`chat-completions` 使用 `https://api.deepseek.com`。随产品交付的官方组合继承该默认值。两种协议都不要求填写 `baseURL`：当 `baseURL` 与 `$DEEPSEEK_BASE_URL` 均未设置时使用当前协议的官方默认值。切换协议保留已有端点覆盖，用户需要填写与选定协议兼容的地址。显式填写的 `https://api.deepseek.com` 是 Chat 根地址：删除该覆盖即可使用官方 Messages 默认值，也可以改填 `https://api.deepseek.com/anthropic`。Chat 追加 `/chat/completions`，Messages 追加 `/v1/messages`；除去末尾斜线之外，不推测或删除自定义路径中的 `/v1` 等后缀。两种协议共用 `llm-deepseek` 设置、`apiKeyEnv` 与 `deepseek-official`，因此已保存的模型选择仍然有效。
 
 Messages 以内容块发送文本、思考、工具调用和工具结果，以 `output_config.effort` 发送推理强度，并以 Files 引用或内联 base64 发送图片。声明 `systemPromptUpdate: in-history` 的模型保留初始顶层 system，在对应 user/tool-result 轮次之后发送新的 system 快照；未声明能力时，使用最新快照作为顶层 system。回放元数据记录 Messages 格式、模型和签名；Chat 请求只序列化持久化内容，不发送这些签名。无效的 Messages 回放元数据产生警告并省略签名，不丢弃文本或工具历史。
 
@@ -153,7 +153,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 当包级约定不够用时阅读以下页面。它们从服务约定逐步进入孪生适配器、重试执行器与共享类型。
 
 - [dsh-llm 服务](../llm/README.zh.md)——本适配器注册其上的提供方无关服务。
-- [llm-provider 适配器](../llm-provider/README.zh.md)——服务其他提供方与网关的库实现孪生。
+- [llm-pi-ai 适配器](../llm-pi-ai/README.zh.md)——服务其他提供方与网关的库实现孪生。
 - [LLM 流式子系统](../../../docs/subsystems/llm-streaming.zh.md)——`StreamChunk` 协议与适配器约定。
 - [llm-retry](../llm-retry/README.zh.md)——应用本适配器 `retryPolicy` 的重试执行器。
 - [DeepSeek 请求扩展](../deepseek-llm-api-extensions/README.zh.md)——提供方专用顶层字段的生命周期与接受语义。
@@ -171,7 +171,7 @@ Files 模式通过 `maxRequestFilesBytes` 与 `maxImagesPerRequest` 限制保留
 
 #### 模型看到什么
 
-所选 DeepSeek 模型会收到 harness 系统提示词、消息历史、工具 schema、停止序列与调用配置（`maxTokens`、`reasoningEffort`、`temperature`），不包含适配器撰写的提示词散文。提供方专用请求扩展字段留在模型输入之外。视觉模型通常接收 Files API 引用形式的用户与工具结果图片，其旁带附件句柄和请求预览尺寸。当前执行文件系统可以映射附件提供方的宿主对象时，它还会收到规范化对象路径；描述符会把该副本标记为只读，并警告规范化可能缩放或重新编码上传内容。Files 解析失败时，全部保留图片改用内联 base64；超出预算的较旧图片则在占位文本中保留当前请求已解析的访问方式。此前 assistant 轮次的推理内容会原样传回，无论该轮次是否调用了工具。 对于非法 JSON 或非对象的历史工具参数，Messages 发送 `{}`。调用 ID、工具名和结果保持不变，原始参数仍保留在 Session 日志中。从 Chat Completions 切换后也适用此静默兜底。新生成的 Messages 工具参数仍须是有效 JSON 对象。
+所选 DeepSeek 模型会收到 harness 系统提示词、消息历史、工具 schema、停止序列与调用配置（`maxTokens`、`reasoningEffort`、`temperature`），不包含适配器撰写的提示词散文。提供方专用请求扩展字段留在模型输入之外。视觉模型通常接收 Files API 引用形式的用户与工具结果图片，其旁带附件句柄和请求预览尺寸。当前执行文件系统可以映射附件提供方的宿主对象时，它还会收到规范化对象路径；描述符会把该副本标记为只读，并警告规范化可能缩放或重新编码上传内容。Files 解析失败时，全部保留图片改用内联 base64；超出预算的较旧图片则在占位文本中保留当前请求已解析的访问方式。此前 assistant 轮次的推理内容会原样传回，无论该轮次是否调用了工具。
 
 #### Token 影响
 

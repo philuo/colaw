@@ -94,6 +94,20 @@ export function requestId(headers: Headers): ReturnType<typeof ProviderRequestId
  * @param error - parsed provider error body, when available.
  * @returns the normalized harness error code.
  */
+/**
+ * Read the diagnostic a compatible gateway leaves at the top level of its error
+ * body (`{ code, message }`) as the `error`-wrapped shape both adapters share.
+ * The wire facts are identical either way; without this, such a gateway reports
+ * only a bare HTTP status and hides which field it refused.
+ * @param body - the parsed error body.
+ * @returns the wrapped diagnostic, or undefined when the body carries none.
+ */
+export function topLevelError(body: WireError): WireError['error'] {
+  const message = typeof body.message === 'string' && body.message.length > 0 ? body.message : undefined
+  if (message === undefined) return undefined
+  return { message, ...typeof body.code === 'string' && body.code.length > 0 ? { code: body.code } : {} }
+}
+
 export function httpErrorCode(status: number, error?: WireError['error']): string {
   if (status === 401 || status === 403) return 'AUTH'
   if (status === 413) return 'INVALID_REQUEST'
@@ -348,7 +362,7 @@ export class ChatCompletionsAdapter extends LlmAdapter {
         const rawResponse = await response.text()
         try {
           const parsed = JSON.parse(rawResponse) as WireError
-          providerError = parsed.error
+          providerError = parsed.error ?? topLevelError(parsed)
           if (providerError?.message) message = providerError.message
         } catch {
           // The HTTP status remains authoritative when a gateway returns malformed JSON.

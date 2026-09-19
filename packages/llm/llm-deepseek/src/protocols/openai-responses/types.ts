@@ -170,4 +170,7 @@ export interface WireResponse {
 /** Error body of a non-2xx response; the shape the gateway really returns. */
 export interface WireError {
   error?: { message?: string; type?: string; param?: string | null; code?: string }
+  /** Gateway-style top-level diagnostic; see the chat-completions twin. */
+  code?: string
+  message?: string
 }

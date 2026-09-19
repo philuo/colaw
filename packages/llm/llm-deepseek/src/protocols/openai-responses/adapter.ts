@@ -46,7 +46,7 @@ import { deepSeekImageRequestPricing } from '../../common/request-pricing.ts'
 import { FileResolutionFailure, RequestFiles } from '../../common/request-files.ts'
 import type { DeepSeekAdapterOptions, DeepSeekConnectionOptions } from '../../common/types.ts'
 import type { DeepSeekFileStore } from '../../common/file-store.ts'
-import { httpErrorCode, prepareRequestImages, providerRetryAfterMs, requestId } from '../chat-completions/adapter.ts'
+import { httpErrorCode, prepareRequestImages, providerRetryAfterMs, requestId, topLevelError } from '../chat-completions/adapter.ts'
 import { serializeRequest, serializeRequestWithImages } from './serialize.ts'
 import { parseSse } from './sse.ts'
 import { translateResponses } from './translate.ts'
@@ -253,7 +253,7 @@ export class DeepSeekResponsesAdapter extends LlmAdapter {
         const rawResponse = await response.text()
         try {
           const parsed = JSON.parse(rawResponse) as WireError
-          providerError = parsed.error
+          providerError = parsed.error ?? topLevelError(parsed)
           if (providerError?.message !== undefined && providerError.message.length > 0) message = providerError.message
         } catch {
           // The HTTP status stays authoritative when a gateway returns malformed JSON.

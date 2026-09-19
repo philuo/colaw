@@ -1,10 +1,12 @@
 /** DeepSeek Files API transport for Chat Completions and Messages endpoints. @module dsh-llm-deepseek/files-api */
 
 import { attributionHeaders, LlmError } from '@deepseek-ai/dsh-llm'
+import { MESSAGES_FILES_BETA, messagesApiRoot } from './messages-api.ts'
+
+export { MESSAGES_FILES_BETA } from './messages-api.ts'
 import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { DeepSeekFileId } from './file-id.ts'
 import type { DeepSeekFileId as DeepSeekFileIdType } from './file-id.ts'
-import { messagesApiRoot, MESSAGES_FILES_BETA } from './messages-api.ts'
 import type { DeepSeekProtocol } from './types.ts'
 
 /** Minimum provider-supported file lifetime. */
@@ -160,12 +162,12 @@ export class DeepSeekFilesClient {
    * @param options - endpoint, API-key snapshot, and optional test transport.
    */
   constructor(options: FilesApiOptions) {
-    this.apiKey = options.apiKey
-    this.fetchImpl = options.fetch ?? globalThis.fetch
     this.protocol = options.protocol
-    this.baseURL = this.protocol === 'messages'
+    this.baseURL = options.protocol === 'messages'
       ? messagesApiRoot(options.baseURL)
       : options.baseURL.replace(/\/+$/u, '')
+    this.apiKey = options.apiKey
+    this.fetchImpl = options.fetch ?? globalThis.fetch
     this.path = '/files'
   }
 

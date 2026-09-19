@@ -43,7 +43,7 @@ const VISION_E2E_ENABLED = process.env.DEEPSEEK_VISION_E2E === '1'
 /** A model whose endpoint reads the latest `system` message at any position; unset skips the in-history smoke. */
 const IN_HISTORY_MODEL = process.env.DEEPSEEK_IN_HISTORY_MODEL
 const TEST_PNG = Uint8Array.from(readFileSync(
-  new URL('./fixtures/qr-code.png', import.meta.url),
+  new URL('../../llm-pi-ai/tests/fixtures/qr-code.png', import.meta.url),
 ))
 const contexts: Context[] = []
 let identityHome: string

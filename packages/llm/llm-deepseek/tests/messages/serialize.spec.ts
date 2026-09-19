@@ -126,13 +126,15 @@ describe('Messages request conversion', () => {
 
   it.each(['off', 'low', 'high', 'max'])('maps reasoning effort %s', (effort) => {
     const request = body([user()], { reasoningEffort: ReasoningEffortId(effort) })
-    expect(request.thinking.type).toBe(effort === 'off' ? 'disabled' : 'enabled')
+    // The endpoint rejects `thinking.type: 'enabled'`; a reasoning route names
+    // its depth through `output_config.effort` alone.
+    expect(request.thinking?.type).toBe(effort === 'off' ? 'disabled' : undefined)
     expect(request.output_config).toEqual(effort === 'off' ? undefined : { effort })
   })
 
   it('disables thinking for titles, passes temperature with thinking and refuses unsupported effort', () => {
     expect(body([user()], { purpose: 'session-title', temperature: 0 })).toMatchObject({ thinking: { type: 'disabled' }, temperature: 0 })
-    expect(body([user()], { temperature: 0 })).toMatchObject({ thinking: { type: 'enabled' }, temperature: 0 })
+    expect(body([user()], { temperature: 0 })).toMatchObject({ output_config: { effort: 'high' }, temperature: 0 })
     expect(() => body([user()], { reasoningEffort: ReasoningEffortId('medium') })).toThrow(/effort/)
     const disabled = resolveAdapterOptions({ thinking: 'disabled' })
     expect(serialize(options(), disabled, [user()], new Map(), () => undefined).thinking).toEqual({ type: 'disabled' })
@@ -149,20 +151,8 @@ describe('Messages request conversion', () => {
     expect(() => body(messages)).toThrow(/tool/)
   })
 
-  it.each(['{', '', '[]', 'null', '42', 'true', '"text"', '{"description":"最快，但"某个说法"没有证据。"}'])('uses empty input for malformed or non-object historical tool arguments %s', (arguments_) => {
-    const message = assistant([{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: arguments_ }])
-    const history = [user(), message, createToolResultMessage({ callId: ToolCallId('a'), content: [{ type: 'text', text: 'Invalid arguments' }], isError: true }), user('Continue')]
-    const saved = JSON.stringify(history)
-    const restored = JSON.parse(saved) as Message[]
-    expect(body(restored).messages).toEqual([
-      { role: 'user', content: [{ type: 'text', text: 'hello' }] },
-      { role: 'assistant', content: [{ type: 'tool_use', id: 'a', name: 'read', input: {} }] },
-      { role: 'user', content: [
-        { type: 'tool_result', tool_use_id: 'a', content: [{ type: 'text', text: 'Invalid arguments' }], is_error: true },
-        { type: 'text', text: 'Continue' },
-      ] },
-    ])
-    expect(JSON.stringify(restored)).toBe(saved)
+  it.each(['{', '[]'])('rejects invalid historical tool input %s', (arguments_) => {
+    expect(() => body([assistant([{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: arguments_ }]), result()])).toThrow()
   })
 
   it('preserves own signed thinking, omits absent signatures and validates durable metadata', () => {
@@ -226,16 +216,11 @@ describe('Messages request conversion', () => {
     expect(() => readReplay(damaged, MODEL, () => { throw failure })).toThrow(failure)
   })
 
-  it.each([1, 2])('uses empty historical tool input with replay version %s', (version) => {
+  it('still rejects invalid tool JSON after discarding unusable replay metadata', () => {
     const message = createAssistantMessage({ content: [{ type: 'tool-call', id: ToolCallId('a'), name: 'read', arguments: '{' }], source: {
-      provider: 'deepseek-official', model: MODEL, replayState: { response: { kind: 'deepseek-messages', version, model: MODEL }, blocks: [{ type: 'tool-call' }] },
+      provider: 'deepseek-official', model: MODEL, replayState: { response: {}, blocks: [] },
     } })
-    const saved = JSON.stringify(message)
-    const onDegrade = vi.fn()
-    const request = serialize(options(), connection, [message, result()], new Map(), () => undefined, onDegrade)
-    expect(request.messages[0]?.content).toEqual([{ type: 'tool_use', id: 'a', name: 'read', input: {} }])
-    expect(onDegrade).toHaveBeenCalledTimes(version === 1 ? 0 : 1)
-    expect(JSON.stringify(message)).toBe(saved)
+    expect(() => body([message, result()])).toThrow(/historical tool input is invalid JSON/)
   })
 })
 
@@ -275,11 +260,11 @@ describe('Messages images', () => {
   const image: ImageBlock = { type: 'image', attachment: ref }
   const version: RequestImageAttachment = { attachment: ref, variantId: ImageVariantId(`sha256:${'b'.repeat(64)}`), mediaType: 'image/png', bytes: 3, data: Uint8Array.of(1, 2, 3), width: 1, height: 1, depth: 'uchar', space: 'srgb', hasAlpha: false }
   const access = () => ({ readonlyPath: '/workspace/image.png' })
-  const model = 'deepseek-flash'
+  const model = 'deepseek-v4-flash-vision-exp'
   // Only the read operation is consumed by image preparation; the transport is mocked, not durable content.
   const attachments = { readImageRequest: async () => version } as unknown as AttachmentStore
   const signal = new AbortController().signal
-  it('keeps image bytes inside tool results and deduplicates normalization', async () => {
+  it.each(['deepseek-flash', model])('keeps image bytes inside tool results and deduplicates normalization for %s', async (model) => {
     const history = [assistant([call()]), result('a', [image, image])]
     const prepared = await prepareImages(history, connection, model, attachments, access, signal)
     expect(prepared.versions.size).toBe(1)

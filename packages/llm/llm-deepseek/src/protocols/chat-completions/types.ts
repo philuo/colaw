@@ -180,4 +180,11 @@ export interface WireUsage {
 /** Non-2xx error body. */
 export interface WireError {
   error?: { message?: string; type?: string; code?: string }
+  /**
+   * Compatible gateways answer with the diagnostic at the top level instead of
+   * wrapping it in `error`. Both shapes carry the same facts, so the reader
+   * accepts either rather than reporting a bare HTTP status.
+   */
+  code?: string
+  message?: string
 }

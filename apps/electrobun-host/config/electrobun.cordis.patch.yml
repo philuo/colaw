@@ -13,6 +13,13 @@
   config:
     enabled: false
 
+# The same relay rejects the other vendor-private request field, `dsh_session_log`
+# (HTTP 400 INVALID_REQUEST), so its owner goes off with it. Both extensions
+# exist to feed DeepSeek's own endpoint; a compatible gateway sees only
+# unknown top-level fields and refuses the whole request.
+- id: session-log-deepseek
+  disabled: true
+
 # The desktop shell's session header keeps only the open-locally pill and the
 # right-panel toggle; drop the session-log download action.
 - id: session-log-download

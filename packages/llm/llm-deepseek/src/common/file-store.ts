@@ -4,7 +4,6 @@ import type { RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import { LlmError } from '@deepseek-ai/dsh-llm'
 import { DeepSeekFilesClient, isFilesQuotaError } from './files-api.ts'
 import type { DeepSeekFileId } from './file-id.ts'
-import { messagesApiRoot } from './messages-api.ts'
 import { deepSeekFileScope, DeepSeekUploadIndex } from './upload-index.ts'
 import type { DeepSeekUploadRecord } from './upload-index.ts'
 import type { DeepSeekProtocol } from './types.ts'
@@ -49,10 +48,8 @@ interface SharedUpload {
 
 /** The Files resource's parent URL distinguishes custom protocol namespaces. */
 function fileScope(connection: DeepSeekFileConnection) {
-  return deepSeekFileScope(
-    connection.protocol === 'messages' ? messagesApiRoot(connection.baseURL) : connection.baseURL,
-    connection.apiKey,
-  )
+  const root = connection.baseURL.replace(/\/+$/u, '')
+  return deepSeekFileScope(connection.protocol === 'messages' ? `${root}/v1` : root, connection.apiKey)
 }
 
 function abortReason(signal: AbortSignal): Error {

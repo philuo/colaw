@@ -5,22 +5,20 @@ import type { ContentBlock, GenerateOptions, ImageAttachmentAccessResolver, Mess
 import type { ImageAttachmentRef, RequestImageAttachment } from '@deepseek-ai/dsh-attachment'
 import type { DeepSeekConnectionOptions as Connection } from '../../common/types.ts'
 import type { DeepSeekFileId } from '../../common/file-id.ts'
-import { readReplay } from './replay.ts'
+import { object, readReplay } from './replay.ts'
 import type { WireBlock, WireInput, WireMessage, WireRequest } from './types.ts'
 
 function unsupported(type: string): never {
   throw new LlmError(`DeepSeek Messages cannot represent ${type}`, 'UNSUPPORTED_CONTENT')
 }
 
-/** Historical arguments that Messages cannot represent use empty input; durable content stays unchanged. */
+/** Parse tool input only when constructing an outgoing native tool_use block. */
 function toolInput(raw: string): Record<string, unknown> {
   let value: unknown
   try { value = JSON.parse(raw) } catch (_invalidToolHistoryJson) {
-    return {}
+    throw new LlmError('DeepSeek Messages historical tool input is invalid JSON', 'INVALID_REQUEST')
   }
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-    ? value as Record<string, unknown>
-    : {}
+  return object(value, 'INVALID_REQUEST')
 }
 
 function assistant(message: Message, model: string, onReplayDegrade?: (reason: string) => void): WireBlock[] {
@@ -127,8 +125,13 @@ export function serialize(
   return {
     model: options.model, stream: true, messages,
     max_tokens: options.maxTokens ?? model?.maxTokens ?? connection.maxTokens,
-    thinking: { type: effort === 'off' ? 'disabled' : 'enabled' },
-    ...effort === 'off' ? {} : { output_config: { effort: effort as 'low' | 'high' | 'max' } },
+    // The Messages endpoint accepts `thinking.type: 'disabled'` but rejects
+    // `'enabled'` outright ("invalid request parameter combination"); a
+    // reasoning route names its depth through `output_config.effort` alone, so
+    // the enabled form is never sent.
+    ...effort === 'off'
+      ? { thinking: { type: 'disabled' as const } }
+      : { output_config: { effort: effort as 'low' | 'high' | 'max' } },
     ...system.length === 0 ? {} : { system },
     ...options.temperature === undefined ? {} : { temperature: options.temperature },
     ...options.stop === undefined ? {} : { stop_sequences: options.stop },

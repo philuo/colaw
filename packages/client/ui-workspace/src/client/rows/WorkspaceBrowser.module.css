@@ -255,8 +255,6 @@
 .rail .iconButton {
   width: 36px;
   height: 36px;
-  /* Rail hovers share the shell rail's 12px rounding. */
-  border-radius: 12px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -266,9 +264,6 @@
   padding: 0;
   margin: 0 0 12px;
   gap: 0;
-  /* The collapsed search frame clips its button's hover, so it must carry the
-     rail's 12px rounding itself. */
-  border-radius: 12px;
   border-color: transparent;
   background: transparent;
 }
@@ -276,7 +271,6 @@
 .rail .searchButton {
   width: 36px;
   height: 36px;
-  border-radius: 12px;
   color: var(--dsw-alias-label-primary);
 }
 
@@ -324,12 +318,6 @@
   height: 24px;
   background: linear-gradient(to bottom, transparent, var(--dsw-specific-sidebar-fill));
   pointer-events: none;
-}
-
-/* macOS desktop: the sidebar is translucent over window vibrancy, so the
-   opaque fill gradient would paint a solid smear instead of a fade. */
-:global([data-platform='darwin']) .fade {
-  display: none;
 }
 
 /* Wide-only content fades back in on expand remount (mirrors the shell). */
@@ -443,7 +431,7 @@
   height: 28px;
   border: none;
   border-radius: 8px;
-  padding: 0 12px 0 calc(28px + var(--dsh-workspace-indent, 0px));
+  padding: 0 12px 0 28px;
   background: transparent;
   cursor: pointer;
   text-align: left;
