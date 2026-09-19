@@ -13,6 +13,10 @@
  * @module dsh-subprocess-local/bun-pty-adapter
  */
 
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+
 // Bun global type declarations (avoid @types/bun dependency)
 declare const Bun: {
   Terminal: new (options: {
@@ -77,6 +81,64 @@ export interface IPty {
  * Spawn a PTY process using Bun.Terminal + Bun.spawn.
  * Spawn signature matches the historical node-pty `spawn(file, args, options)`.
  */
+/**
+ * A POSIX-only bootstrap that turns the pty slave this process inherits into a
+ * real controlling terminal, then hands the terminal to the requested program.
+ *
+ * Bun's pty comes from `openpty()`, which only creates the master/slave pair —
+ * the child never becomes a session leader and never acquires a controlling
+ * terminal. An interactive shell in that state reports
+ * `bash: no job control in this shell`, keeps `monitor` off, and cannot run
+ * foreground/background jobs: the classic full-shell experience this harness
+ * promises. `login_tty(0)` is the one-call fix (setsid + ctty + fd 0/1/2), with
+ * a setsid+TIOCSCTTY fallback for libcs that lack it; `system("exec ...")` then
+ * replaces the bootstrap with the real program over the same fds, so the pty
+ * stays single-layer and resize/flow-control behave exactly as before.
+ *
+ * Kept as data (not an entry) so packaging is unchanged; written once to the
+ * temp dir and executed by this app's own Bun.
+ */
+const CTTY_BOOTSTRAP_MODULE = [
+  "import { dlopen, FFIType } from 'bun:ffi'",
+  "const lib = dlopen('libSystem.B.dylib', {",
+  "  login_tty: { args: ['i32'], returns: 'i32' },",
+  "  setsid: { args: [], returns: 'i32' },",
+  "  ioctl: { args: ['i32', 'u64', 'i64'], returns: 'i32' },",
+  "  system: { args: ['cstring'], returns: 'i32' },",
+  "})",
+  "let done = lib.symbols.login_tty(0)",
+  "if (done !== 0) { lib.symbols.setsid(); done = lib.symbols.ioctl(0, 0x20007461n, 0) }",
+  // Single-quote handling is built from char codes so this TypeScript source
+  // contains no literal quotes/backslashes to double-escape.
+  "const q = String.fromCharCode(39)",
+  "const bs = String.fromCharCode(92)",
+  "const quoted = process.argv.slice(2).map(a => q + a.split(q).join(q + bs + q + q) + q).join(' ')",
+  "process.exit(lib.symbols.system('exec ' + quoted) >> 8)",
+].join('\n')
+
+let cttyBootstrap: string | undefined
+
+function cttyBootstrapPath(): string {
+  if (cttyBootstrap !== undefined) return cttyBootstrap
+  const dir = join(tmpdir(), 'colaw-pty')
+  mkdirSync(dir, { recursive: true })
+  const path = join(dir, 'ctty-bootstrap.mjs')
+  writeFileSync(path, CTTY_BOOTSTRAP_MODULE, { mode: 0o644 })
+  cttyBootstrap = path
+  return path
+}
+
+/**
+ * POSIX shells are launched through the {@link CTTY_BOOTSTRAP_MODULE} so they
+ * get a controlling terminal; Windows has no such concept. The bootstrap
+ * becomes the session leader, adopts the pty as its controlling terminal, and
+ * `exec`s the real program over the same stdio — one pty layer, unchanged
+ * resize and flow-control semantics, full job control inside the shell.
+ */
+function wrapWithCttyBootstrap(command: readonly string[]): string[] {
+  return [process.execPath, cttyBootstrapPath(), ...command]
+}
+
 export function spawn(
   file: string,
   args: string[] = [],
@@ -151,7 +213,8 @@ export function spawn(
   // caller normally sets it, but a lost key is invisible until the pane opens,
   // so the adapter backstops it here.
   filteredEnv.BASH_SILENCE_DEPRECATION_WARNING ??= '1'
-  const proc = Bun.spawn([file, ...args], {
+  const command = process.platform === 'win32' ? [file, ...args] : wrapWithCttyBootstrap([file, ...args])
+  const proc = Bun.spawn(command, {
     terminal,
     cwd: options.cwd,
     env: filteredEnv,
@@ -247,6 +310,11 @@ export function spawn(
     },
     kill(signal?: string) {
       try {
+        const name = signal ?? 'SIGTERM'
+        // The bootstrap is a session leader after setsid, so its group spans the
+        // bootstrap and the shell — signalling the group is what actually stops
+        // the program the user sees.
+        try { process.kill(-proc.pid, name) } catch { /* not a group leader */ }
         if (signal) {
           proc.kill(signal)
         } else {

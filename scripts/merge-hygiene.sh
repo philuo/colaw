@@ -14,7 +14,8 @@
 #   *.md  *.i18n.yaml  package.json  pnpm-lock.yaml  bun.lock
 set -uo pipefail
 
-FORK=${FORK:-ee6950e87c}                     # fork 基线；tag backup/pre-merge-official-882-20260918
+BASELINE=${BASELINE:-015ae91366}             # 裁决基准：上一轮合并调和结果（用户工作区分支 HEAD）
+FORK=${FORK:-ee6950e87c}                     # 合并前 fork 快照（仅作参考，非裁决基准）
 OFFICIAL=${OFFICIAL:-origin/master}
 PKG=${PKG:-}
 
@@ -35,17 +36,24 @@ while IFS= read -r f; do
 
   [ -f "$f" ] || continue                    # 本地删除了该文件：不属于混合体
 
+  base_md5=$(git show "$BASELINE:$f" 2>/dev/null | md5 -q 2>/dev/null)
   fork_md5=$(git show "$FORK:$f" 2>/dev/null | md5 -q 2>/dev/null)
   up_md5=$(git show "$OFFICIAL:$f" 2>/dev/null | md5 -q 2>/dev/null)
   cur_md5=$(md5 -q "$f" 2>/dev/null)
 
-  [ -n "$fork_md5" ] && [ -n "$up_md5" ] || continue
-  [ "$fork_md5" = "$up_md5" ] && continue     # 两边一致：没有冲突可言
-  [ "$cur_md5" = "$fork_md5" ] && continue     # 已是 fork 内容：合规
-  [ "$cur_md5" = "$up_md5" ] && continue       # 已是官方内容：由 fork-delta 规则处理，不是混合体
+  [ -n "$base_md5" ] || continue              # 基线没有该文件：官方新增，另行审查
+  [ "$cur_md5" = "$base_md5" ] && continue    # 与裁决基线一致：合规 ✓
 
-  hits+=("$f"); count=$((count + 1))
-done < <(git ls-tree -r "$FORK" --name-only ${PKG:+-- "$PKG"})
+  # 到这里说明当前内容偏离了基线。附注它偏向哪边，帮助裁决：
+  if [ "$cur_md5" = "$fork_md5" ] && [ "$fork_md5" != "$base_md5" ]; then
+    hits+=("$f   [⚠ 偏向合并前 fork 快照——疑似回退掉了调和成果]")
+  elif [ "$cur_md5" = "$up_md5" ] && [ "$up_md5" != "$base_md5" ]; then
+    hits+=("$f   [⚠ 被官方版本覆盖——核对是否该按基线保留]")
+  else
+    hits+=("$f   [混合体，人工裁决]")
+  fi
+  count=$((count + 1))
+done < <(git ls-tree -r "$BASELINE" --name-only ${PKG:+-- "$PKG"})
 
 if [ "$count" -eq 0 ]; then
   echo "merge-hygiene: 未发现混合体（已跳过 $skipped 个文档/清单文件）。"
