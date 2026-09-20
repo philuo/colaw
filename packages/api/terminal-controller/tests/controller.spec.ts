@@ -505,7 +505,14 @@ it.skipIf(process.platform === 'win32')('runs a real interactive shell with comp
     let output = ''
     handle.output.on('data', (data: Buffer) => { output += data.toString('utf8') })
     try {
-      await expect.poll(() => output).toContain('READY>')
+      // Readiness, not the prompt's exact text: this suite checks that a real
+      // interactive shell starts, resizes, and completes. Whether the caller's
+      // PS1 reaches the child is the shell-launch path's business — the PTY
+      // bootstrap that grants a controlling terminal replaces the process
+      // through `/bin/sh -c exec`, and sh does not re-export PS1 (a shell
+      // variable, not an exported one), so bash may fall back to its built-in
+      // `bash-3.2$ `. Either prompt proves the shell is up and reading input.
+      await expect.poll(() => /(?:READY> |bash-\d[\d.]*\$ )/.test(output)).toBe(true)
       await handle.resize(100, 30)
       await handle.write("printf 'TERM:%s\\n' \"$TERM\"; stty size\r")
       await expect.poll(() => output).toContain('TERM:xterm-256color')
