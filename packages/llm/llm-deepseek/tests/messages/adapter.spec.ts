@@ -18,6 +18,7 @@ import Include from '@deepseek-ai/cordis-plugin-include'
 import LlmRuntime, { createAssistantMessage, createSystemMessage } from '@deepseek-ai/dsh-llm'
 import type { Message } from '@deepseek-ai/dsh-llm'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import LocalCredentials from '@deepseek-ai/dsh-credentials-local'
 import FileSettings from '@deepseek-ai/dsh-settings-file'
 import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
@@ -167,8 +168,9 @@ describe('Cordis provider composition', () => {
   it('resolves an attachment service loaded after the adapter and maps its read-only path', async () => {
     const http = await endpoint()
     const { ctx, home } = await context()
-    vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
     await ctx.plugin(LlmRuntime)
+    await ctx.plugin(LocalCredentialProvider, { dshHome: home, watch: false })
+    await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
     await ctx.plugin(Messages, { baseURL: http.url })
     const model = 'deepseek-v4-flash-vision-exp'
     const price = () => ctx.llm.imageRequestPricing('deepseek-official', model)!
@@ -363,19 +365,30 @@ describe('Cordis provider composition', () => {
     expect(llm.listConfigurableProviders()).toEqual([])
   })
 
-  it('uses environment credentials and reports missing or malformed keys without network access', async () => {
+  it('resolves the key from the managed store and reports malformed keys without network access', async () => {
+    // The managed store is the sole credential source: an ambient
+    // DEEPSEEK_API_KEY is deliberately ignored, so the suite writes the
+    // reference through the seam instead of exporting it.
     const http = await endpoint()
-    const { ctx } = await context()
+    const { ctx, home } = await context()
     vi.stubEnv('DEEPSEEK_BASE_URL', http.url)
-    vi.stubEnv('DEEPSEEK_API_KEY', 'env-key')
     await ctx.plugin(LlmRuntime)
-    const fiber = ctx.plugin(Messages)
+    // The store mounts before the provider — the adapter reads the seam when it
+    // resolves a route — and it needs the harness home to locate its document.
+    await ctx.plugin(LocalCredentialProvider, { dshHome: home, watch: false })
+    await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'env-key')
+    // This suite exercises the Messages protocol, so the route must select it:
+    // the provider defaults to `openai-completions`, which authenticates with
+    // `authorization: Bearer` instead of the Messages `x-api-key` header.
+    const fiber = ctx.plugin(Messages, { protocol: 'anthropic-messages' })
     await fiber
     await chunks(ctx.llm.stream(options()))
     expect(http.requests[0]?.headers['x-api-key']).toBe('env-key')
-    vi.stubEnv('DEEPSEEK_API_KEY', '')
+    // The store refuses to hold an empty value, so "no key" is expressed by
+    // unsetting the reference rather than writing an empty string.
+    await ctx.credentials.unset(credentialRef('DEEPSEEK_API_KEY'))
     expect((await assemble(ctx.llm.stream(options()))).assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'MISSING_CREDENTIAL' } })
-    vi.stubEnv('DEEPSEEK_API_KEY', 'bad\nkey')
+    await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'bad\nkey')
     expect((await assemble(ctx.llm.stream(options()))).assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'INVALID_CREDENTIAL' } })
     await fiber.dispose()
     expect(ctx.llm.listProviders()).toEqual([])
