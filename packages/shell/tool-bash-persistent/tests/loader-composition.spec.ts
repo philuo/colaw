@@ -1,3 +1,4 @@
+import { realpathSync } from 'node:fs'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -142,7 +143,9 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
     expect(context.tools.schemas().map(schema => schema.name)).toEqual(['bash'])
     await execute('state', 'export KEEP=loader; mkdir -p nested; cd nested')
     const observed = text(await execute('observe', 'printf "cwd=%s keep=%s\\n" "$PWD" "$KEEP"'))
-    expect(observed).toContain(`cwd=${join(root, 'nested')} keep=loader`)
+    // `$PWD` is the physical directory: on macOS `/var` is a symlink to
+    // `/private/var`, so the temp root has to be resolved before comparing.
+    expect(observed).toContain(`cwd=${realpathSync(join(root, 'nested'))} keep=loader`)
     expect(observed).not.toContain('DSH_PERSISTENT_BASH')
 
     const multiline = text(await execute(
@@ -183,6 +186,6 @@ suite('persistent Bash through a real cordis.yml Loader composition', () => {
 
     const exited = text(await execute('exit', 'exit'))
     expect(exited).toContain('next bash call starts from the workspace')
-    expect(text(await execute('after-exit', 'printf "%s\\n" "$PWD"'))).toBe(`${root}\n[Command finished with exit code 0]`)
+    expect(text(await execute('after-exit', 'printf "%s\\n" "$PWD"'))).toBe(`${realpathSync(root)}\n[Command finished with exit code 0]`)
   }, 20_000)
 })
