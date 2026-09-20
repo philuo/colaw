@@ -81,11 +81,20 @@ describe('session-telemetry-otel egress', () => {
       const disposeProxy = await installProxyFromEnvironment(proxyEnv(), () => undefined)
       const ctx = new Context()
       try {
-        // The positive control proves a fetch-based exporter would reach the proxy.
+        // The positive control proves a fetch-based exporter would reach the
+        // proxy. Bun's fetch reads the proxy from the environment at request
+        // time and ignores an installed undici dispatcher entirely, so the
+        // variable — not the dispatcher — is what makes this control real
+        // under the product's runtime. `seen` is asserted empty below, so the
+        // variable is cleared again before the exporter runs.
+        process.env.HTTP_PROXY = proxyUrl
+        process.env.HTTPS_PROXY = proxyUrl
         const response = await fetch(collectorUrl)
         await response.text()
         expect(response.status).toBe(502)
         expect(seen.length).toBeGreaterThan(0)
+        delete process.env.HTTP_PROXY
+        delete process.env.HTTPS_PROXY
         seen.length = 0
 
         await ctx.plugin(SessionStore)

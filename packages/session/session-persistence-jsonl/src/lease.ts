@@ -37,36 +37,17 @@ import { join } from 'node:path'
 // replaces fs-ext. Runtime dispatch keeps a single implementation for both runtimes.
 const isBun = typeof (globalThis as unknown as { Bun?: unknown }).Bun !== 'undefined'
 import { tryLockExclusive } from '@deepseek-ai/node-addon-system/flock'
+import { dlopenLibc, readU32 } from './bun-ffi.ts'
 type BunFfiFlockFn = { flock: (fd: number, operation: number) => number }
 /** Platform errno accessor over Bun.FFI: darwin `__error`, glibc `__errno_location`. */
 type BunFfiErrnoFn = () => number
-
-/**
- * The `bun:ffi` surface this module drives, typed structurally: the repo's host
- * program carries no Bun type package, so `require('bun:ffi')` would otherwise
- * be an `any` and every FFI call behind it unchecked.
- */
-interface BunFfiModule {
-  // Property-style signatures, not methods: these are destructured off the
-  // module object, so they carry no receiver to bind.
-  readonly dlopen: (
-    path: string,
-    symbols: Record<string, { readonly args: readonly string[]; readonly returns: string }>,
-  ) => { readonly symbols: Record<string, unknown> }
-  readonly read: { readonly u32: (pointer: number) => number }
-}
 
 let bunFfiFloc: BunFfiFlockFn | null = null
 let bunFfiErrno: BunFfiErrnoFn | null = null
 
 function getBunFfiFloc(): BunFfiFlockFn {
   if (bunFfiFloc) return bunFfiFloc
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { dlopen, read } = require('bun:ffi') as BunFfiModule
-  const libcPath = process.platform === 'darwin'
-    ? '/usr/lib/libSystem.B.dylib'
-    : 'libc.so.6'
-  const lib = dlopen(libcPath, {
+  const lib = dlopenLibc({
     flock: { args: ['i32', 'i32'], returns: 'i32' },
     ...(process.platform === 'darwin'
       ? { __error: { args: [], returns: 'pointer' } }
@@ -82,7 +63,9 @@ function getBunFfiFloc(): BunFfiFlockFn {
   // libc flock(2) reports failure as -1 with the reason in the errno global; read
   // it when the accessor resolved, else fall back to contention (the only -1
   // reachable for a LOCK_NB call on a descriptor this process keeps open).
-  bunFfiErrno = errnoAt === undefined ? () => 35 : () => read.u32(errnoAt())
+  bunFfiErrno = errnoAt === undefined
+    ? () => FLOCK_CONTENTION_ERRNO
+    : () => readU32(errnoAt())
   return bunFfiFloc
 }
 
@@ -102,6 +85,24 @@ type HeldLock =
 const LOCK_EX = 2
 const LOCK_NB = 4
 
+/**
+ * The errno a non-blocking `flock(2)` reports when another descriptor holds the
+ * lock: darwin spells it EWOULDBLOCK, glibc EAGAIN. Both mean contention.
+ */
+const FLOCK_CONTENTION_ERRNO = process.platform === 'darwin' ? 35 : 11
+
+/**
+ * Symbolic names for the errno values `flock(2)` can leave behind.
+ *
+ * The Node path gets its names from libuv; this one reads a number out of the
+ * errno global and must name it the same way, or a permission refusal would
+ * reach callers as `E13`. Only the values flock(2) can actually set are listed;
+ * anything else keeps its number so it stays visible in the message.
+ */
+const FLOCK_ERRNO_NAMES: Readonly<Record<number, string>> = process.platform === 'darwin'
+  ? { 1: 'EPERM', 9: 'EBADF', 13: 'EACCES', 22: 'EINVAL', 35: 'EWOULDBLOCK', 77: 'ENOLCK' }
+  : { 1: 'EPERM', 9: 'EBADF', 11: 'EAGAIN', 13: 'EACCES', 22: 'EINVAL', 37: 'ENOLCK' }
+
 /** Promise face over a non-blocking exclusive flock, dispatched by runtime. */
 function flockAsync(fd: number): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -112,10 +113,12 @@ function flockAsync(fd: number): Promise<void> {
         const result = libc.flock(fd, LOCK_EX | LOCK_NB)
         if (result !== 0) {
           // The return value is -1 on failure, not the errno: the reason lives
-          // in the errno global. darwin spells LOCK_NB contention EWOULDBLOCK
-          // (35); glibc EAGAIN (11). Both map to contention downstream.
-          const errno = result === -1 ? (bunFfiErrno?.() ?? 35) : 35
-          const code = errno === 11 ? 'EAGAIN' : errno === 35 ? 'EWOULDBLOCK' : `E${errno}`
+          // in the errno global, so the number has to be named before callers
+          // can act on it. The Node path surfaces `EACCES`/`EAGAIN` because
+          // libuv names them, and this one answers identically — a caller
+          // reading `error.code` must not have to know which runtime it is on.
+          const errno = result === -1 ? (bunFfiErrno?.() ?? FLOCK_CONTENTION_ERRNO) : FLOCK_CONTENTION_ERRNO
+          const code = FLOCK_ERRNO_NAMES[errno] ?? `E${errno}`
           const error = new Error(`flock failed: ${code}`)
           ;(error as NodeJS.ErrnoException).code = code
           reject(error)

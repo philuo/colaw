@@ -24,7 +24,7 @@ import { performance } from 'node:perf_hooks'
 import { pipeline, Readable } from 'node:stream'
 import { scheduler } from 'node:timers/promises'
 import { isDeepStrictEqual } from 'node:util'
-import { constants, createZstdCompress } from 'node:zlib'
+import { createZstdCompress } from 'node:zlib'
 import { Session } from '@deepseek-ai/dsh-session'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import { BlockAssembler, expandAssistantStream } from '@deepseek-ai/dsh-llm'
@@ -42,16 +42,13 @@ import {
   createZstdFrameDecoder,
   decompressZstdPrefix,
   scanZstdFrames,
+  ZSTD_STREAM_OPTIONS,
 } from './zstd.ts'
 
 /** Internal scheduling bounds: preserve old decode cadence and cap each synchronous encode slice. */
 const MIGRATION_DECODE_YIELD_INTERVAL_MS = 500
 const MIGRATION_WORK_CHUNK_BYTES = 1024 * 1024
 const MIGRATION_WRITE_CHUNK_BYTES = 4 * 1024 * 1024
-const ZSTD_CHECKSUM_OPTIONS = {
-  chunkSize: MIGRATION_WORK_CHUNK_BYTES,
-  params: { [constants.ZSTD_c_checksumFlag]: 1 },
-}
 
 /** Pure adapter between backend-owned JSONL framing and the format catalog. */
 export interface JsonlGenerationFormatAdapter {
@@ -751,7 +748,7 @@ async function writeSyncedTemp(
         await new Promise<void>((resolve, reject) => {
           pipeline(
             Readable.from(rows, { objectMode: false, highWaterMark: MIGRATION_WORK_CHUNK_BYTES }),
-            createZstdCompress(ZSTD_CHECKSUM_OPTIONS),
+            createZstdCompress(ZSTD_STREAM_OPTIONS),
             async (source) => { await writeMigrationChunks(source as AsyncIterable<Buffer>, write) },
             (error: Error | null | undefined) => {
               if (error instanceof Error) reject(error)

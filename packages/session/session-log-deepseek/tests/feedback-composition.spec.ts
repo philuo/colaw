@@ -14,6 +14,7 @@ import LlmRuntime, { createAssistantMessage, createUserMessage } from '@deepseek
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import * as LlmDeepSeek from '@deepseek-ai/dsh-llm-deepseek'
+import { PUBLIC_BASE_URL } from '@deepseek-ai/dsh-llm-deepseek'
 import DeepSeekLlmApiExtensions from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { startMockLlmServer, type MockLlmServer } from '@deepseek-ai/dsh-llm-mock-server'
 import * as SessionLogDeepSeek from '../src/index.ts'
@@ -41,7 +42,6 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
     ['@deepseek-ai/dsh-session', SessionStore],
     ['@deepseek-ai/dsh-session-persistence-jsonl', JsonlSessionPersistence],
     ['@deepseek-ai/dsh-message-feedback', MessageFeedback],
-    ['@deepseek-ai/dsh-llm', LlmRuntime],
     ['@deepseek-ai/dsh-credentials-local', LocalCredentialProvider],
     ['@deepseek-ai/dsh-llm-deepseek', LlmDeepSeek],
     ['@deepseek-ai/dsh-deepseek-llm-api-extensions', DeepSeekLlmApiExtensions],
@@ -55,13 +55,39 @@ it('uploads freeform feedback and message put/edit/delete through the unchanged 
       : name === '@deepseek-ai/dsh-message-feedback'
         ? { config: { maxNoteBytes: 1024 } }
         : name === '@deepseek-ai/dsh-llm-deepseek'
-          ? { config: { protocol: 'chat-completions', baseURL: server!.baseURL } }
+          // Two facts decide this config, both read from the product. The schema
+          // offers only the public spellings — `chat-completions` is a legacy
+          // alias the resolver reads from stored documents, and passing it fails
+          // validation, leaving the provider fiber FAILED and every call
+          // NO_ADAPTER. And the vendor-private `dsh_session_log` field is
+          // contributed only on DeepSeek's own endpoint (isOfficialEndpoint), so
+          // the route names the official root and a fetch stub carries the
+          // traffic to the loopback server. The wire then exercises the same
+          // extension transaction the real endpoint sees.
+          ? { config: { protocol: 'openai-completions', baseURL: PUBLIC_BASE_URL } }
           : name === '@deepseek-ai/dsh-session-log-deepseek'
             ? { config: { enabled: true } }
             : {},
   }))))
+  // The official root is named in the config so the vendor-private field is
+  // contributed; the stub is what actually answers, forwarding to the loopback
+  // mock so `server.requests` still records every wire body verbatim.
+  const realFetch = globalThis.fetch
+  vi.stubGlobal('fetch', (input: RequestInfo | URL, init?: RequestInit) => {
+    const target = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+    const forwarded = target.replace(PUBLIC_BASE_URL, server!.baseURL)
+    return realFetch(forwarded, init)
+  })
+
   ctx = new Context()
   ctx.baseUrl = pathToFileURL(root).href + '/'
+  // `llm-deepseek` declares `inject: ['llm']`, and the Loader gives each entry
+  // its own context: a sibling entry's service is not visible to it, so the
+  // provider would stay pending forever and never register its route. Providing
+  // the runtime on the root context — the order the direct-composition suites
+  // use — makes it visible to every entry. The Loader entry for `dsh-llm` is
+  // dropped for the same reason: it would register a second, empty runtime.
+  await ctx.plugin(LlmRuntime)
   await ctx.plugin(Loader)
   ctx.loader.builtins.include = Include
   ctx.loader.internal = {

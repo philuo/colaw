@@ -6,17 +6,24 @@
  */
 
 import {
-  constants, zstdCompress, zstdDecompress, type ZstdOptions,
+  constants, createZstdCompress, zstdDecompress, type ZstdOptions,
 } from 'node:zlib'
 import { promisify } from 'node:util'
+import { Readable } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 import { SessionPersistenceCorruptionError } from '@deepseek-ai/dsh-session-persistence'
 import { NodePrivateZstdFrameDecoder } from './zstd-private-decoder.ts'
 import { PublicZstdFrameDecoder } from './zstd-public-decoder.ts'
 
 const ZSTD_MAGIC = 0xFD2FB528
-const zstdCompressAsync = promisify(zstdCompress)
 const zstdDecompressAsync = promisify(zstdDecompress)
-const CHECKSUM_OPTIONS: ZstdOptions = {
+/**
+ * Encoder options for a session frame: checksummed, and chunked so a long event
+ * batch is compressed in bounded slices. Shared with the migration writer so
+ * both paths emit identical bytes.
+ */
+export const ZSTD_STREAM_OPTIONS = {
+  chunkSize: 1024 * 1024,
   params: { [constants.ZSTD_c_checksumFlag]: 1 },
 }
 const INCOMPLETE_FRAME_OPTIONS: ZstdOptions = {
@@ -106,11 +113,27 @@ export function scanZstdFrames(buffer: Buffer, maxFrames = Number.POSITIVE_INFIN
 
 /**
  * Compress one independently decodable, checksummed Zstandard frame.
+ *
+ * The frame is produced by the streaming encoder the migration path already
+ * writes through, not by the one-shot `zstdCompress`: the two agree byte for
+ * byte on Node, but Bun's implementations differ (its one-shot writes the
+ * single-segment frame header, its stream does not), and a session log's bytes
+ * are compared across writers — a migrated generation is recognised by its
+ * exact prefix. One encoder for both paths keeps that comparison meaningful.
  * @param input - JSONL bytes for a header or durable event batch.
  * @returns the complete encoded frame.
  */
 export async function compressZstdFrame(input: Buffer | string): Promise<Buffer> {
-  return zstdCompressAsync(input, CHECKSUM_OPTIONS)
+  const source = typeof input === 'string' ? Buffer.from(input) : input
+  const chunks: Buffer[] = []
+  await pipeline(
+    Readable.from([source]),
+    createZstdCompress(ZSTD_STREAM_OPTIONS),
+    async function* (encoded: AsyncIterable<Buffer>) {
+      for await (const chunk of encoded) chunks.push(Buffer.from(chunk))
+    },
+  )
+  return Buffer.concat(chunks)
 }
 
 /**

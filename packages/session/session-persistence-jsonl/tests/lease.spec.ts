@@ -101,6 +101,51 @@ vi.mock('@deepseek-ai/node-addon-system/flock', async (importOriginal) => {
   }
 })
 
+
+// The lease dispatches flock by runtime: Node goes through the Node-API addon
+// mocked above, and Bun through `bun:ffi`, where a failing `flock(2)` answers
+// -1 and leaves the reason in the errno global. That face is reached through
+// the package's own `bun-ffi` module — mocking the bare `bun:ffi` specifier
+// would not work, since the runtime resolves it outside the module registry —
+// so the refusal is injected on both. Without this, the case passed vacuously
+// under Bun while only the Node face was mocked.
+const bunErrno = vi.hoisted(() => ({ value: null as number | null }))
+
+vi.mock('../src/bun-ffi.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../src/bun-ffi.ts')>()
+  return {
+    LIBC_PATH: actual.LIBC_PATH,
+    // Delegate to the real libc unless a refusal is pending: the cases that pin
+    // mutual exclusion need a genuine kernel lock, and only the refusal cases
+    // want the call answered synthetically.
+    dlopenLibc: (symbols: Parameters<typeof actual.dlopenLibc>[0]) => {
+      const real = actual.dlopenLibc(symbols)
+      return {
+        symbols: {
+          ...real.symbols,
+          flock: (fd: number, operation: number): number => {
+            if (refuse.flock) {
+              refuse.flock = false
+              bunErrno.value = 13 // EACCES
+              return -1
+            }
+            if (refuse.flockBusy) {
+              refuse.flockBusy = false
+              bunErrno.value = process.platform === 'darwin' ? 35 : 11 // EWOULDBLOCK / EAGAIN
+              return -1
+            }
+            bunErrno.value = null
+            return (real.symbols.flock as (fd: number, operation: number) => number)(fd, operation)
+          },
+        },
+      }
+    },
+    // A pending refusal owns the errno; otherwise the real accessor answers.
+    readU32: (pointer: number): number =>
+      bunErrno.value ?? actual.readU32(pointer),
+  }
+})
+
 const dirs: string[] = []
 const contexts: Context[] = []
 
@@ -108,6 +153,8 @@ afterEach(async () => {
   refuse.lockOpen = false
   refuse.flock = false
   refuse.flockBusy = false
+  bunErrno.value = null
+  bunErrno.value = 0
   refuse.lockStat = false
   refuse.swapLockOnStat = 0
   refuse.dropLockOnStat = false
