@@ -7,18 +7,12 @@
 
 # ── Disable plugins not needed in the bundled Electrobun app ──
 
-# The tokenrhythm relay rejects the vendor-private `dsh_plugin_packages`
-# request field (HTTP 400 INVALID_REQUEST); keep the extension off in the app.
-- id: plugin-package-inventory-deepseek
-  config:
-    enabled: false
-
-# The same relay rejects the other vendor-private request field, `dsh_session_log`
-# (HTTP 400 INVALID_REQUEST), so its owner goes off with it. Both extensions
-# exist to feed DeepSeek's own endpoint; a compatible gateway sees only
-# unknown top-level fields and refuses the whole request.
-- id: session-log-deepseek
-  disabled: true
+# The two vendor-private request extensions (`dsh_session_log`,
+# `dsh_plugin_packages`) stay mounted: the provider contributes their fields
+# only when the route resolves to DeepSeek's own endpoint, so a compatible
+# gateway never sees them (see isOfficialEndpoint in llm-deepseek). Turning the
+# plugins off globally used to be the workaround and cost the official endpoint
+# its session log and package inventory.
 
 # The desktop shell's session header keeps only the open-locally pill and the
 # right-panel toggle; drop the session-log download action.

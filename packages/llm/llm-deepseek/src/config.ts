@@ -164,6 +164,28 @@ export const MESSAGES_BASE_URL = 'https://api.deepseek.com/anthropic'
 const BASE_URL_ENV = 'DEEPSEEK_BASE_URL'
 
 /**
+ * Whether a resolved route points at DeepSeek's own service.
+ *
+ * The vendor-private request extensions (`dsh_session_log`,
+ * `dsh_plugin_packages`) are understood only there; a compatible gateway
+ * rejects the whole request when it sees an unknown top-level field. Comparing
+ * the origin — not the raw string — keeps a trailing slash, an explicit port,
+ * or a `/v1`-suffixed root on the official side while any other host is not.
+ * @param baseURL - the resolved route root.
+ * @returns true when every request on this route may carry the private fields.
+ */
+export function isOfficialEndpoint(baseURL: string): boolean {
+  let candidate: URL
+  try {
+    candidate = new URL(baseURL)
+  } catch {
+    return false
+  }
+  return candidate.origin === new URL(PUBLIC_BASE_URL).origin
+    || candidate.origin === new URL(MESSAGES_BASE_URL).origin
+}
+
+/**
  * One resolution's complete request facts. Connection and credential facts
  * are one value on purpose: a snapshot the resolver rejects keeps the whole
  * previous generation, so a request can never pair a stale endpoint with a

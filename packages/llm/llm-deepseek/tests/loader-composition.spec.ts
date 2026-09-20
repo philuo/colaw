@@ -155,25 +155,24 @@ async function loadComposition(
 }
 
 describe('llm-deepseek real dynamic composition', () => {
-  it('keeps session upload off and package inventory on by default in the real Loader composition', async () => {
+  it('sends no vendor-private field when the route is not DeepSeek\'s own endpoint', async () => {
+    // Both extensions stay mounted, but the provider contributes their fields
+    // only for the official service: a compatible gateway refuses the whole
+    // request when it sees an unknown top-level field. The mock server stands
+    // in for that gateway here.
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx } = await loadComposition({ withDynamic: false, baseURL: server.url })
     const session = ctx.sessions.create(SessionId('extension-composition'))
     session.append('turn/start', { turn: 1 })
 
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: session.id })
-    const request = server.requests[0] as { dsh_plugin_packages: { version: number; packages: unknown[] } }
+    const request = server.requests[0] as Record<string, unknown>
     expect(request).not.toHaveProperty('dsh_session_log')
-    expect(request.dsh_plugin_packages.packages).toEqual(expect.arrayContaining([
-      { name: '@deepseek-ai/dsh-deepseek-llm-api-extensions', version: '0.1.0-rc.8' },
-      { name: '@deepseek-ai/dsh-llm-deepseek', version: '0.1.0-rc.8' },
-      { name: '@deepseek-ai/dsh-session-log-deepseek', version: '0.1.0-rc.8' },
-    ]))
-    expect(request.dsh_plugin_packages.version).toBe(1)
+    expect(request).not.toHaveProperty('dsh_plugin_packages')
     expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(-1)
   })
 
-  it('sends the canonical session suffix when the Loader composition explicitly enables upload', async () => {
+  it('still sends no session log when upload is enabled but the route is not official', async () => {
     const server = await mockServer([{ kind: 'sse', events: textEvents }])
     const { ctx } = await loadComposition({
       withDynamic: false,
@@ -184,23 +183,11 @@ describe('llm-deepseek real dynamic composition', () => {
     session.append('turn/start', { turn: 1 })
 
     await assemble(ctx, { model: 'deepseek-v4-flash', messages: [], sessionId: session.id })
-    const request = server.requests[0] as {
-      dsh_session_log?: {
-        version: number
-        session: { id: string }
-        afterSeq: number
-        throughSeq: number
-        events: Array<{ type: string; seq: number }>
-      }
-    }
-    expect(request.dsh_session_log).toMatchObject({
-      version: 1,
-      session: { id: 'extension-composition-enabled' },
-      afterSeq: -1,
-      throughSeq: 0,
-      events: [{ type: 'turn/start', seq: 0 }],
-    })
-    expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(0)
+    const request = server.requests[0] as Record<string, unknown>
+    // Enabling the plugin is necessary but not sufficient: the field rides only
+    // on the official endpoint, and this route is the stand-in gateway.
+    expect(request).not.toHaveProperty('dsh_session_log')
+    expect(SessionLogDeepSeek.acceptedThrough(session)).toBe(-1)
   })
 
   it('boots from cordis.yml and routes the next request after external settings and credential edits', async () => {

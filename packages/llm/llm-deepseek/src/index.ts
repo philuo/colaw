@@ -7,7 +7,7 @@ import type {} from '@deepseek-ai/dsh-settings'
 import { deepEqualJson } from '@deepseek-ai/dsh-util-values'
 import { getOrCreateAnonymousUserId, type AnonymousUserId } from '@deepseek-ai/dsh-anonymous-user-id'
 import { DeepSeekAdapter } from './adapter.ts'
-import { Config, resolveAdapterOptions } from './config.ts'
+import { Config, isOfficialEndpoint, resolveAdapterOptions } from './config.ts'
 import type { ResolvedDeepSeekOptions } from './config.ts'
 
 export { Config, resolveAdapterOptions, PUBLIC_BASE_URL, MESSAGES_BASE_URL } from './config.ts'
@@ -115,6 +115,15 @@ export function apply(ctx: Context, config: Config): void {
       ref,
     ),
     prepareExtensions: (request) => {
+      // The vendor-private request fields (dsh_session_log, dsh_plugin_packages)
+      // exist to feed DeepSeek's own endpoint. A compatible gateway sees only
+      // unknown top-level fields and refuses the whole request with HTTP 400
+      // INVALID_REQUEST, so they are contributed only when this route really
+      // points at the official service — a user-supplied baseURL keeps the
+      // plain protocol body.
+      if (!isOfficialEndpoint(options().baseURL)) {
+        return Promise.resolve({ fields: {}, accept: () => Promise.resolve() })
+      }
       const extensions = ctx.get('deepseekLlmApiExtensions')
       return extensions?.prepare(request)
         ?? Promise.resolve({ fields: {}, accept: () => Promise.resolve() })
