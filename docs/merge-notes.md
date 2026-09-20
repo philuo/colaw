@@ -193,45 +193,43 @@ grep -A2 'id: session-log-deepseek' "$APP/Contents/Resources/app/config/electrob
    - 右侧栏各面板、设置面板、回收站、主题切换等 fork 功能**未做回归清单式验证**
    - 打包产物的 `.map` 门禁、bun 钉死一致性门禁已加，但**没有 CI 承接**
 
-### 4.6 Bun 平台边界：Node 内部模块加载器（已查清，非缺陷）
+### 4.6 **测试必须选对运行时**（此前的错误结论已更正）
 
-**事实**：`node-addon-require-builtin` 通过 V8 的 current-context 符号访问 Node 内部加载器
-（`internal/modules/esm/loader` 等）。**Bun 用 JavaScriptCore，没有这些符号**，因此
-`requireBuiltin()` 在 Bun 下必然抛：
+**教训（重要）**：本仓库的测试分两类，**运行时选错会产生大量假失败**，而且极易被误判成"平台边界"或"预存在缺陷"。
 
-```
-node-addon-require-builtin unsupported: Unsupported/no-context
-  (required V8 current-context symbols were not found)
-```
+| 测试面 | 必须用 | 用错会怎样 |
+| --- | --- | --- |
+| `packages/boot/app-boot/tests`（profile 解析、加载器形状） | **Node** | 用 Bun：`node-addon-require-builtin unsupported: Unsupported/no-context (required V8 current-context symbols were not found)` → **67 个假失败** |
+| `packages/llm/llm-deepseek/tests`（协议适配、流式读取） | **Bun** | 用 Node：`response.textStream is not a function` → **65 个假失败**（`textStream` 是 Bun 专有 API，fork 有意使用） |
 
-**实测证据**：
-
-- 在包内的 Bun 里直接调用 → 抛上述错误（可复现）
-- 但**打包后的 App 启动日志里该错误计数为 0**：`PluginPackages` 只在
-  `config.generation !== undefined` 时安装该 resolver，而 Electrobun 的 web profile
-  不传 generation（这套机制服务于 Node CLI 的多 profile 场景）
-- 该 addon 与 `profile-resolution-bootstrap.js` 虽在包内，但**运行时不被走到**
-
-**受影响的测试**（`packages/boot/app-boot/tests`，共 67 项）：
-
-| 表现 | 数量 |
-| --- | --- |
-| `require-builtin unsupported`（V8 符号缺失） | 62 |
-| `Node module internals are unreachable`（同一根因，措辞不同） | 1 |
-| 依赖上述机制的断言（`expected undefined to be true`） | 4 |
-
-**裁定**：这是**平台边界**，不是迁移缺陷，也不是待办。用 Node 跑这套测试时它们会失败，
-用 Bun 跑同样失败（符号缺失与运行时无关，取决于 addon 自身）。**不要**为了让它们变绿
-去改产品代码；若将来 Bun 支持该机制，这 67 项应自然恢复。
-
-**复核方式**（任何时候可重新确证）：
+**实测对照**：
 
 ```bash
-# 1) 机制本身不可用
-APP=apps/electrobun-host/build/stable-macos-arm64/Colaw.app
-"$APP/Contents/MacOS/bun" -e 'const m=require("'"$PWD"'/'"$APP"'/Contents/Resources/app/node_modules/node-addon-require-builtin"); try{m.requireBuiltin("internal/modules/esm/loader")}catch(e){console.log(e.message)}'
-# 2) App 运行时不走该路径：启动日志里该错误应为 0
+# app-boot: Bun 67 failed → Node 2 failed → Node + 干净环境 243 passed (11 files)
+env -u NODE_OPTIONS PATH="/usr/local/bin:/usr/bin:/bin" \
+  node node_modules/vitest/vitest.mjs run packages/boot/app-boot/tests/
+
+# llm-deepseek: Bun 17 failed → Node 65 failed（必须用 Bun）
+bun node_modules/vitest/vitest.mjs run packages/llm/llm-deepseek/tests/
+
+# control.spec: Bun 4 failed → Node 6 passed（必须用 Node）
+env -u NODE_OPTIONS PATH="/usr/local/bin:/usr/bin:/bin" \
+  node node_modules/vitest/vitest.mjs run packages/subprocess/subprocess-local/tests/control.spec.ts
 ```
+
+**`NODE_OPTIONS` 必须剥离**：本机执行环境（WorkBuddy）通过 `NODE_OPTIONS=--require=.../node-language-shim.cjs` 注入 fs 代理，它会拦截 `renameSync` 等调用，制造 2 个假失败（`profile-sanitize`）。`env -u NODE_OPTIONS` 即可还原。
+
+**已核实的真实状态**：
+
+| 测试面 | 正确运行时下的结果 |
+| --- | --- |
+| `boot/app-boot` | **243 / 243 通过** ✓ |
+| `subprocess-local/control.spec` | **6 / 6 通过** ✓ |
+| `api/terminal-controller/controller.spec` | 1 failed / 48（真 shell 交互，待查） |
+| `terminal/terminal-bash` | 6 failed / 112（待查） |
+| `llm/llm-deepseek` | 17 failed / 592（Bun 下，待查） |
+
+> 之前把 app-boot 的 67 个失败写成"Bun 平台边界、非缺陷"是**错误结论**：那只是用错了运行时。凡是"某个包整体大面积失败"，**先核对运行时**，再谈别的原因。
 
 ## 5. 排查纪律（踩过的坑）
 
