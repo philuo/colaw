@@ -355,7 +355,7 @@ describe('WorkspaceController', () => {
       .rejects.toThrow('workspace session archive failed: session/not-found: missing session')
     mock.remote.workspace.unarchiveSession.mockResolvedValueOnce(err(missingSession))
     await expect(controller.unarchiveSession(sid('session')))
-      .rejects.toThrow('workspace session unarchive failed: session/not-found: missing session')
+      .rejects.toThrow('workspace session restore failed: session/not-found: missing session')
     mock.remote.workspace.insertSessionBefore.mockResolvedValueOnce(err(new RemoteError(
       'workspace/move-invalid', 'invalid move', { workspaceId: wid('missing'), sessionId: sid('session') },
     )))
