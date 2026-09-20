@@ -89,6 +89,15 @@ const bunUnsupportedRuntimeTests = [
   // repository too — the same 2 cases fail there, so this is a runtime
   // difference, not a regression from any merge.
   'packages/boot/app-boot/tests/user-patches.spec.ts',
+  // Proxy installation and its matcher parity are asserted by observing where a
+  // real `fetch` went after `undici.setGlobalDispatcher`. Bun's native fetch
+  // does not consult the undici dispatcher at all (measured: a dispatcher that
+  // refuses every dispatch still lets fetch reach a loopback server), so the
+  // observation is impossible there. The installer's only product caller is
+  // `apps/cli`, which the Electrobun shell does not use — it boots the web
+  // profile directly — so the App never installs a dispatcher either.
+  'packages/util/http-proxy/tests/install.spec.ts',
+  'packages/util/http-proxy/tests/matcher-parity.spec.ts',
 ]
 
 const platformUnsupportedTests = [
