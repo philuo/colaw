@@ -159,6 +159,21 @@ grep -A2 'id: session-log-deepseek' "$APP/Contents/Resources/app/config/electrob
 | 项 | 状态 |
 | --- | --- |
 | `packages/document/office-to-pdf` | 官方 **alpha.2 新增**（base/015/fork 均无），**无人引用**，未吸收；吸收它需要连带接入 provider 与 UI |
+| **Office 文档能力（docx/pptx/xlsx）** | 见下方专节——**不是"漏了一个包"，而是官方整条 Electron 链路**，我们这套 Electrobun 构建里没有对应层 |
+
+#### Office 文档能力：官方是三层，我们一层都没有
+
+官方桌面版（`apps/desktop/` + `apps/desktop-host/`，Electron）把 Office 能力拆成三层：
+
+| 层 | 官方组件 | 职责 | 我们的状态 |
+| --- | --- | --- | --- |
+| ① 技能指令 | `packages/skill/skill-office`（`assets/office-{docx,pptx,xlsx}/SKILL.md` + `assets/scripts/check_office.py`） | 教模型怎么写/改/检查 Office 文件；checker 只用 Python 标准库 | **官方新增**（base/015/fork 均无） |
+| ② 依赖查询工具 | `apps/desktop-host/src/workspace-dependencies.ts` → 工具 `load_workspace_dependencies` | 返回**内置** Python/Node/pnpm 的绝对路径与已装库版本 | **无**（desktop-host 已被本 fork 移除） |
+| ③ 内置 Python 运行时 | `apps/desktop-host/src/primary-runtime.ts` + 安装器 payload | 离线安装带 **numpy / pandas / python-docx / python-pptx / openpyxl / Pillow / lxml / XlsxWriter** 的 Python 发行版 | **无**（需要构建产物：Python 发行版 + wheels） |
+
+**为什么没有直接吸收**：SKILL.md 明确要求"用 `load_workspace_dependencies` 返回的 Python 执行，**不要**安装包、不要探测系统 Python"。只把 ① 拉进来会得到一个**看起来能用、实际缺 Python 依赖**的假能力——比缺失更糟。要真正支持，需要新增 ③ 那套 payload 的构建与分发（Python 发行版 + 一组 wheel，随 app 打包），这是**独立里程碑**，不是合并动作。
+
+**当前状态**：已从 `packages/skill/` 与 overlay 中移除（不留半成品）；仓库里已内置的 skill 是 `skill-badge`、`skill-filesystem`、`skill-baidu-netdisk`，以及 cordis preset 的两个开发 skill。
 
 > 其余官方包组与包**已全部吸收**（包组目录 diff 为空）。
 
