@@ -163,11 +163,15 @@ export const DEFAULT_PROFILE_BUNDLES: readonly string[] = ['@deepseek-ai/dsh-bas
  * runtime dependency of the installation that declares `dsh.bundle.patch`,
  * selected by no shipped template, and offered switched off by the plugin
  * manager ([rationale](../../../../.agents/notes/implemented/process/2026-09-15-shipped-optional-bundles.md)).
+ *
+ * Empty in this fork: the only two upstream entries were the experimental
+ * agent-team profiles, and this product is a personal local app — no team
+ * surface ships. Their five packages are also excluded from the artifact (see
+ * `neverShipped` in scripts/pack-stable-app.ts), so keep this list and that
+ * set in step.
  */
-export const OPTIONAL_BUNDLES: readonly string[] = [
-  '@deepseek-ai/dsh-experimental-agent-team-profile',
-  '@deepseek-ai/dsh-experimental-agent-team-web-profile',
-]
+export const OPTIONAL_BUNDLES: readonly string[] = []
+
 
 const PROFILE_PATCH_TEMPLATE = `# Your patch layer for this dsh profile, applied after every bundle layer:
 # a top-level YAML array of loader patch entries (id-targeted config

@@ -209,6 +209,13 @@ const neverShipped = (spec: string): boolean =>
   || spec === 'koffi'
   || spec.startsWith('@koromix/koffi-')
   || spec.startsWith('web-streams-polyfill')
+  // The experimental agent-team surface is not part of this product: it is a
+  // personal local app, and the profiles were the only switch that could turn
+  // team on (OPTIONAL_BUNDLES is empty now). Excluded so the five packages and
+  // their client bundles never enter the artifact.
+  || spec.startsWith('@deepseek-ai/dsh-experimental-agent-team')
+  || spec.startsWith('@deepseek-ai/dsh-experimental-client-ui-agent-team')
+  || spec.startsWith('@deepseek-ai/dsh-experimental-tool-agent-team')
 
 /**
  * Packages replaced at emit time by a generated stub module, so a heavyweight
