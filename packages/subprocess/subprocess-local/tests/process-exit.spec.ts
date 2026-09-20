@@ -1,5 +1,6 @@
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
+import { spawnSync } from 'node:child_process'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execa } from 'execa'
@@ -131,7 +132,24 @@ async function runScenario(kind: ManagedKind, trigger: ExitTrigger) {
   }
 }
 
-describe('synchronous cleanup on host exit', () => {
+/**
+ * Whether this host lets a child spawn `/bin/ps`.
+ *
+ * The scenarios below observe the managed process tree through
+ * `MacProcessInspector`, whose table and foreground-group answers both read
+ * `ps`. The product degrades gracefully when the spawn is refused (hardened
+ * profiles, some MDM policies) — ancestry answers become "unknown" — but these
+ * assertions need the table, so they run only where it is readable.
+ */
+const psReadable = ((): boolean => {
+  try {
+    return spawnSync('/bin/ps', ['-axo', 'pid='], { encoding: 'utf8' }).status === 0
+  } catch {
+    return false
+  }
+})()
+
+describe.skipIf(!psReadable)('synchronous cleanup on host exit', () => {
   it.each([
     { trigger: 'direct' as const, expectedCode: 23, diagnostic: undefined },
     { trigger: 'uncaught-exception' as const, expectedCode: 1, diagnostic: 'host-exit-uncaught-exception' },

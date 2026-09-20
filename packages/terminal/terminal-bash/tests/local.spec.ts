@@ -135,6 +135,23 @@ function canReadLinuxProcessSyscall(pid: number): boolean {
 
 // The real-shell suite drives a POSIX bash over the actual node-pty terminal;
 // Windows has no bash, and its pwsh counterpart lives in the describe below.
+/**
+ * Whether this host lets a child spawn `/bin/ps`.
+ *
+ * `MacProcessInspector.foregroundPgid` and its process table both read `ps`,
+ * and the product degrades gracefully when the spawn is refused (hardened
+ * profiles, some MDM policies): ancestry answers become "unknown". The cases
+ * below assert the *signal* behaviour that depends on those answers, so they
+ * can only run where the table is readable.
+ */
+const psReadable = ((): boolean => {
+  try {
+    return spawnSync('/bin/ps', ['-axo', 'pid='], { encoding: 'utf8' }).status === 0
+  } catch {
+    return false
+  }
+})()
+
 describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => {
   it('persists cwd and environment across sends, scrubs secrets, and closes', async () => {
     const previous = process.env.DSH_TEST_SECRET
@@ -216,7 +233,7 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     await ctx.terminals.kill(agent, created.sessionId)
   }, 10_000)
 
-  it('signals a foreground command and kills a TERM-ignoring background descendant', async () => {
+  it.skipIf(!psReadable)('signals a foreground command and kills a TERM-ignoring background descendant', async () => {
     const { ctx, agent } = await harness('danger-full-access')
     const created = await ctx.terminals.spawn(agent, { type: 'shell' })
 
@@ -238,7 +255,7 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     expect(() => process.kill(pid, 0)).toThrow()
   }, 10_000)
 
-  it('quiesces a disowned same-session descendant after the shell exits naturally', async () => {
+  it.skipIf(!psReadable)('quiesces a disowned same-session descendant after the shell exits naturally', async () => {
     const { ctx, root, agent } = await harness('danger-full-access')
     const created = await ctx.terminals.spawn(agent, { type: 'shell' })
     const pidFile = join(root, 'disowned.pid')
@@ -279,7 +296,7 @@ describe.skipIf(process.platform === 'win32')('terminal-bash real shell', () => 
     }
   }, 10_000)
 
-  it('cancels a slow-starting raw-mode foreground process with a real SIGINT', async () => {
+  it.skipIf(!psReadable)('cancels a slow-starting raw-mode foreground process with a real SIGINT', async () => {
     const { ctx, agent } = await harness('danger-full-access', {
       idleSilenceMs: 10_000,
       timeoutMs: 15_000,

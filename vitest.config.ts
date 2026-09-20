@@ -98,6 +98,15 @@ const bunUnsupportedRuntimeTests = [
   // profile directly — so the App never installs a dispatcher either.
   'packages/util/http-proxy/tests/install.spec.ts',
   'packages/util/http-proxy/tests/matcher-parity.spec.ts',
+  // The managed control pipe is asserted through Node's fd-inheritance and
+  // stream semantics: `child.stdio[7]` is read as a paused duplex whose drain
+  // and destroy order the suite pins, and the child is a plain Node process.
+  // Bun's `node:child_process` gives fd 7 a working pipe (measured), but the
+  // surrounding stream lifecycle differs, and the suite fails identically on
+  // the 015 baseline under Bun — a runtime difference, not a regression. Its
+  // only product consumer is ptc-runtime-node, which the Electrobun shell does
+  // not mount.
+  'packages/subprocess/subprocess-local/tests/control.spec.ts',
 ]
 
 const platformUnsupportedTests = [
