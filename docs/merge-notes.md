@@ -139,6 +139,45 @@ grep -A2 'id: session-log-deepseek' "$APP/Contents/Resources/app/config/electrob
 > 构建命令注意：`bun scripts/build.ts` 会因缺 `npm_execpath` 直接失败，必须经包管理器触发：
 > `bun /usr/local/lib/node_modules/pnpm/bin/pnpm.cjs run build:lib`（或 `run build`）。
 
+## 4.5 迁移结账（相对官方 origin/master 的功能账）
+
+**核实方法**：`git diff --diff-filter=D --name-only origin/master..HEAD -- packages apps`（删除）+ 包组目录 diff + overlay 的 `disabled` 行 + `OPTIONAL_BUNDLES`。
+
+### 我们主动关闭的官方功能（有意为之）
+
+| 位置 | 项 | 原因 |
+| --- | --- | --- |
+| overlay `disabled: true` | `session-log-deepseek` | 私有请求字段 `dsh_session_log`，兼容网关 400 |
+| overlay `config.enabled: false` | `plugin-package-inventory-deepseek` | 私有请求字段 `dsh_plugin_packages`，兼容网关 400 |
+| overlay `disabled: true` | `session-log-download` | 桌面壳只保留"本地打开"与右栏开关 |
+| overlay `disabled: true` | `command-feedback` | 桌面产品有自己的支持渠道，composer 里的反馈命令是噪音 |
+| overlay `disabled: true` | `session-telemetry-otel` | 个人构建不向外发送遥测；OTLP 树已从闭包排除 |
+| 打包排除 | `@deepseek-ai/dsh-session-telemetry-otel` 及其 `@opentelemetry` 树 | 同上（`pack-stable-app.ts` 有断言：两处必须一致） |
+
+### 官方有、我们尚未吸收
+
+| 项 | 状态 |
+| --- | --- |
+| `packages/document/office-to-pdf` | 官方 **alpha.2 新增**（base/015/fork 均无），**无人引用**，未吸收；吸收它需要连带接入 provider 与 UI |
+
+> 其余官方包组与包**已全部吸收**（包组目录 diff 为空）。
+
+### 待办（按优先级）
+
+1. **移除 agent-team 可选功能**（用户明确不要 team）：
+   `packages/boot/app-boot/src/profile.ts` 的 `OPTIONAL_BUNDLES` 里两项
+   （`dsh-experimental-agent-team-profile`、`dsh-experimental-agent-team-web-profile`）
+   当前**默认关闭但暴露在插件管理器**；移除后其 5 个包可从闭包排除。
+2. **测试缺口**（当前已知失败，均为**预存在**、非本轮引入，但迁移未完成前应逐一裁定）：
+   - `subprocess-local/control.spec.ts`：4 failed / 6（managed control pipe，macOS 语义差异）
+   - `api/terminal-controller/controller.spec.ts`：1 failed / 48（"runs a real interactive shell" 真 shell 交互）
+   - `terminal/terminal-bash/tests`：3 failed / 112
+3. **`PROMPT_COMMAND` 残留风险**：zsh-only 变量已按 shell 类型门控，但**用户实测反馈的"`line 5/6` 语法错误"在修复前出现过**；需要在真机 bash tab 复验一次（预期已消失）。
+4. **未验证面**（迁移远未结束的实证）：
+   - 真实凭据 smoke（第 ⑤ 关）在本轮**未重新执行**（上一次 200 是修 400 时做的）
+   - 右侧栏各面板、设置面板、回收站、主题切换等 fork 功能**未做回归清单式验证**
+   - 打包产物的 `.map` 门禁、bun 钉死一致性门禁已加，但**没有 CI 承接**
+
 ## 5. 排查纪律（踩过的坑）
 
 - **别按错误文案猜代码路径。** `DeepSeek API error (HTTP` 只出现在 chat／responses 适配器，messages 适配器用的是另一套文案——只看文案会一路查错方向。
