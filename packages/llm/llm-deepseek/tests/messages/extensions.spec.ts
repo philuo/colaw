@@ -11,6 +11,7 @@ import { SessionId } from '@deepseek-ai/dsh-session'
 import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as DeepSeek from '../../src/index.ts'
+import { MESSAGES_BASE_URL } from '../../src/config.ts'
 import { assemble, options, sse, textEvents } from './helpers.ts'
 
 declare module '@deepseek-ai/dsh-deepseek-llm-api-extensions' {
@@ -39,8 +40,33 @@ async function boot() {
   // through the seam rather than exported.
   await ctx.plugin(LocalCredentialProvider, { watch: false })
   await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
-  await ctx.plugin(DeepSeek, { baseURL: 'https://messages.example.test/root' })
+  // Two facts decide this composition, both read from the product:
+  // the provider contributes vendor-private fields only on DeepSeek's own
+  // endpoint (isOfficialEndpoint), and its default protocol is
+  // `openai-completions`. A Messages suite therefore selects the official
+  // Messages root *and* the Messages protocol; the transport is stubbed, so no
+  // request leaves the process.
+  await ctx.plugin(DeepSeek, { protocol: 'anthropic-messages', baseURL: MESSAGES_BASE_URL })
   return ctx
+}
+
+/**
+ * Build the stubbed reply the product's Messages path consumes.
+ *
+ * The adapter frames SSE over Bun 1.4's native `response.textStream()`, which
+ * a plain `new Response(...)` does not carry, so the stub attaches one that
+ * yields the whole fixture as a single decoded chunk.
+ * @param text - the SSE fixture.
+ * @returns a Response the Messages adapter can read.
+ */
+function sseResponse(text: string): Response {
+  const response = new Response(text)
+  Object.defineProperty(response, 'textStream', {
+    value: () => new ReadableStream<string>({
+      start(controller) { controller.enqueue(text); controller.close() },
+    }),
+  })
+  return response
 }
 
 describe('Messages request extensions', () => {
@@ -56,7 +82,7 @@ describe('Messages request extensions', () => {
     })
     const fetch = vi.fn<typeof globalThis.fetch>().mockImplementation(() => {
       expect(accepted).not.toHaveBeenCalled()
-      return Promise.resolve(new Response(sse(textEvents)))
+      return Promise.resolve(sseResponse(sse(textEvents)))
     })
     vi.stubGlobal('fetch', fetch)
     const stream = ctx.llm.stream(options({ sessionId: SessionId('session-parity'), purpose: 'compaction' }))
@@ -66,10 +92,12 @@ describe('Messages request extensions', () => {
     }
     expect(request).toMatchObject({
       sessionId: 'session-parity', purpose: 'compaction',
-      body: { thinking: { type: 'enabled' }, messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }] },
+      // The Messages endpoint rejects `thinking.type: 'enabled'` outright, so a
+      // reasoning route names its depth through output_config.effort alone.
+      body: { output_config: { effort: 'high' }, messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }] },
     })
     expect(request?.body).not.toHaveProperty('dsh_messages_test')
-    expect(fetch.mock.calls[0]?.[0]).toBe('https://messages.example.test/root/v1/messages')
+    expect(fetch.mock.calls[0]?.[0]).toBe(`${MESSAGES_BASE_URL}/v1/messages`)
     const body = fetch.mock.calls[0]?.[1]?.body
     if (typeof body !== 'string') throw new Error('Expected a serialized Messages request')
     expect(JSON.parse(body)).toMatchObject({ dsh_messages_test: { value: 'inventory' } })
@@ -92,7 +120,7 @@ describe('Messages request extensions', () => {
     vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockImplementation(() => {
       if (failure === 'transport') return Promise.reject(new Error('connection lost'))
       if (failure === 'http') return Promise.resolve(Response.json({ error: { message: 'rejected' } }, { status: 400 }))
-      return Promise.resolve(new Response(''))
+      return Promise.resolve(sseResponse(''))
     }))
     const result = await assemble(ctx.llm.stream(options()))
     expect(result.assembler.finish.kind).toBe('error')
@@ -104,7 +132,7 @@ describe('Messages request extensions', () => {
     ctx.deepseekLlmApiExtensions.register('dsh_messages_test', {
       prepare: () => ({ value: { value: 'log' }, accept() { throw new Error('watermark storage failed') } }),
     })
-    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(new Response(sse(textEvents))))
+    vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>().mockResolvedValue(sseResponse(sse(textEvents))))
     const result = await assemble(ctx.llm.stream(options()))
     expect(result.assembler.finish).toMatchObject({ kind: 'error', failure: { code: 'REQUEST_EXTENSION' } })
     expect(result.message.content).toEqual([])
