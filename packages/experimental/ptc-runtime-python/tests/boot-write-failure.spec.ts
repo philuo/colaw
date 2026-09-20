@@ -4,6 +4,7 @@ import { dirname } from 'node:path'
 import { PassThrough } from 'node:stream'
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
+import { preferSupportedPython } from './support/interpreter.ts'
 
 /**
  * Mocked subprocess pipes control synchronous write failures and backpressure
@@ -16,6 +17,11 @@ vi.mock('node:child_process', async (importOriginal) => {
   execFileSyncMock.mockImplementation(original.execFileSync)
   return { ...original, execFileSync: execFileSyncMock, spawn: spawnMock }
 })
+
+// Same premise as runtime.spec: the default basename `python3` must reach a
+// CPython 3.10+ through PATH before the product module is imported and its
+// load-time probe runs.
+preferSupportedPython()
 
 const { PythonPtcRuntime } = await import('../src/index.ts')
 

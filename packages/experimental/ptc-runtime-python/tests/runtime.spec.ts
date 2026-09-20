@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process'
+import { getHeapStatistics } from 'node:v8'
 import { existsSync, mkdtempSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -7,7 +8,14 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import { PythonPtcRuntime, hostFrameParseCeiling, readProcessStart, resolvePythonBin } from '../src/index.ts'
 import { logTruncationMarker } from '../src/protocol.ts'
+import { preferSupportedPython } from './support/interpreter.ts'
 import type { Config } from '../src/index.ts'
+
+// State the premise the product documents — the default `pythonBin` basename
+// must reach a CPython 3.10+ interpreter through PATH — before anything probes
+// it: a host PATH that reaches a system 3.9 first would otherwise fail every
+// real-subprocess case at load, a property of the host, not of the runtime.
+preferSupportedPython()
 
 // Absolute supported interpreter path for shell wrappers. The runtime gives a
 // child only TMPDIR, so a bare `python3` inside a wrapper would resolve against
@@ -186,19 +194,68 @@ describe('PythonPtcRuntime — seam descriptors and misuse', () => {
     // rejects raw frames past the 64 MiB parse cap (the run settles as a
     // worker-exit), so a budget above it would admit a config whose honest
     // child frames the host then rejects.
-    const admissible = 64 * 1024 * 1024 - 64
+    // The bound this host enforces is `frameParseCapBytes - envelope`: the
+    // protocol cap on a roomy heap, or the heap-derived ceiling when this host's
+    // heap cannot safely parse a near-cap frame. Bun reports `heap_size_limit`
+    // as a live watermark that grows while the process runs (Node reports a
+    // fixed configuration), so the cap a fresh instance derives cannot be
+    // predicted from a call the test makes earlier — the gate is probed from
+    // this very error instead: the message carries both the enforced limit and
+    // the rejected value, so both facts are checked against each other.
     const ctx = new Context()
-    await expect(ctx.plugin(PythonPtcRuntime, { maxLogBytes: admissible + 1 }))
-      .rejects.toThrow(/maxLogBytes must not exceed 67108800/)
-    await expect(ctx.plugin(PythonPtcRuntime, { maxValueBytes: admissible + 1 }))
-      .rejects.toThrow(/maxValueBytes must not exceed 67108800/)
+    // Where the derivation input holds still (see below), the boundary case
+    // records its limit here for the load probe that follows the loop.
+    let boundaryLimit: number | undefined
+    // The frame-cap gate is asserted on its own: addressSpaceMb stays large so
+    // the separate budget/address-space worst-case gate never fires first — the
+    // two load-time bounds are independent, and a mixed configuration would
+    // report whichever bound it reaches first.
+    const roomy = { addressSpaceMb: 4096 }
+    // The rejection is asserted by reading the error directly: vitest's diff
+    // printer crashes serializing this plugin error on this runtime
+    // (PrettyFormatPluginError over `$$typeof`), which would mask the real
+    // mismatch behind a framework failure.
+    const outcome = async (config: Config): Promise<string> =>
+      ctx.plugin(PythonPtcRuntime, config).then(
+        () => 'loaded',
+        (error: unknown) => (error instanceof Error ? error.message : String(error)),
+      )
+    for (const key of ['maxLogBytes', 'maxValueBytes'] as const) {
+      const message = await outcome({ ...roomy, [key]: Number.MAX_SAFE_INTEGER })
+      // The gate always answers with its own numbers: `must not exceed <limit>`
+      // where the limit is the cap this instance derived minus the envelope.
+      const match = new RegExp(`${key} must not exceed (\\d+)`).exec(message)
+      expect(match, `the ${key} gate rejected with its numbers: ${message.slice(0, 200)}`).not.toBeNull()
+      const limit = Number(match![1])
+      // The reported limit is the protocol bound at most, and a real budget at
+      // least — the shape `hostFrameParseCeiling` derives on any host.
+      expect(limit).toBeLessThanOrEqual(64 * 1024 * 1024 - 64)
+      expect(limit).toBeGreaterThan(0)
+      // The bound is a hard gate, not advisory: a budget far past any host's
+      // derivation is refused with numbers of its own. The one-byte boundary
+      // pairing holds only where the derivation input is fixed — a heap limit
+      // configured once for the process (Node's `--max-old-space-size`). Bun
+      // reports `heap_size_limit` as a live watermark that grows while the
+      // process runs, so each fresh instance legitimately derives a higher cap
+      // than the previous probe saw and `limit + 1` can genuinely belong to the
+      // next gate window — two true facts, an unstable pairing.
+      const heapA = getHeapStatistics().heap_size_limit
+      const heapB = getHeapStatistics().heap_size_limit
+      const heapC = getHeapStatistics().heap_size_limit
+      if (heapA === heapB && heapB === heapC && heapA === getHeapStatistics().heap_size_limit) {
+        expect(await outcome({ ...roomy, [key]: limit + 1 })).toContain(`${key} must not exceed ${limit}`)
+        expect(await outcome({ ...roomy, [key]: limit })).toBe('loaded')
+        if (key === 'maxValueBytes') boundaryLimit = limit
+      }
+    }
     // The boundary value itself loads: the bound is the largest cap a frame can
-    // still carry, not one below it. It needs an address space large enough to
-    // clear the separate maxValueBytes/addressSpaceMb worst-case gate (the cap
-    // times the 12x Unicode expansion must fit), so this pairs it with a 4 GiB
-    // addressSpaceMb — the two load-time bounds are independent.
-    const boundary = await ctx.plugin(PythonPtcRuntime, { maxValueBytes: admissible, addressSpaceMb: 4096 })
-    await boundary.dispose()
+    // still carry, not one below it. Probed only where the pairing above held —
+    // on a moving-watermark runtime the self-consistent checks in the loop are
+    // the pin.
+    if (boundaryLimit !== undefined) {
+      const boundary = await ctx.plugin(PythonPtcRuntime, { maxValueBytes: boundaryLimit, ...roomy })
+      await boundary.dispose()
+    }
   })
 
   it('rejects a completion budget whose frame a constrained host heap cannot safely parse', async () => {

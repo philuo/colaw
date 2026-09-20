@@ -1,6 +1,7 @@
 import { Context } from '@deepseek-ai/cordis'
 import { expect, it, vi } from 'vitest'
 import { logTruncationMarker } from '../src/protocol.ts'
+import { preferSupportedPython } from './support/interpreter.ts'
 
 // Keep the interpreter and pipe lifecycle real; only OS-dependent read sizes
 // change. Each byte reaches the runtime as its own data event.
@@ -24,6 +25,11 @@ vi.mock('node:child_process', async (importOriginal) => {
     }),
   }
 })
+
+// Same premise as runtime.spec: the default basename `python3` must reach a
+// CPython 3.10+ through PATH before the product module is imported and its
+// load-time probe runs.
+preferSupportedPython()
 
 const { PythonPtcRuntime } = await import('../src/index.ts')
 
