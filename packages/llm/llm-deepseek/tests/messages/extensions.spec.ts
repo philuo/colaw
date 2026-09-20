@@ -8,6 +8,8 @@ import LlmRuntime from '@deepseek-ai/dsh-llm'
 import DeepSeekLlmApiExtensionRegistry from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import type { DeepSeekLlmApiExtensionRequest } from '@deepseek-ai/dsh-deepseek-llm-api-extensions'
 import { SessionId } from '@deepseek-ai/dsh-session'
+import LocalCredentialProvider from '@deepseek-ai/dsh-credentials-local'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import * as DeepSeek from '../../src/index.ts'
 import { assemble, options, sse, textEvents } from './helpers.ts'
 
@@ -28,11 +30,15 @@ async function boot() {
   const home = await mkdtemp(join(tmpdir(), 'dsh-messages-extensions-'))
   cleanup.push(() => rm(home, { recursive: true, force: true }))
   vi.stubEnv('DSH_HOME', home)
-  vi.stubEnv('DEEPSEEK_API_KEY', 'test-key')
   const ctx = new Context()
   cleanup.push(() => ctx.fiber.dispose())
   await ctx.plugin(LlmRuntime)
   await ctx.plugin(DeepSeekLlmApiExtensionRegistry)
+  // The managed store is the sole credential source: the launching
+  // environment is deliberately not consulted, so a key must be written
+  // through the seam rather than exported.
+  await ctx.plugin(LocalCredentialProvider, { watch: false })
+  await ctx.credentials.set(credentialRef('DEEPSEEK_API_KEY'), 'test-key')
   await ctx.plugin(DeepSeek, { baseURL: 'https://messages.example.test/root' })
   return ctx
 }
