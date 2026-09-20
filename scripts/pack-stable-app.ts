@@ -80,7 +80,10 @@ const builtApp = join(hostDir, 'build', 'dev-macos-arm64', 'Colaw-dev.app')
 const stableApp = join(hostDir, 'build', 'stable-macos-arm64', 'Colaw.app')
 
 /**
- * The Bun the desktop shell ships, pinned exactly.
+ * The Bun the desktop shell ships, pinned exactly — and it must equal the
+ * toolchain the host bytecode was compiled with (the dev app's Bun, currently
+ * 1.4.0): a `.jsc` produced by one Bun and executed by another fails to load,
+ * so the runtime cannot move ahead of the compiler on its own.
  *
  * The terminal pane's PTY behaviour, the subprocess seam, and every other
  * runtime surface this app depends on are verified against one Bun version, and
@@ -90,7 +93,7 @@ const stableApp = join(hostDir, 'build', 'stable-macos-arm64', 'Colaw.app')
  * enforcement lives here: whatever the shell was born with is replaced by this
  * build, and the pin is re-verified afterwards. Keep `.bun-version` in step.
  */
-const PINNED_BUN_VERSION = '1.4.2'
+const PINNED_BUN_VERSION = '1.4.0'
 const appResourcesApp = join(stableApp, 'Contents', 'Resources', 'app')
 const closureRoot = join(appResourcesApp, 'node_modules')
 const installDir = join(appResourcesApp, 'install')
@@ -1526,6 +1529,7 @@ function reportSize(): void {
     return bytes
   }
   ensurePinnedBun()
+  ensureNoSourceMaps()
   const total = sizeOf(stableApp)
   const modules = sizeOf(join(appResourcesApp, 'node_modules'))
   const install = sizeOf(installDir)
@@ -1544,6 +1548,36 @@ function reportSize(): void {
  * runtime silently is the failure this exists to prevent, so the pack fails
  * loud instead.
  */
+/**
+ * Fail the pack when any `.map` survives anywhere in the published bundle.
+ *
+ * The stabilized payload strips maps and their `sourceMappingURL` comments,
+ * but that pass only walks the app payload — a map that reached the shell, a
+ * framework, or a resource by another route would ship silently. A shipped map
+ * leaks sources and makes an inspector request files that are not there, so the
+ * invariant is checked over the whole bundle and a violation stops the pack.
+ */
+function ensureNoSourceMaps(): void {
+  const found: string[] = []
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name)
+      if (entry.isDirectory()) {
+        walk(path)
+        continue
+      }
+      if (entry.name.endsWith('.map')) found.push(relative(stableApp, path))
+    }
+  }
+  walk(stableApp)
+  if (found.length > 0) {
+    console.error(`pack-stable-app: ${String(found.length)} source map(s) must not ship:`)
+    for (const file of found.slice(0, 10)) console.error(`  ${file}`)
+    process.exit(1)
+  }
+  console.log('pack-stable-app: no source maps in the bundle')
+}
+
 function ensurePinnedBun(): void {
   const target = join(stableApp, 'Contents', 'MacOS', 'bun')
   if (!existsSync(target)) {
