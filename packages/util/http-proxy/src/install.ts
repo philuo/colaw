@@ -59,6 +59,20 @@ const DIRECT_ROUTE: ProxyRoute = { proxied: false }
  * @param url - the request URL.
  * @returns the proxied route with its proxy URL and dispatcher, or the direct route.
  */
+/**
+ * Close a dispatcher when the runtime implements it.
+ *
+ * `Dispatcher` declares `close`, and Node's undici implements it, but Bun's
+ * dispatcher objects carry neither `close` nor `destroy`. Teardown still has to
+ * succeed there — the dispatcher is dropped with the reference — so the call is
+ * made only when the runtime actually offers it.
+ * @param dispatcher - the dispatcher being uninstalled.
+ */
+export async function closeDispatcher(dispatcher: object): Promise<void> {
+  const closable = dispatcher as { close?: () => Promise<void> }
+  if (typeof closable.close === 'function') await closable.close()
+}
+
 export function proxyRouteFor(url: URL): ProxyRoute {
   const policy = active
   const dispatcher = installed
@@ -202,7 +216,7 @@ async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<vo
       active = previousPolicy
       installed = previousInstalled
       restoreEnv?.()
-      await direct.close()
+      await closeDispatcher(direct)
     }
   }
   const restoreEnv = applyPolicyEnv(policy)
@@ -218,12 +232,7 @@ async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<vo
     active = previousPolicy
     installed = previousInstalled
     restoreEnv()
-    // `Dispatcher` declares `close`, and Node's undici implements it, but Bun's
-    // dispatcher objects carry neither `close` nor `destroy`. Teardown still
-    // has to succeed there — the dispatcher is dropped with the reference — so
-    // the call is made only when the runtime actually offers it.
-    const closable = agent as { close?: () => Promise<void> }
-    if (typeof closable.close === 'function') await closable.close()
+    await closeDispatcher(agent)
   }
 }
 

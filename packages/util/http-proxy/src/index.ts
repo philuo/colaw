@@ -16,6 +16,7 @@
 
 export {
   clearedProxyEnv,
+  closeDispatcher,
   installProxyFromEnvironment,
   proxyEnvironmentForChild,
   proxyRouteFor,

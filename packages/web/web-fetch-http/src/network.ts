@@ -9,7 +9,6 @@
 import { lookup as systemLookup } from 'node:dns/promises'
 import type { LookupAddress, LookupOptions } from 'node:dns'
 import { isIP } from 'node:net'
-import type { Dispatcher, Response } from 'undici'
 
 import ipaddr from 'ipaddr.js'
 import { WebError } from '@deepseek-ai/dsh-web'
@@ -24,8 +23,14 @@ export interface PublicAddress {
 
 /** The result of one address-pinned request; closing releases its private pool. */
 export interface PinnedResponse {
-  /** HTTP response whose body remains readable until `close()` is called. */
-  readonly response: Response
+  /**
+   * HTTP response whose body remains readable until `close()` is called.
+   *
+   * Typed as the global `Response` because the request goes through Bun's
+   * native `fetch`; undici's own `Response` type adds a `textStream` member the
+   * runtime object does not carry here.
+   */
+  readonly response: globalThis.Response
   /** Release the request's dispatcher after the response body is consumed or cancelled. */
   close(): Promise<void>
 }
@@ -194,21 +199,43 @@ export async function requestPinned(
   headers: Record<string, string>,
   signal: AbortSignal,
 ): Promise<PinnedResponse> {
-  // Keep the Node-only transport out of browser-worker startup. The preview can load the provider
-  // and fail loud at its DNS stub without evaluating Undici; a real request resolves it here.
-  const { Agent, fetch } = await import('undici')
-  // Reached only where `proxyRouteFor` reported no proxy for this URL, and the pinned lookup this
-  // agent carries is per-request state the process-wide dispatcher cannot hold.
-  // proxy-exempt: pinning one request's validated addresses, on a URL the policy routes directly.
-  const dispatcher = new Agent({ autoSelectFamily: true, connect: { lookup: createPinnedLookup(addresses) } })
-  try {
-    // proxy-exempt: the agent above, whose lifetime is this one request.
-    const response = await fetch(url, { method: 'GET', redirect: 'manual', headers, signal, dispatcher })
-    return { response, close: async () => { await dispatcher.close() } }
-  } catch (error: unknown) {
-    await dispatcher.close()
-    throw error
+  // Bun pins an address by naming it in the URL and naming the origin in the
+  // headers, not by handing the connection a lookup callback: its `fetch`
+  // ignores an undici dispatcher's `connect.lookup` entirely (measured — the
+  // callback is never invoked, and the name is resolved normally), and Bun's
+  // documented recipe for "connect to an address I resolved myself" is exactly
+  // the three substitutions below. `proxy: false` keeps the environment's
+  // proxy from judging the substituted address, and `redirect: 'manual'` keeps
+  // `Host`/`serverName` describing this one origin — a relative `Location`
+  // would resolve against the address otherwise.
+  //
+  // The address chosen here is the first the caller validated; a name with
+  // several addresses has no fallback under this shape, so each is tried in
+  // turn and the first that connects wins.
+  let lastError: unknown
+  for (const candidate of addresses) {
+    const literal = candidate.family === 6 ? `[${candidate.address}]` : candidate.address
+    const pinned = new URL(url)
+    pinned.hostname = candidate.family === 6 ? `[${candidate.address}]` : candidate.address
+    pinned.host = `${literal}${url.port === '' ? '' : `:${url.port}`}`
+    try {
+      // `proxy` and `tls.serverName` are Bun's fetch extensions, absent from
+      // the standard `RequestInit` this repository compiles against.
+      const bunInit: RequestInit & { proxy?: false, tls?: { serverName: string } } = {
+        method: 'GET',
+        redirect: 'manual',
+        headers: { ...headers, Host: url.host },
+        signal,
+        proxy: false,
+        ...url.protocol === 'https:' ? { tls: { serverName: url.hostname } } : {},
+      }
+      const response = await fetch(pinned, bunInit)
+      return { response, close: async () => { /* no private pool to release */ } }
+    } catch (error: unknown) {
+      lastError = error
+    }
   }
+  throw lastError
 }
 
 /**
@@ -227,14 +254,25 @@ export async function requestPinned(
  * @returns a response plus a disposer that releases nothing, so both paths close alike.
  */
 export async function requestVia(
-  dispatcher: Dispatcher,
+  proxy: string,
   url: URL,
   headers: Record<string, string>,
   signal: AbortSignal,
 ): Promise<PinnedResponse> {
-  const { fetch } = await import('undici')
-  // proxy-exempt: the dispatcher is the installed policy's own, handed over by `proxyRouteFor`.
-  const response = await fetch(url, { method: 'GET', redirect: 'manual', headers, signal, dispatcher })
+  // Bun routes a proxied request through its own `proxy` fetch option rather
+  // than an installed dispatcher: its `fetch` never consults the undici
+  // dispatcher (measured), and the option is the documented way to name one
+  // proxy for one request. `respectNoProxy` stays on, so a `NO_PROXY` entry
+  // still bypasses — the caller only reaches this branch for a URL the policy
+  // already routed through the proxy.
+  const bunInit: RequestInit & { proxy?: { url: string } } = {
+    method: 'GET',
+    redirect: 'manual',
+    headers,
+    signal,
+    proxy: { url: proxy },
+  }
+  const response = await fetch(url, bunInit)
   return { response, close: () => Promise.resolve() }
 }
 

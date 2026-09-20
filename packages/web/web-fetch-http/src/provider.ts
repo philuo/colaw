@@ -9,7 +9,6 @@
 import { WebError } from '@deepseek-ai/dsh-web'
 import type { WebFetchBody, WebFetchProvider, WebFetchRequest, WebFetchResult } from '@deepseek-ai/dsh-web'
 import { deadline, timeoutOf } from '@deepseek-ai/dsh-timeout'
-import type { Response } from 'undici'
 import { proxyRouteFor } from '@deepseek-ai/dsh-http-proxy'
 import { isNonPublicIpLiteral, publicHttpNetwork } from './network.ts'
 import type { PublicAddress } from './network.ts'
@@ -133,7 +132,7 @@ export class HttpFetchProvider implements WebFetchProvider {
       // nothing and let a proxy on this machine reach the very service they keep out of reach.
       const route = proxyRouteFor(url)
       if (route.proxied && !isNonPublicIpLiteral(url.hostname)) {
-        return await publicHttpNetwork.requestVia(route.dispatcher, url, headers, signal)
+        return await publicHttpNetwork.requestVia(route.proxy, url, headers, signal)
       }
       const addresses = await this.resolveAddresses(url.hostname, signal)
       return await publicHttpNetwork.request(url, addresses, headers, signal)
@@ -144,7 +143,7 @@ export class HttpFetchProvider implements WebFetchProvider {
   }
 
   /** Read, byte-cap, classify, and decode the final response body. */
-  private async readBody(response: Response, finalUrl: URL, signal: AbortSignal): Promise<WebFetchResult> {
+  private async readBody(response: globalThis.Response, finalUrl: URL, signal: AbortSignal): Promise<WebFetchResult> {
     const contentType = response.headers.get('content-type')
     const kind = classifyContentType(contentType)
     if (kind === undefined) {
