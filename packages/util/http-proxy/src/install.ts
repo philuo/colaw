@@ -218,7 +218,12 @@ async function installGlobalProxy(policy: ProxyPolicy): Promise<() => Promise<vo
     active = previousPolicy
     installed = previousInstalled
     restoreEnv()
-    await agent.close()
+    // `Dispatcher` declares `close`, and Node's undici implements it, but Bun's
+    // dispatcher objects carry neither `close` nor `destroy`. Teardown still
+    // has to succeed there — the dispatcher is dropped with the reference — so
+    // the call is made only when the runtime actually offers it.
+    const closable = agent as { close?: () => Promise<void> }
+    if (typeof closable.close === 'function') await closable.close()
   }
 }
 

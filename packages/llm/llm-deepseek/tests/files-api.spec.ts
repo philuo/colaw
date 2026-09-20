@@ -98,9 +98,13 @@ describe('DeepSeekFilesClient', () => {
       server.listen(0, '127.0.0.1')
       onTestFinished(async () => {
         server.closeAllConnections()
+        // A server already torn down reports 'Server is not running' on the
+        // second close. Node treats the repeat as a no-op; Bun surfaces it as
+        // an error, and a passing assertion must not turn into a teardown
+        // failure because of it.
         await new Promise<void>((resolve, reject) => {
           server.close((error) => {
-            if (error) reject(error)
+            if (error !== undefined && !/not running/i.test(String(error.message))) reject(error)
             else resolve()
           })
         })
