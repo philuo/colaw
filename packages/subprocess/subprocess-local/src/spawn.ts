@@ -23,7 +23,7 @@ import type {
 import type { BoundProcessOwner, ManagedProcessLaunch } from './managed-owner.ts'
 import { waitWithAbort } from './managed-owner.ts'
 import { controlEnvironment, controlPipe } from './control-spawn.ts'
-import { SUBPROCESS_CONTROL_FD } from '@deepseek-ai/dsh-subprocess/control'
+import type { ControlIpcPort } from '@deepseek-ai/dsh-subprocess/control'
 import { linuxProcessGroupHasLiveMembers } from './process-inspector.ts'
 import { OutputCollector, prepareManagedProcessBinding } from './output.ts'
 
@@ -455,8 +455,9 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     spec.stdio.stderr === 'inherit' ? 'inherit' : 'pipe',
   ]
   if (spec.stdio.control === 'pipe') {
-    while (stdio.length < SUBPROCESS_CONTROL_FD) stdio.push('ignore')
-    stdio.push('overlapped')
+    // The control channel rides the IPC channel, which must sit at index 3. Extra
+    // inherited descriptors are not an option: Bun delivers them unreliably.
+    stdio.push('ipc')
   }
   const child = (internals.spawn ?? spawn)(program as string, args, {
     cwd: spec.cwd,
@@ -479,7 +480,7 @@ export function spawnSubprocess(spec: SubprocessSpawnSpec, internals: SpawnInter
     stdin: child.stdin,
     stdout: child.stdout,
     stderr: child.stderr,
-    control: controlPipe(child, spec.stdio.control),
+    control: controlPipe(child as unknown as ControlIpcPort, spec.stdio.control),
     direct,
     owner,
   }, binding)

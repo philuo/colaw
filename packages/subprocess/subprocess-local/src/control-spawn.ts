@@ -1,21 +1,20 @@
-/** Parent-side setup for one explicitly requested inherited control pipe. */
+/** Parent-side setup for one explicitly requested inherited control channel. */
 
-import { SUBPROCESS_CONTROL_ENV, SUBPROCESS_CONTROL_FD } from '@deepseek-ai/dsh-subprocess/control'
-import type { Duplex, Readable, Writable } from 'node:stream'
+import { controlDuplex, SUBPROCESS_CONTROL_ENV, SUBPROCESS_CONTROL_MARKER } from '@deepseek-ai/dsh-subprocess/control'
+import type { ControlIpcPort } from '@deepseek-ai/dsh-subprocess/control'
+import type { Duplex } from 'node:stream'
 
 /**
- * Read the optional extra pipe from Node's stdio tuple.
- * @param child - child whose requested extra pipe was allocated by Node.
+ * Adapt the child's IPC port as the control channel's duplex endpoint.
+ * @param child - child whose requested IPC channel was allocated by the runtime.
  * @param control - requested transport, or undefined when absent.
- * @returns the parent duplex endpoint, absent when not requested or native startup failed.
+ * @returns the parent duplex endpoint, absent when not requested.
  */
 export function controlPipe(
-  child: { readonly stdio: ReadonlyArray<Readable | Writable | null | undefined> },
+  child: ControlIpcPort,
   control?: 'pipe',
 ): Duplex | undefined {
-  // Node's type declaration names only the first five descriptor slots.
-  const streams: ReadonlyArray<Readable | Writable | null | undefined> = child.stdio
-  return control === 'pipe' ? streams[SUBPROCESS_CONTROL_FD] as Duplex | undefined : undefined
+  return control === 'pipe' ? controlDuplex(child) : undefined
 }
 
 /**
@@ -30,6 +29,6 @@ export function controlEnvironment<T extends NodeJS.ProcessEnv>(env: T, control?
       throw new Error(`${SUBPROCESS_CONTROL_ENV} is reserved for subprocess control-channel setup`)
     }
   }
-  if (control === 'pipe') Object.assign(env, { [SUBPROCESS_CONTROL_ENV]: 'pipe' })
+  if (control === 'pipe') Object.assign(env, { [SUBPROCESS_CONTROL_ENV]: SUBPROCESS_CONTROL_MARKER })
   return env
 }

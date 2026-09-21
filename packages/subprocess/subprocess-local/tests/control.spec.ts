@@ -1,17 +1,29 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { once } from 'node:events'
 import { afterEach, describe, expect, it } from 'vitest'
 import { Context } from '@deepseek-ai/cordis'
 import type { SubprocessHandle, SubprocessSpawnSpec } from '@deepseek-ai/dsh-subprocess'
-import { SUBPROCESS_CONTROL_ENV } from '@deepseek-ai/dsh-subprocess/control'
+import { SUBPROCESS_CONTROL_ENV, SUBPROCESS_CONTROL_MARKER } from '@deepseek-ai/dsh-subprocess/control'
 import { LocalSubprocessRuntime } from '../src/index.ts'
 import { spawnSubprocess } from '../src/spawn.ts'
 
 const fixture = fileURLToPath(new URL('./fixtures/control-child.ts', import.meta.url))
 const helper = fileURLToPath(new URL('../../subprocess/src/control.ts', import.meta.url))
+
+/**
+ * A child program that opens the inherited control channel through the shipped
+ * helper, so the spawn shape under test is the production one.
+ * @param body - program statements appended after the channel is opened as `c`.
+ * @returns one `--eval` source string.
+ */
+function controlChild(body: string): string {
+  return `const {openInheritedControlChannel} = await import(${JSON.stringify(pathToFileURL(helper).href)});`
+    + `const c = openInheritedControlChannel();${body}`
+}
+
 let ctx: Context | undefined
 let root: string | undefined
 let handle: SubprocessHandle | undefined
@@ -27,19 +39,19 @@ afterEach(async () => {
   handle = undefined
 })
 
-describe('managed subprocess control pipe', () => {
+describe('managed subprocess control channel', () => {
   it('joins an exited range and disposes its paused control endpoint without draining it', async () => {
     ctx = new Context()
     await ctx.plugin(LocalSubprocessRuntime)
     handle = ctx.subprocess.spawn({
       argv: [process.execPath, '--input-type=module', '-e',
-        'import { Socket } from "node:net"; const c = new Socket({fd:7,readable:true,writable:true}); c.write(Buffer.alloc(4096),()=>c.destroy())'],
+        controlChild('c.write(Buffer.alloc(4096), () => c.destroy())')],
       cwd: process.cwd(),
       stdio: { stdin: 'ignore', stdout: { maxBytes: 32 }, stderr: { maxBytes: 32 }, control: 'pipe' },
       graceMs: 1000,
     })
     const channel = handle.control
-    if (channel === undefined) throw new Error('requested control pipe is absent')
+    if (channel === undefined) throw new Error('requested control channel is absent')
     channel.pause()
     expect(await handle.done).toEqual({ exitCode: 0, signal: null })
     expect(channel.destroyed).toBe(false)
@@ -54,13 +66,13 @@ describe('managed subprocess control pipe', () => {
     await ctx.plugin(LocalSubprocessRuntime)
     handle = ctx.subprocess.spawn({
       argv: [process.execPath, '--input-type=module', '-e',
-        'import { Socket } from "node:net"; const c = new Socket({fd:7,readable:true,writable:true}); c.write("ready"); setInterval(()=>{},60000)'],
+        controlChild('c.write("ready"); setInterval(() => {}, 60000)')],
       cwd: process.cwd(),
       stdio: { stdin: 'ignore', stdout: { maxBytes: 32 }, stderr: { maxBytes: 32 }, control: 'pipe' },
       graceMs: 1000,
     })
     const channel = handle.control
-    if (channel === undefined) throw new Error('requested control pipe is absent')
+    if (channel === undefined) throw new Error('requested control channel is absent')
     await once(channel, 'data')
     await ctx.fiber.dispose()
     expect(channel.destroyed).toBe(true)
@@ -96,7 +108,7 @@ describe('managed subprocess control pipe', () => {
     }
     handle = backend === 'managed' ? ctx.subprocess.spawn(request) : spawnSubprocess(request)
     const channel = handle.control
-    if (channel === undefined) throw new Error('requested control pipe is absent')
+    if (channel === undefined) throw new Error('requested control channel is absent')
     const received = (async () => {
       const chunks: Buffer[] = []
       for await (const chunk of channel) chunks.push(Buffer.from(chunk as Uint8Array))
@@ -116,7 +128,7 @@ describe('managed subprocess control pipe', () => {
     expect(() => ctx?.subprocess.spawn({
       argv: [process.execPath, '-e', 'throw new Error("must not execute")'],
       cwd: process.cwd(),
-      env: { [SUBPROCESS_CONTROL_ENV]: 'pipe' },
+      env: { [SUBPROCESS_CONTROL_ENV]: SUBPROCESS_CONTROL_MARKER },
       stdio: { stdin: 'ignore', stdout: 'pipe', stderr: 'pipe' },
       graceMs: 1000,
     })).toThrow('reserved')

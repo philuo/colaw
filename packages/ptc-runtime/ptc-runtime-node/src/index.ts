@@ -20,21 +20,25 @@ import { OutputLedger } from './output-ledger.ts'
 import { drainOutput } from './output-stream.ts'
 import { STARTUP_ENVIRONMENT_NAMES } from './environment.ts'
 import { decodePtcJsonWire, encodePtcJsonWire } from './json-wire.ts'
+import { assertErasableTypeScript } from './erasable.ts'
 import type { ProgramBootData } from './protocol.ts'
 
 /**
  * TypeScript type-stripping with Bun compatibility.
- * Node.js 22.6+ provides `node:module.stripTypeScriptTypes` (position-preserving).
- * Bun does not implement this export, so we fall back to `Bun.Transpiler`.
- * The fallback is NOT position-preserving, but only the stripped body is consumed
- * after slicing off the known prefix/suffix — Bun.Transpiler preserves those
- * delimiters verbatim, so slicing by the original prefix/suffix lengths still
- * extracts the correct program body.
+ * Node.js 22.6+ provides `node:module.stripTypeScriptTypes` (position-preserving),
+ * which refuses non-erasable syntax. Bun does not implement this export, so we fall
+ * back to `Bun.Transpiler` — which generates code for those constructs instead of
+ * refusing them — behind {@link assertErasableTypeScript}, so the program contract
+ * stays erasable-only on both runtimes. The fallback is NOT position-preserving,
+ * but only the stripped body is consumed after slicing off the known prefix/suffix
+ * — Bun.Transpiler preserves those delimiters verbatim, so slicing by the original
+ * prefix/suffix lengths still extracts the correct program body.
  */
 const stripTypeScriptTypes: (code: string) => string =
   typeof (nodeModule as unknown as { stripTypeScriptTypes?: (code: string) => string }).stripTypeScriptTypes === 'function'
     ? (nodeModule as unknown as { stripTypeScriptTypes: (code: string) => string }).stripTypeScriptTypes.bind(nodeModule)
     : (code: string): string => {
+      assertErasableTypeScript(code)
       const bunGlobal = globalThis as unknown as {
         Bun?: { Transpiler: new (options: { loader: string }) => { transformSync: (code: string) => string } }
       }

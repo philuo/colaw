@@ -209,7 +209,9 @@ describe('Node program process', () => {
     await disconnected.promise
   })
 
-  it('applies the configured V8 old-generation ceiling to each fresh Node process', async () => {
+  // The ceiling is a V8 flag. Bun has no V8, so `--max-old-space-size` is inert there
+  // and the observed heap limit cannot track the configured value.
+  it.skipIf(process.versions.bun !== undefined)('applies the configured V8 old-generation ceiling to each fresh Node process', async () => {
     const limits: number[] = []
     for (const maxOldGenerationSizeMb of [32, 64]) {
       const { run } = await setup({ maxOldGenerationSizeMb })
@@ -235,8 +237,8 @@ describe('Node program process', () => {
   })
 
   it.each([
-    'const fs = await import("node:fs"); const b=Buffer.alloc(4); b.writeUInt32BE(4294967295); fs.writeSync(7,b); await new Promise(()=>{});',
-    'const fs = await import("node:fs"); const body=Buffer.from(JSON.stringify({type:"call",id:1,global:"tools",name:"undeclared",args:[]})); const h=Buffer.alloc(4); h.writeUInt32BE(body.length); fs.writeSync(7,Buffer.concat([h,body])); await new Promise(()=>{});',
+    'const b=Buffer.alloc(4); b.writeUInt32BE(4294967295); process.send(b); await new Promise(()=>{});',
+    'const body=Buffer.from(JSON.stringify({type:"call",id:1,global:"tools",name:"undeclared",args:[]})); const h=Buffer.alloc(4); h.writeUInt32BE(body.length); process.send(Buffer.concat([h,body])); await new Promise(()=>{});',
   ])('refuses hostile program control traffic', async (program) => {
     const { run } = await setup()
     expect((await run({ program, bindings: [] })).error?.kind).toBe('protocol')
