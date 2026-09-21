@@ -35,10 +35,18 @@ export class BundleInputIsolation {
   }
 
   private checkInput(id: string, allowMissing: boolean): void {
+    // A generated remote contract is a model-driven schema descriptor — the
+    // client needs it to call a host-provided remote and carries none of the
+    // owning package's runtime. Allowing it here does not relax the rule for
+    // the package's own code.
+    const file = physicalBundleInput(id)
+    if (file !== undefined && /\/lib\/typert\.remote-client\.(?:js|mjs|cjs|d\.ts)(?:\.map)?$/.test(file)) return
+    // Unresolved specifiers reach this check when a map records the import
+    // before resolution; the generated-contract subpath is the same seam.
+    if (/(?:^|[/: ])@deepseek-ai\/dsh-experimental-[^/]+\/remote$/.test(id)) return
     if (/(?:^|[/:\u0000])@deepseek-ai\/dsh-experimental-[^/?#]+/.test(id)) {
       throw new Error(`${this.label}: experimental input ${id}`)
     }
-    const file = physicalBundleInput(id)
     if (file === undefined) return
     const lexical = relative(resolve(this.repository, 'packages/experimental'), file)
     if (lexical === '' || lexical !== '..' && !lexical.startsWith(`..${sep}`) && !isAbsolute(lexical)) {

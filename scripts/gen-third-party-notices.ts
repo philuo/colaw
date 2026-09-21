@@ -310,17 +310,20 @@ function workspaceLinkedManifest(name: string, manifests: Map<string, Manifest>)
   return undefined
 }
 
+/** An installed external package manifest, widened with the notice fields the store may not declare. */
+type ResolvedManifest = Manifest & { license?: string; repository?: string | { url?: string }; homepage?: string }
+
 /** Resolve one installed external package manifest from either pnpm store. */
 function installedManifest(name: string, manifests: Map<string, Manifest>, expectedVersion?: string): VirtualManifest | undefined {
   const linked = workspaceLinkedManifest(name, manifests)
   if (linked !== undefined && (expectedVersion === undefined || linked.version === expectedVersion)) return linked
-  let manifest: (Manifest & { license?: string; repository?: string | { url?: string }; homepage?: string }) | undefined
+  let manifest: ResolvedManifest | undefined
   // Workspace-local link farms can expose a dependency that is not linked at
   // the repository root; both are backed by the root workspace's lockfile.
   for (const store of ['node_modules', 'native/system/node_modules']) {
     const direct = resolve(root, store, name, 'package.json')
     if (existsSync(direct)) {
-      const candidate = JSON.parse(readFileSync(direct, 'utf8')) as typeof manifest
+      const candidate = JSON.parse(readFileSync(direct, 'utf8')) as ResolvedManifest
       if (expectedVersion === undefined || candidate?.version === expectedVersion) {
         manifest = candidate
         break
@@ -336,7 +339,7 @@ function installedManifest(name: string, manifests: Map<string, Manifest>, expec
     // root beside the workspace store; there is no .pnpm virtual store.
     const hoisted = resolve(root, 'node_modules', '.bun', 'node_modules', name, 'package.json')
     if (existsSync(hoisted)) {
-      const candidate = JSON.parse(readFileSync(hoisted, 'utf8')) as typeof manifest
+      const candidate = JSON.parse(readFileSync(hoisted, 'utf8')) as ResolvedManifest
       if (expectedVersion === undefined || candidate?.version === expectedVersion) manifest = candidate
     }
   }

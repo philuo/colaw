@@ -52,10 +52,6 @@ export function apply(ctx: ClientContext): void {
   const t = ctx.locale.bind(NS)
   const store = createDesktopSectionStore()
   let bound: BoundActions<typeof store> | undefined
-  // The live TCC answer, held outside the store: the section re-reads it
-  // through its own effect after each probe, so a plain ref keeps the
-  // optimistic switch writes and the permission probe independent.
-  const permissions = { value: undefined as { accessibility: boolean; screenRecording: boolean } | undefined }
 
   const sync = (): void => {
     const snapshot = scope.getSnapshot()
@@ -65,7 +61,7 @@ export function apply(ctx: ClientContext): void {
 
   const injected = (actions: BoundActions<typeof store>): {
     setField: (field: 'browserUse' | 'computerUse' | 'lockScreenOperation', value: boolean) => void
-    loadPermissions: () => void
+    refreshPermissions: () => void
     openPermissionSettings: () => void
   } => {
     bound = actions
@@ -77,14 +73,23 @@ export function apply(ctx: ClientContext): void {
         bound?.sync(({ ...scope.getSnapshot().value, [field]: value }) as DesktopSettings | undefined, 'ready')
         void scope.set(field, value)
       },
-      loadPermissions: () => {
-        // TODO(desktop-permissions): the TCC probe must run in the host
-        // process; the typert endpoint lands with the next remote round. With
-        // no probe wired the section hides its permission block entirely.
-        permissions.value = undefined
+      // The probe runs in the host process, so the OS attributes the request
+      // to Colaw itself; the answer lands in the store and the section reads
+      // it from there. A rejected call leaves the answer unset — undefined
+      // means "no probe has answered", and the next mount probes again.
+      refreshPermissions: () => {
+        void ctx.remote.desktopPermissions.status()
+          .then((status) => {
+            if (status.ok) bound?.setPermissions(status.value)
+          })
+          .catch(() => {})
       },
       openPermissionSettings: () => {
-        // Reserved for the same host endpoint as loadPermissions.
+        void ctx.remote.desktopPermissions.openPermissionSettings()
+          .then((status) => {
+            if (status.ok) bound?.setPermissions(status.value)
+          })
+          .catch(() => {})
       },
     }
   }
@@ -98,15 +103,13 @@ export function apply(ctx: ClientContext): void {
     store,
     inject: (actions) => {
       const face = injected(actions)
-      void face.loadPermissions()
       return {
         setField: face.setField,
-        loadPermissions: face.loadPermissions,
+        refreshPermissions: face.refreshPermissions,
         openPermissionSettings: face.openPermissionSettings,
-        get permissions() { return permissions.value },
       }
     },
   }, DesktopSection))
 }
 
-export type { DesktopSectionState } from './desktop-store.ts'
+export type { DesktopSectionState, DesktopPermissionStatus } from './desktop-store.ts'

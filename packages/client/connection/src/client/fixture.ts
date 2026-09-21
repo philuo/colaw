@@ -3996,6 +3996,10 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           request as WorkspaceInsertSessionBeforeRequest,
         )
         case 'workspace/archiveSession': return workspaceApi.archiveSession(request as WorkspaceArchiveSessionRequest)
+        // The desktop bundle ships the TCC probe; the fixture answers from the
+        // same conservative posture the host controller takes on probe failure.
+        case 'desktopPermissions/status': return Promise.resolve({ ok: true, value: { accessibility: false, screenRecording: false } })
+        case 'desktopPermissions/openPermissionSettings': return Promise.resolve({ ok: true, value: { accessibility: false, screenRecording: false } })
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }
