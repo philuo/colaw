@@ -277,7 +277,10 @@ function resolveModels(provider: string, models: readonly OpenAICatalogModel[] |
       ...model.description === undefined ? {} : { description: model.description },
       contextWindow: model.contextWindow ?? DEFAULT_MODEL_CONTEXT_WINDOW,
       maxTokens: model.maxTokens ?? DEFAULT_MODEL_MAX_TOKENS,
-      ...model.reasoning === undefined ? {} : { reasoning: model.reasoning },
+      // An undeclared row is reasoning-capable: the selectors only offer
+      // levels this way, and both wires send nothing until a level is
+      // actually chosen. `reasoning: false` opts a non-reasoning model out.
+      reasoning: model.reasoning ?? true,
       ...model.thinkingFormat === undefined ? {} : { thinkingFormat: model.thinkingFormat },
       ...model.zaiToolStream === undefined ? {} : { zaiToolStream: model.zaiToolStream },
       ...model.systemPromptUpdate === undefined ? {} : { systemPromptUpdate: model.systemPromptUpdate },

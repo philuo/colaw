@@ -105,7 +105,11 @@ describe('request shape', () => {
     expect(server.requests[0]).not.toHaveProperty('max_tokens')
   })
 
-  it('sends reasoning_effort only for catalog models declared reasoning', async () => {
+  it('sends reasoning_effort for reasoning-capable models and none for one opted out', async () => {
+    // The settings-mapped catalog defaults an undeclared row to reasoning
+    //-capable (that is what makes the selector offer 推理等级 for a custom
+    // provider); `reasoning: false` is the opt-out for an endpoint that would
+    // refuse the field.
     const server = await mockServer([
       { kind: 'sse', events: textEvents },
       { kind: 'sse', events: textEvents },
@@ -114,8 +118,8 @@ describe('request shape', () => {
       baseURL: server.url,
       reasoningEffort: 'high',
       models: [
-        { id: 'gpt-4o' },
-        { id: 'o4-mini', reasoning: true },
+        { id: 'gpt-4o', reasoning: false },
+        { id: 'o4-mini' },
       ],
     })
     for await (const chunk of adapter.stream({
@@ -126,6 +130,12 @@ describe('request shape', () => {
     })) void chunk
     expect(server.requests[0]).not.toHaveProperty('reasoning_effort')
     expect(server.requests[1]).toMatchObject({ reasoning_effort: 'high' })
+  })
+
+  it('exposes the reasoning vocabulary for an undeclared catalog model', async () => {
+    const adapter = adapterOf({ models: [{ id: 'gpt-4o' }] })
+    const info = await adapter.resolveModel('openai-compatible', 'gpt-4o')
+    expect(info.reasoning?.efforts.map(effort => effort.id)).toEqual(['off', 'low', 'high'])
   })
 })
 
@@ -353,5 +363,13 @@ describe('resolveAdapterOptions', () => {
   it('rejects duplicate catalog ids, unknown modalities, and text-only image limits', () => {
     expect(() => resolveAdapterOptions({ displayName: 'p', models: [{ id: 'x' }, { id: 'x' }] })).toThrow(/duplicate model "x" in provider "p"/)
     expect(() => resolveAdapterOptions({ models: [{ id: 'x', imageMaxBytes: 5 }] })).toThrow(/cannot declare image request limits/)
+  })
+
+  it('defaults an undeclared catalog row to reasoning-capable and honors an explicit opt-out', () => {
+    const options = resolveAdapterOptions({
+      displayName: 'p',
+      models: [{ id: 'x' }, { id: 'y', reasoning: false }, { id: 'z', reasoning: true }],
+    })
+    expect(options.models.map(model => model.reasoning)).toEqual([true, false, true])
   })
 })

@@ -58,7 +58,11 @@ export interface OpenAICatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model; omission falls back to the profile's configured cap, when any. */
   maxTokens?: number
-  /** The endpoint accepts a `reasoning_effort` field for this model (OpenAI reasoning models). */
+  /**
+   * The endpoint accepts a `reasoning_effort` field for this model (OpenAI
+   * reasoning models). The settings-mapped catalog defaults this to `true`;
+   * set `false` for a model the endpoint would refuse the field on.
+   */
   reasoning?: boolean
   /** zai-dialect thinking toggle + `tool_stream` side channel (zai gateways). */
   thinkingFormat?: 'zai'

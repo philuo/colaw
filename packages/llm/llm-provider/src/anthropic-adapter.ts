@@ -51,7 +51,11 @@ export interface AnthropicCatalogModel {
   contextWindow?: number
   /** Per-request output cap for this model (the Messages API requires a cap on every request). */
   maxTokens?: number
-  /** The model accepts extended thinking (`thinking` on the wire). */
+  /**
+   * The model accepts extended thinking (`thinking` on the wire). The
+   * settings-mapped catalog defaults this to `true`; set `false` for a model
+   * the endpoint would refuse the field on.
+   */
   reasoning?: boolean
   /** Accepted request modalities; omission is text-only. */
   inputModalities?: ModelModality[]

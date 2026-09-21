@@ -100,7 +100,9 @@ describe('request shape', () => {
     expect(server.requests[0]).toMatchObject({ max_tokens: 32_000, system: 'be brief' })
   })
 
-  it('sends the thinking budget only for catalog models declared reasoning', async () => {
+  it('sends the thinking budget for reasoning-capable models and none for one opted out', async () => {
+    // The settings-mapped catalog defaults an undeclared row to reasoning
+    //-capable; `reasoning: false` is the opt-out for a model without thinking.
     const server = await mockServer([
       { kind: 'sse', frames: textFrames },
       { kind: 'sse', frames: textFrames },
@@ -110,8 +112,8 @@ describe('request shape', () => {
       reasoningEffort: 'high',
       thinkingBudgetTokens: 8_192,
       models: [
-        { id: 'claude-haiku' },
-        { id: 'claude-fable-5', reasoning: true },
+        { id: 'claude-haiku', reasoning: false },
+        { id: 'claude-fable-5' },
       ],
     })
     for await (const chunk of adapter.stream({

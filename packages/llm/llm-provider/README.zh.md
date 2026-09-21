@@ -31,14 +31,15 @@ llm-provider:
       contextWindow: 128000
     - id: o4-mini
       name: o4-mini
-      reasoning: true                  # accepts reasoning_effort on the wire
+    - id: text-chat-legacy
+      reasoning: false                 # 端点会拒绝该字段的模型
 ```
 
 当端点要求较新的输出上限字段名（较新的 OpenAI 官方推理模型）时设置 `maxTokensField: max_completion_tokens`；默认 `max_tokens` 是兼容网关的写法。
 
 ### 推理力度
 
-只有声明 `reasoning: true` 的目录模型会收到 `reasoning_effort` 字段。OpenAI 的词表没有 `off`（省略字段即默认）也没有 `max`（harness 的 `max` 映射为 `high`），因此适配器为这类模型声明 `off`/`low`/`high`。
+目录模型默认都按支持推理处理，因此选择器会为每个模型提供推理等级。只有实际选择了等级，字段才会出现在请求里——未选择或选择 `off` 时不发送任何字段；端点会拒绝该字段的模型请设置 `reasoning: false`。OpenAI 的词表没有 `off`（省略字段即默认）也没有 `max`（harness 的 `max` 映射为 `high`），因此适配器声明 `off`/`low`/`high`。
 
 ### 图片
 

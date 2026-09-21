@@ -31,14 +31,15 @@ llm-provider:
       contextWindow: 128000
     - id: o4-mini
       name: o4-mini
-      reasoning: true                  # accepts reasoning_effort on the wire
+    - id: text-chat-legacy
+      reasoning: false                 # a model the endpoint would refuse the field on
 ```
 
 Set `maxTokensField: max_completion_tokens` when the endpoint requires the newer output-cap field name (newer official OpenAI reasoning models); the default `max_tokens` is the compatible-gateway spelling.
 
 ### Reasoning effort
 
-Only catalog models declared `reasoning: true` receive a `reasoning_effort` field. OpenAI's vocabulary has no `off` (the field is omitted) and no `max` (harness `max` maps to `high`), so the adapter declares `off`/`low`/`high` for such models.
+Every catalog model is reasoning-capable by default, so the selectors offer reasoning levels for each. The field reaches the wire only when a level is actually selected — an idle or `off` selection sends nothing — and `reasoning: false` opts a model out. OpenAI's vocabulary has no `off` (the field is omitted) and no `max` (harness `max` maps to `high`), so the adapter declares `off`/`low`/`high`.
 
 ### Images
 

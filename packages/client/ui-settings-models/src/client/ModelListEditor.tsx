@@ -376,6 +376,19 @@ export function ModelListEditor(props: ModelListEditorProps): ReactNode {
                   {...props.allowed === undefined ? {} : { allowed: props.allowed }}
                   onChange={(next) => { patch(index, { inputModalities: next }) }}
                 />
+                {/* Declared reasoning: on unless the row says otherwise, so the
+                    picker offers 推理等级 without a per-row declaration. The
+                    checked state stores nothing — absence is the default — and
+                    unchecking stores `reasoning: false`. */}
+                <label className={styles['inputTypeCheck']} title={t('inputReasoningHint')}>
+                  <input
+                    type="checkbox"
+                    checked={model['reasoning'] !== false}
+                    disabled={disabled}
+                    onChange={(event) => { patch(index, { reasoning: event.target.checked ? undefined : false }) }}
+                  />
+                  {t('inputReasoning')}
+                </label>
               </div>
             )
             : null}

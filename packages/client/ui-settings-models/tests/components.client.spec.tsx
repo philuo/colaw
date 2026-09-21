@@ -1129,6 +1129,40 @@ describe('ModelsSection', () => {
     expect(within(inherited).getByLabelText<HTMLInputElement>(en.inputVideo).checked).toBe(false)
   })
 
+  it('edits one row’s declared reasoning: silence inherits, unchecking stores the opt-out', () => {
+    const onChange = vi.fn()
+    const { rerender } = render(<ModelListEditor
+      models={[{ id: 'm' }]}
+      onChange={onChange}
+      probe={{ settingsNs: 'llm-provider' }}
+      operations={{} as ModelsOperations}
+      t={t}
+      disabled={false}
+      resolvedModalities={new Map()}
+    />)
+    expandRow(1)
+    // Silence is the default-on state: the picker offers 推理等级 for the row
+    // without a stored declaration.
+    const box = screen.getByLabelText(en.inputReasoning)
+    expect((box as HTMLInputElement).checked).toBe(true)
+
+    // Unchecking stores the opt-out; re-checking removes the stored field
+    // again rather than materializing `reasoning: true`.
+    fireEvent.click(box)
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'm', reasoning: false }])
+    rerender(<ModelListEditor
+      models={[{ id: 'm', reasoning: false }]}
+      onChange={onChange}
+      probe={{ settingsNs: 'llm-provider' }}
+      operations={{} as ModelsOperations}
+      t={t}
+      disabled={false}
+      resolvedModalities={new Map()}
+    />)
+    fireEvent.click(screen.getByLabelText(en.inputReasoning))
+    expect(onChange).toHaveBeenLastCalledWith([{ id: 'm' }])
+  })
+
   it('adds rows claiming the modern input default on both editor families', () => {
     const deepseek = vi.fn()
     const first = render(<DeepSeekModelsEditor
