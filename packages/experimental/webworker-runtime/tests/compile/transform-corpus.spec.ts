@@ -14,7 +14,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { expect, test, TestRunner } from 'vitest'
+import { expect, test, TestContext, TestRunner } from 'vitest'
 
 const runner = fileURLToPath(new URL('./transform-corpus-check.ts', import.meta.url))
 
@@ -60,7 +60,7 @@ test.each([
   ['error', 1, '- UNEXPECTED BASELINE FAILURE'],
   ['other-code', 1, '- UNEXPECTED BASELINE FAILURE'],
   ['clean', 1, '- STALE EXEMPTION'],
-] as const)('classifies dockkit import: %s', (mode, status, finding) => {
+] as const)('classifies dockkit import: %s', (mode, status, finding, context?: TestContext) => {
   const root = new URL('../../../../../', import.meta.url)
   const bundle = 'packages/client/ui-dockkit/lib/index.js'
   const cssBase = fileURLToPath(new URL('packages/client/ui-dockkit/lib/components/dockkit.module', root))
@@ -97,7 +97,7 @@ test.each([
   `
   const nodeBin = nodeLauncher()
   if (nodeBin === undefined) {
-    context.skip('no Node runtime on this host to run the Node-loader gate')
+    context?.skip('no Node runtime on this host to run the Node-loader gate')
     return
   }
   const finished = spawnSync(nodeBin, ['--import', 'tsx/esm', '--input-type=module', '-e', script], {
