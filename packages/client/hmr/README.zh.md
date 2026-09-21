@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 启动重载链路
 
-对同一个宿主运行 `pnpm run dev:web`（或使用共享 Client tsdown 预设的 watch 进程）；重建后的插件随后会被自动逐个替换进运行中的浏览器。该预设会在所有包内 chunk 写完后标记 `lib/client.js`，因此仅 chunk 发生重建也会推进包 revision，无需 Host 扫描 chunk。
+对同一个宿主运行 `bun run dev:web`（或使用共享 Client tsdown 预设的 watch 进程）；重建后的插件随后会被自动逐个替换进运行中的浏览器。该预设会在所有包内 chunk 写完后标记 `lib/client.js`，因此仅 chunk 发生重建也会推进包 revision，无需 Host 扫描 chunk。
 
 ### 一次重载做什么
 

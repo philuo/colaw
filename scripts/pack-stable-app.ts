@@ -377,7 +377,8 @@ function scanWorkspacePackages(): Map<string, string> {
     const segments = pattern.split('/')
     const walk = (base: string, index: number): string[] => {
       if (index === segments.length) return [base]
-      const segment = segments[index]!
+      const segment = segments[index]
+      if (segment === undefined) return []
       if (!segment.includes('*')) return walk(join(base, segment), index + 1)
       if (!isDirectory(base)) return []
       const found: string[] = []
@@ -1536,6 +1537,7 @@ function reportSize(): void {
     return bytes
   }
   ensurePinnedBun()
+  ensureBunxShim()
   ensureNoSourceMaps()
   const total = sizeOf(stableApp)
   const modules = sizeOf(join(appResourcesApp, 'node_modules'))
@@ -1585,18 +1587,22 @@ function ensureNoSourceMaps(): void {
   console.log('pack-stable-app: no source maps in the bundle')
 }
 
+/** The version a bun-family binary reports through `--version`, or undefined when the spawn fails. */
+function bunVersionReport(cmd: readonly string[]): string | undefined {
+  const result = (globalThis as unknown as {
+    Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null; stdout: Uint8Array } }
+  }).Bun.spawnSync(cmd, { stdout: 'pipe', stderr: 'pipe' })
+  if (result.exitCode !== 0) return undefined
+  return new TextDecoder().decode(result.stdout).trim()
+}
+
 function ensurePinnedBun(): void {
   const target = join(stableApp, 'Contents', 'MacOS', 'bun')
   if (!existsSync(target)) {
     console.error(`pack-stable-app: the shell has no runtime at ${target}`)
     process.exit(1)
   }
-  const versionOf = (path: string): string | undefined => {
-    const result = (globalThis as unknown as { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null; stdout: Uint8Array } } })
-      .Bun.spawnSync([path, '--version'], { stdout: 'pipe', stderr: 'pipe' })
-    if (result.exitCode !== 0) return undefined
-    return new TextDecoder().decode(result.stdout).trim()
-  }
+  const versionOf = (path: string): string | undefined => bunVersionReport([path, '--version'])
 
   const current = versionOf(target)
   if (current === PINNED_BUN_VERSION) {
@@ -1629,6 +1635,39 @@ function ensurePinnedBun(): void {
     process.exit(1)
   }
   console.log(`pack-stable-app: runtime bun ${String(current ?? 'unknown')} → ${verified} (pinned)`)
+}
+
+/**
+ * Publish the `bunx` entry point beside the pinned runtime.
+ *
+ * A `bun` install carries `bunx` as a second name for the same binary; the shell
+ * ships only `bun`, so `bunx <tool>` — the form the Colaw workspace instructions
+ * tell the model to use for a Node-tool CLI — fails with `command not found`.
+ * The link is relative so the bundle stays relocatable, and it is created only
+ * when absent or pointing elsewhere, keeping a repack over a staged app cheap.
+ */
+function ensureBunxShim(): void {
+  const shim = join(stableApp, 'Contents', 'MacOS', 'bunx')
+  const expected = 'bun'
+
+  let current: string | undefined
+  try {
+    current = readlinkSync(shim)
+  } catch {
+    // Absent, or a regular file this step must not silently replace.
+    current = undefined
+  }
+  if (current !== expected) {
+    rmSync(shim, { recursive: true, force: true })
+    symlinkSync(expected, shim)
+  }
+
+  const reported = bunVersionReport([shim, '--version'])
+  if (reported !== PINNED_BUN_VERSION) {
+    console.error(`pack-stable-app: the bunx shim at ${shim} reports ${String(reported ?? 'nothing')}, expected ${PINNED_BUN_VERSION}`)
+    process.exit(1)
+  }
+  console.log(`pack-stable-app: bunx shim → bun (${reported})`)
 }
 
 /** Copy the packed payload out of the build tree before the official stable build replaces it. */

@@ -331,6 +331,15 @@ function installedManifest(name: string, manifests: Map<string, Manifest>, expec
     manifest = virtualManifest(virtual, name, expectedVersion)
     if (manifest !== undefined) break
   }
+  if (manifest === undefined) {
+    // Bun's isolated install hoists the full dependency tree into one flat
+    // root beside the workspace store; there is no .pnpm virtual store.
+    const hoisted = resolve(root, 'node_modules', '.bun', 'node_modules', name, 'package.json')
+    if (existsSync(hoisted)) {
+      const candidate = JSON.parse(readFileSync(hoisted, 'utf8')) as typeof manifest
+      if (expectedVersion === undefined || candidate?.version === expectedVersion) manifest = candidate
+    }
+  }
   return manifest
 }
 

@@ -109,11 +109,12 @@ it('hot-reloads a real client-plugin source edit without refreshing the page', a
   try {
     subprocessFiber = await subprocessCtx.plugin(LocalSubprocessRuntime)
     watcher = subprocessCtx.subprocess.spawn(spawnSpec(
-      ['pnpm', 'run', 'dev:web'],
+      // The invoking runtime, not a package manager name: this fork runs on Bun.
+      [process.execPath, 'run', 'dev:web'],
       REPO_ROOT,
       { ...clientBuildEnvironment },
     ))
-    await waitForOutput(watcher, /dev-web: watching/, 'pnpm run dev:web')
+    await waitForOutput(watcher, /dev-web: watching/, 'bun run dev:web')
     host = subprocessCtx.subprocess.spawn(spawnSpec(
       [process.execPath, binPath, 'web', '--no-open', '--port', '0'],
       world,

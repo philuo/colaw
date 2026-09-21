@@ -467,7 +467,7 @@ describe('client bundle activation', () => {
     const secondPath = writePackage(secondName)
     expect(() => construct([firstName, secondName])).toThrow([
       'client-modules: 2 client packages failed to compose:',
-      '  client bundles not found; run `pnpm run build` before launch:',
+      '  client bundles not found; run `bun run build` before launch:',
       `    - package: ${firstName}`,
       `      path: ${firstPath}`,
       `    - package: ${secondName}`,
