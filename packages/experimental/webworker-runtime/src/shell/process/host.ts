@@ -53,9 +53,19 @@ export interface RunningProcess {
   destroy(): void
 }
 
-/** Whether this thread can start a real process worker. */
+/**
+ * Whether this thread can start a real process worker.
+ *
+ * The probe must stay defensive at every hop: a browser or dedicated-worker
+ * thread answers yes at `self.location.href`, but Bun's main thread exposes a
+ * global `Worker` and a `self` without a `location`, so a bare property chain
+ * would throw there instead of answering — and the inline fallback below is
+ * exactly what such a thread should use.
+ */
 function canSpawnWorker(): boolean {
-  return typeof Worker === 'function' && typeof self !== 'undefined' && typeof self.location.href === 'string'
+  if (typeof Worker !== 'function' || typeof self === 'undefined') return false
+  const location = (self as { location?: { href?: unknown } }).location
+  return typeof location?.href === 'string'
 }
 
 /**

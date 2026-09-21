@@ -18,8 +18,27 @@ import { expect, test, TestRunner } from 'vitest'
 
 const runner = fileURLToPath(new URL('./transform-corpus-check.ts', import.meta.url))
 
+/**
+ * The launcher the Node-loader oracle requires.
+ *
+ * Both gates here judge bundles by Node's ESM loader, so both must be launched
+ * by Node. `process.execPath` names Node only on a Node host; under Bun it
+ * names bun, whose module registry lacks `node:module.registerHooks` for tsx's
+ * hooks — the runner then fails with an error about the launcher, not the
+ * bundles. `undefined` means this host has no Node to run the gate.
+ */
+function nodeLauncher(): string | undefined {
+  if (process.versions.bun === undefined) return process.execPath
+  return spawnSync('node', ['--version'], { encoding: 'utf8' }).status === 0 ? 'node' : undefined
+}
+
 test('every built bundle imports under Node', (context) => {
-  const finished = spawnSync(process.execPath, ['--import', 'tsx/esm', runner], { encoding: 'utf8' })
+  const nodeBin = nodeLauncher()
+  if (nodeBin === undefined) {
+    context.skip('no Node runtime on this host to run the Node-loader gate')
+    return
+  }
+  const finished = spawnSync(nodeBin, ['--import', 'tsx/esm', runner], { encoding: 'utf8' })
   const output = `${finished.stdout}${finished.stderr}`
   if (output.includes('no built bundles found')) {
     context.skip('the workspace has no build output to sweep')
@@ -76,7 +95,12 @@ test.each([
     process.argv = [process.execPath, 'corpus-classification', ${JSON.stringify(bundle)}]
     await import(${JSON.stringify(pathToFileURL(runner).href)})
   `
-  const finished = spawnSync(process.execPath, ['--import', 'tsx/esm', '--input-type=module', '-e', script], {
+  const nodeBin = nodeLauncher()
+  if (nodeBin === undefined) {
+    context.skip('no Node runtime on this host to run the Node-loader gate')
+    return
+  }
+  const finished = spawnSync(nodeBin, ['--import', 'tsx/esm', '--input-type=module', '-e', script], {
     cwd: fileURLToPath(root), encoding: 'utf8', timeout: TestRunner.getCurrentTest()!.timeout,
   })
   const output = `${finished.stdout}${finished.stderr}`

@@ -41,6 +41,11 @@ const BASELINE_EXEMPT: ReadonlyMap<string, string> = new Map([
   ['packages/client/ui-primitives/lib/index.js', 'imports .css, which bare Node cannot load'],
   ['packages/client/web/lib/index.js', 'imports .css, which bare Node cannot load'],
   ['packages/test-support/client-runtime/lib/index.js', "needs vitest's internal state"],
+  // This fork's Bun-native image pipeline: the bundle imports `bun:ffi` for the
+  // ImageIO FFI seam that replaced sharp, so bare Node refuses the specifier.
+  // The runtime that ships it is Bun, which resolves `bun:` natively — the
+  // exemption names that scheme, and goes stale the day the import leaves.
+  ['packages/attachment/attachment-local/lib/index.js', 'imports bun:ffi, which bare Node cannot load'],
 ])
 
 let failures = 0
