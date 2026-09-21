@@ -15,8 +15,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 // allowlist) into this program.
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import { DesktopSection } from './DesktopSection.tsx'
-import type { DesktopSettings } from '../desktop-settings.ts'
-import { DESKTOP_SETTINGS_NAMESPACE } from '../desktop-settings.ts'
+import { createDesktopSectionStore } from './desktop-store.ts'
+import type { BoundActions } from '@deepseek-ai/dsh-client-store'
+import { DESKTOP_SETTINGS_NAMESPACE, type DesktopSettings } from '../desktop-settings.ts'
 import { en, zh, type DesktopKey } from './locales.ts'
 
 export type { DesktopKey } from './locales.ts'
@@ -40,6 +41,8 @@ export const inject = ['slots', 'locale', 'remote', 'settingsScope']
 
 /**
  * Register the Desktop-control section over the shared settings namespace.
+ * The scope snapshot mirrors into a slot store, so a switch click lands
+ * immediately (optimistic) and the wire write reconciles it afterwards.
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
@@ -47,6 +50,44 @@ export function apply(ctx: ClientContext): void {
 
   const scope = ctx.settingsScope.bind<DesktopSettings>({ namespace: DESKTOP_SETTINGS_NAMESPACE })
   const t = ctx.locale.bind(NS)
+  const store = createDesktopSectionStore()
+  let bound: BoundActions<typeof store> | undefined
+  // The live TCC answer, held outside the store: the section re-reads it
+  // through its own effect after each probe, so a plain ref keeps the
+  // optimistic switch writes and the permission probe independent.
+  const permissions = { value: undefined as { accessibility: boolean; screenRecording: boolean } | undefined }
+
+  const sync = (): void => {
+    const snapshot = scope.getSnapshot()
+    bound?.sync(snapshot.value, snapshot.status)
+  }
+  ctx.effect(() => scope.subscribe(sync), 'ui-settings-desktop: scope mirror')
+
+  const injected = (actions: BoundActions<typeof store>): {
+    setField: (field: 'browserUse' | 'computerUse' | 'lockScreenOperation', value: boolean) => void
+    loadPermissions: () => void
+    openPermissionSettings: () => void
+  } => {
+    bound = actions
+    sync()
+    return {
+      setField: (field, value) => {
+        // Optimistic: the switch flips now, and the accepted durable write
+        // (or the recovery read after a rejection) converges the store.
+        bound?.sync(({ ...scope.getSnapshot().value, [field]: value }) as DesktopSettings | undefined, 'ready')
+        void scope.set(field, value)
+      },
+      loadPermissions: () => {
+        // TODO(desktop-permissions): the TCC probe must run in the host
+        // process; the typert endpoint lands with the next remote round. With
+        // no probe wired the section hides its permission block entirely.
+        permissions.value = undefined
+      },
+      openPermissionSettings: () => {
+        // Reserved for the same host endpoint as loadPermissions.
+      },
+    }
+  }
 
   ctx.slots.inject('settings.section', () => ctx.slots.register({
     name: 'settings.section',
@@ -54,9 +95,18 @@ export function apply(ctx: ClientContext): void {
     order: 18,
     label: () => t('nav'),
     locale: NS,
-    inject: () => ({
-      snapshot: scope.getSnapshot(),
-      setField: (field: keyof DesktopSettings, value: boolean) => { void scope.set(field, value) },
-    }),
+    store,
+    inject: (actions) => {
+      const face = injected(actions)
+      void face.loadPermissions()
+      return {
+        setField: face.setField,
+        loadPermissions: face.loadPermissions,
+        openPermissionSettings: face.openPermissionSettings,
+        get permissions() { return permissions.value },
+      }
+    },
   }, DesktopSection))
 }
+
+export type { DesktopSectionState } from './desktop-store.ts'

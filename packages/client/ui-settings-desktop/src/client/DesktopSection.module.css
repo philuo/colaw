@@ -71,3 +71,94 @@
   line-height: 1.5;
   color: var(--dsw-alias-label-tertiary);
 }
+
+/* The permission block: a headline with the aggregate pill, then the two
+   grant rows and the deep-link button — shown only while something is
+   missing, so a fully granted host reads as a single Granted pill. */
+.permissions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 0.5px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+}
+
+.permissionHead {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.permissionHeadline {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dsw-alias-label-primary);
+}
+
+.permissionPill {
+  margin-left: auto;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 9px;
+}
+
+.permissionChecking {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.permissionGranted {
+  color: var(--dsw-alias-state-success-primary, var(--dsw-alias-label-secondary));
+}
+
+.permissionMissing {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.permissionBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.permissionHint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.permissionList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.permissionItem {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.permissionButton {
+  align-self: flex-start;
+  height: 30px;
+  padding: 0 12px;
+  border: none;
+  border-radius: 15px;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.permissionButton:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover);
+}

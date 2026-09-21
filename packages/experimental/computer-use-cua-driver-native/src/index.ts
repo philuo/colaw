@@ -10,6 +10,7 @@ import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
 import type { CuaDriver as NativeDriver } from '@trycua/cua-driver'
 import type {} from '@deepseek-ai/dsh-computer-use'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 
@@ -26,6 +27,61 @@ const DESKTOP_SETTINGS_NAMESPACE = 'ui-desktop-control'
 interface DesktopSettingsReader {
   get(namespace: string): { computerUse?: boolean } | undefined
 }
+
+/** One TCC grant state pair as the tab renders it. */
+export interface DesktopPermissionStatus {
+  /** The host process may send Accessibility-driven input. */
+  accessibility: boolean
+  /** The host process may capture screen contents. */
+  screenRecording: boolean
+}
+
+/** The desktop-permission remote: a status probe plus the guided hand-off. */
+export class DesktopPermissionsController extends TypertRemoteService {
+  static inject = []
+
+  constructor(ctx: Context) {
+    super(ctx, 'desktopPermissions')
+  }
+
+  /**
+   * Read the host process's TCC state. Runs the native probe on first use;
+   * a platform without the native SDK (or a probe failure) reports both as
+   * false, which is the conservative answer for a permission surface.
+   * @returns the accessibility and screen-recording grant states.
+   */
+  @Remote
+  status(): DesktopPermissionStatus {
+    try {
+      // Lazy: loads the native binding on first probe, not at boot.
+      // oxlint-disable-next-line typescript/no-require-imports -- the deferred native load is deliberate; see the module doc.
+      const sdk = require('./native-probe.ts') as typeof import('./native-probe.ts')
+      return sdk.currentPermissionStatus()
+    } catch {
+      return { accessibility: false, screenRecording: false }
+    }
+  }
+
+  /**
+   * Open macOS's own screens: the privacy pane surfaces the toggles, and the
+   * native call deep-links the Screen Recording sub-pane when available.
+   * @returns after the Settings window has been asked to open.
+   */
+  @Remote
+  openPermissionSettings(): DesktopPermissionStatus {
+    try {
+      // oxlint-disable-next-line typescript/no-require-imports -- same deferred native load as `status()`.
+      const sdk = require('./native-probe.ts') as typeof import('./native-probe.ts')
+      sdk.openScreenRecordingSettings()
+      return sdk.currentPermissionStatus()
+    } catch {
+      return { accessibility: false, screenRecording: false }
+    }
+  }
+}
+
+/** Cordis plugin identity for the permissions controller. */
+
 
 /** Cordis plugin identity for the native Cua Driver provider. */
 export const name = 'experimental-computer-use-cua-driver-native'
@@ -62,6 +118,10 @@ On macOS, cursor-overlay operations may return facility_unavailable even when sc
  * @returns after native import, runtime creation, and tool discovery complete.
  */
 export async function apply(ctx: Context): Promise<void> {
+  // The permission remote mounts unconditionally: the 电脑操控 tab needs an
+  // accurate TCC answer BEFORE the user turns Computer_use on, which is
+  // exactly when the gated provider below is not mounted.
+  ctx.provide('desktopPermissions', new DesktopPermissionsController(ctx))
   // The 电脑操控 tab owns the gate: with the switch off this provider mounts
   // inertly — no native runtime, no tools, no prompt section. Turning it on
   // takes effect from the next session; turning it off stops new use without
@@ -155,5 +215,12 @@ export async function apply(ctx: Context): Promise<void> {
       order: inner.systemPrompt.getSectionOrder('TOOL_COMPUTER_USE'),
       text: GUIDANCE,
     })
+  }
+}
+
+declare module '@deepseek-ai/cordis' {
+  interface Context {
+    /** The desktop-permission remote: host-process TCC state and the Settings deep-link. */
+    desktopPermissions: DesktopPermissionsController
   }
 }

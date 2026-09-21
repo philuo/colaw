@@ -11,6 +11,14 @@ export const en = {
   computerUseDescription: 'Let Colaw control applications on your computer',
   lockScreenTitle: 'Locked-Mac operation',
   lockScreenDescription: 'Let Colaw keep operating this Mac while it is locked',
+  permissionHeadline: 'macOS permissions',
+  permissionAccessibility: 'Accessibility',
+  permissionScreenRecording: 'Screen Recording',
+  permissionGranted: 'Granted',
+  permissionMissing: 'Not granted',
+  permissionOpenSettings: 'Open System Settings',
+  permissionChecking: 'Checking…',
+  permissionHint: 'Computer use needs these grants for Colaw itself. Open the pane, find Colaw, and switch the toggles on.',
 } as const
 
 /** The settings.desktop namespace key union. */
@@ -27,4 +35,12 @@ export const zh: { [Key in keyof typeof en]: string } = {
   computerUseDescription: '允许 Colaw 控制您电脑上的应用',
   lockScreenTitle: '锁屏操作',
   lockScreenDescription: '允许 Colaw 在 Mac 锁定时使用此 Mac',
+  permissionHeadline: 'macOS 权限',
+  permissionAccessibility: '辅助功能',
+  permissionScreenRecording: '屏幕录制',
+  permissionGranted: '已授权',
+  permissionMissing: '未授权',
+  permissionOpenSettings: '打开系统设置',
+  permissionChecking: '检测中…',
+  permissionHint: '电脑操控需要 Colaw 本身获得这些授权。打开系统设置面板，找到 Colaw 并打开对应开关即可。',
 }
