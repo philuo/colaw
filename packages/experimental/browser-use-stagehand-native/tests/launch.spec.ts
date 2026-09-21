@@ -53,7 +53,9 @@ it.each([true, false])('launches with scrubbed environment and owns the profile 
   expect(options.env.BROWSER_LAUNCH_PUBLIC).toBe('visible')
   expect(options.env.BROWSER_LAUNCH_API_TOKEN).toBeUndefined()
   expect(options.env.DSH_FIXTURE_ID).toBeUndefined()
-  await expect(access(profiles[0]!)).resolves.toBeUndefined()
+  // An accessible path: Bun's `access` fulfils with null where Node fulfils
+  // with undefined, so only the rejection below carries meaning.
+  await expect(access(profiles[0]!)).resolves.toBeFalsy()
   await browser.close()
   expect(fake.kill).toHaveBeenCalledOnce()
   await expect(access(profiles[0]!)).rejects.toThrow()
@@ -68,7 +70,7 @@ it('cancels after spawn and waits for close before removing the profile', async 
   await fake.started.promise
   controller.abort(new Error('Stop acquisition'))
   await fake.killed.promise
-  await expect(access(profiles[0]!)).resolves.toBeUndefined()
+  await expect(access(profiles[0]!)).resolves.toBeFalsy()
   fake.child.emit('close', 0)
   fake.ready.reject(new Error('Browser exited'))
   await canceled
@@ -112,5 +114,5 @@ it('preserves cleanup failure when a canceled process cannot be killed', async (
   controller.abort(new Error('Canceled'))
   fake.ready.reject(new Error('Readiness deadline'))
   await failed
-  await expect(access(profiles[0]!)).resolves.toBeUndefined()
+  await expect(access(profiles[0]!)).resolves.toBeFalsy()
 })

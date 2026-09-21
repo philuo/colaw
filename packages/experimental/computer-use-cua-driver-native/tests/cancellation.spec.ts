@@ -23,6 +23,11 @@ let root: string | undefined
 beforeEach(async () => {
   resetFixture()
   ctx = new Context()
+  // The provider gates on the 电脑操控 namespace; the fixture answers enabled.
+  ctx.provide('settings', {
+    get: (namespace: string): Record<string, unknown> | undefined =>
+      namespace === 'ui-desktop-control' ? { computerUse: true } : undefined,
+  } as never)
   await mountAgentLoopTestDependencies(ctx)
   await ctx.plugin(ComputerUseRegistry)
   root = await mkdtemp(join(tmpdir(), 'dsh-native-cancellation-'))

@@ -13,11 +13,25 @@ import type {} from '@deepseek-ai/dsh-computer-use'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 
+/**
+ * The namespace the 电脑操控 tab registers, duplicated as a literal because
+ * this provider compiles on the Host side, where a cross-package source import
+ * is unsafe under project references. The tab's `desktop-settings.ts` owns the
+ * spelling; a mismatch fails closed — the provider stays inert — which is the
+ * safe direction for a permission-gated surface.
+ */
+const DESKTOP_SETTINGS_NAMESPACE = 'ui-desktop-control'
+
+/** The one settings face this provider reads: a registered section by name. */
+interface DesktopSettingsReader {
+  get(namespace: string): { computerUse?: boolean } | undefined
+}
+
 /** Cordis plugin identity for the native Cua Driver provider. */
 export const name = 'experimental-computer-use-cua-driver-native'
 
 /** Services required before the native runtime can publish tools. */
-export const inject = ['computerUse', 'tools', 'systemPrompt']
+export const inject = ['computerUse', 'tools', 'systemPrompt', 'settings']
 
 /** The native provider uses the installed SDK's same-process defaults. */
 export const Config = Schema.object({})
@@ -48,6 +62,13 @@ On macOS, cursor-overlay operations may return facility_unavailable even when sc
  * @returns after native import, runtime creation, and tool discovery complete.
  */
 export async function apply(ctx: Context): Promise<void> {
+  // The 电脑操控 tab owns the gate: with the switch off this provider mounts
+  // inertly — no native runtime, no tools, no prompt section. Turning it on
+  // takes effect from the next session; turning it off stops new use without
+  // touching any macOS permission the user has granted.
+  const settings = ctx.get('settings') as unknown as DesktopSettingsReader | undefined
+  const enabled = settings?.get(DESKTOP_SETTINGS_NAMESPACE)?.computerUse === true
+  if (!enabled) return
   const lifetime = new AbortController()
   const pending = new Set<Promise<unknown>>()
   let driver: NativeDriver | undefined

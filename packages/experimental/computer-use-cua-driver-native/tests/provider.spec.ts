@@ -12,14 +12,27 @@ import { catalog, fixture, resetFixture } from './fixtures/cua-driver.ts'
 
 vi.mock('@trycua/cua-driver', async () => import('./fixtures/cua-driver.ts'))
 
+/**
+ * The provider gates on the 电脑操控 namespace. The harness answers with the
+ * section switched on — every case below exercises the enabled surface — and
+ * `gate` flips the stored fact for the one case that pins the off behaviour.
+ */
+const desktopSwitches = { computerUse: true }
+const settingsStub = {
+  get: (namespace: string): Record<string, unknown> | undefined =>
+    namespace === 'ui-desktop-control' ? desktopSwitches : undefined,
+}
+
 let ctx: Context
 
 beforeEach(async () => {
   resetFixture()
+  desktopSwitches.computerUse = true
   ctx = new Context()
   await ctx.plugin(ComputerUseRegistry)
   await ctx.plugin(SystemPrompt)
   await ctx.plugin(ToolRuntime)
+  ctx.provide('settings', settingsStub as never)
 })
 
 afterEach(async () => {
@@ -36,6 +49,15 @@ function execute(rawName: string, args: Record<string, unknown> = {}) {
 }
 
 describe('Cua Driver native provider', () => {
+  it('mounts inertly when the 电脑操控 switch is off', async () => {
+    desktopSwitches.computerUse = false
+    const fiber = ctx.plugin(NativeProvider)
+    await fiber
+    expect(ctx.computerUse.providerName).toBeUndefined()
+    expect(ctx.tools.schemas()).toEqual([])
+    desktopSwitches.computerUse = true
+  })
+
   it('registers the upstream catalog and calls its raw names', async () => {
     const fiber = ctx.plugin(NativeProvider)
     await fiber

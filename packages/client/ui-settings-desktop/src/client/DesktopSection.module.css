@@ -1,0 +1,62 @@
+/* The 电脑操控 section: one column of desktop-capability rows. */
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.intro {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--dsw-text-tertiary);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px;
+  border-radius: 10px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--dsw-border-secondary);
+}
+
+.glyph {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--dsw-fill-secondary);
+  color: var(--dsw-icon-primary);
+}
+
+.texts {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--dsw-text-primary);
+}
+
+.description {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--dsw-text-tertiary);
+}

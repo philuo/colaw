@@ -78,6 +78,12 @@ it('loads from cordis.yml and logs the native screenshot before the next model r
 
   const context = ctx = new Context()
   context.baseUrl = pathToFileURL(root).href + '/'
+  // The provider gates on the 电脑操控 namespace; the fixture answers enabled
+  // so the composition exercises the mounted surface.
+  context.provide('settings', {
+    get: (namespace: string): Record<string, unknown> | undefined =>
+      namespace === 'ui-desktop-control' ? { computerUse: true } : undefined,
+  } as never)
   await context.plugin(Loader)
   context.loader.builtins.include = Include
   context.loader.internal = {
