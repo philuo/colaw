@@ -49,6 +49,9 @@ allowBuilds:
   # koffi also serves the macOS native directory picker; only the JSONL
   # durability call below is Windows-shaped.
   koffi: true
+  # The Python runtime deploy includes the reviewed workspace postinstall that
+  # restores the executable bit on node-pty's macOS spawn helper.
+  '@deepseek-ai/dsh-subprocess-local@file:packages/subprocess/subprocess-local': true
   # Store-index rewriting only needs msgpackr's portable JavaScript codec.
   msgpackr-extract: false
 
