@@ -21,11 +21,32 @@ const tokens = readdirSync(fileURLToPath(new URL('../../ui-theme/src/styles/', i
   .map(name => readFileSync(fileURLToPath(new URL(`../../ui-theme/src/styles/${name}`, import.meta.url)), 'utf8'))
   .join('\n')
 
+/** The sheet without comments, so a rule cannot be answered by prose. */
+const bare = css.replace(/\/\*[\s\S]*?\*\//g, '')
+
 /** The declarations of one top-level rule, by selector. */
 function block(selector: string): string {
   const match = new RegExp(`^\\${selector} \\{([^}]*)\\}`, 'm').exec(css)
   if (match === null) throw new Error(`ModelsSection.module.css has no \`${selector}\` rule`)
   return match[1] ?? ''
+}
+
+/**
+ * The declarations of the one rule whose selector list is exactly `selectors`,
+ * for the grouped rules `block` cannot address (`a { … }` vs `a,\nb { … }`).
+ * Naming the whole list picks the rule apart from the per-class blocks that
+ * override it, which is where a shared base's shape belongs.
+ * @param selectors - every selector of the rule, in sheet order, spelled exactly as in the sheet.
+ * @returns the rule's declaration text.
+ */
+function rule(selectors: readonly string[]): string {
+  for (const match of bare.matchAll(/(?:^|\n)([^{}@/][^{}]*)\{([^}]*)\}/g)) {
+    const parts = (match[1] ?? '').split(',').map(part => part.trim())
+    if (parts.length === selectors.length && parts.every((part, index) => part === selectors[index])) {
+      return match[2] ?? ''
+    }
+  }
+  throw new Error(`ModelsSection.module.css has no \`${selectors.join(', ')}\` rule`)
 }
 
 describe('ModelsSection theme styles', () => {
@@ -48,7 +69,6 @@ describe('ModelsSection theme styles', () => {
     // it silently becomes conditional, and the whole fetch dialog once painted
     // unstyled for anyone whose system does not ask for reduced motion. Nothing
     // downstream reports this — the sheet loads and the classes still attach.
-    const bare = css.replace(/\/\*[\s\S]*?\*\//g, '')
     expect((bare.match(/\}/g) ?? []).length).toBe((bare.match(/\{/g) ?? []).length)
   })
 
@@ -82,6 +102,29 @@ describe('ModelsSection theme styles', () => {
       .filter(attributes => !attributes.includes('selectInput'))
       .map(() => name))
     expect(bare).toEqual([])
+  })
+
+  it('keeps the add slot off the shared capsule it reuses', () => {
+    // `.addButton` rides the shared base to inherit box-sizing/font/cursor, so
+    // a shape change on the add affordance was once written *into that base*:
+    // Cancel and Apply came out 44px tall, dashed, and stretched to the row.
+    // The two shapes must stay separable — the base is the 36px capsule, and
+    // only `.addButton`'s own rule carries the dashed 44px slot.
+    const base = rule(['.primaryButton', '.secondaryButton', '.addButton'])
+    expect(base).toContain('height: 36px')
+    expect(base).toContain('border-radius: 18px')
+    expect(base).not.toMatch(/dashed\b/)
+    expect(base).not.toMatch(/align-self\s*:/)
+    expect(rule(['.secondaryButton'])).toContain('border: 0.5px solid var(--dsw-alias-border-l3)')
+
+    const add = rule(['.addButton'])
+    expect(add).toContain('height: 44px')
+    expect(add).toContain('border: 1px dashed var(--dsw-alias-border-l3)')
+    // `.addButton` is the only child of `.addBlock`, a *column*: a `flex` basis
+    // there sizes the button's height, not its width, so the declared 44px box
+    // collapses to the label's own line box. Stretching the slot is a layout
+    // decision for `.addActions`/`align-self`, never a flex basis here.
+    expect(add).not.toMatch(/\bflex(?:-(?:basis|grow|shrink))?\s*:/)
   })
 
   it('never falls back to a literal colour', () => {

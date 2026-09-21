@@ -127,26 +127,18 @@
 .secondaryButton,
 .addButton {
   box-sizing: border-box;
-  align-self: stretch;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
-  height: 44px;
+  height: 36px;
   padding: 0 14px;
-  border: 1px dashed var(--dsw-alias-border-l3);
-  border-radius: 20px;
+  border: none;
+  border-radius: 18px;
   font: inherit;
   font-size: 14px;
   line-height: 22px;
-  background: transparent;
-  color: var(--dsw-alias-label-primary);
   cursor: pointer;
-}
-
-.addButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
-  border-color: var(--dsw-alias-border-l4);
 }
 
 .primaryButton {
@@ -158,16 +150,10 @@
   background: var(--dsw-alias-button-primary-hover);
 }
 
-.secondaryButton,
-.addButton {
+.secondaryButton {
   border: 0.5px solid var(--dsw-alias-border-l3);
   background: transparent;
   color: var(--dsw-alias-label-primary);
-}
-
-.secondaryButton:hover:not(:disabled),
-.addButton:hover:not(:disabled) {
-  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .secondaryButton:hover:not(:disabled) {
@@ -322,26 +308,34 @@
   gap: 12px;
 }
 
-/* The two ways to gain a provider, as equal siblings spanning the same width
-   as the rows above. Wraps rather than shrinking below a legible label. */
+/* The ways to gain a provider, wrapping rather than shrinking below a legible
+   label. */
 .addActions {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
 }
 
+/* Overrides the shared button base above: this one is not a pill sitting in a
+   footer but the last slot of the provider list, so it carries the row cards'
+   taller footprint instead of the 36px capsule. Dashed, like every other
+   "nothing here yet" affordance on this page, to read as a place rather than a
+   command. Deliberately no `flex`: it is the only child of `.addBlock`, a
+   column, where a flex basis would size its *height* and collapse the 44px
+   box, and the label alone is wide enough without stretching to the panel. */
 .addButton {
-  /* Overrides the shared button base above: these two are not pills sitting in
-     a footer but the last slot of the provider list, so they split the row
-     evenly and repeat the row cards' corner. Dashed, like every other "nothing
-     here yet" affordance on this page, to read as a place rather than a
-     command. */
-  flex: 1 1 0;
   min-width: 180px;
   gap: 6px;
   height: 44px;
   border: 1px dashed var(--dsw-alias-border-l3);
-  border-radius: 16px;
+  border-radius: 20px;
+}
+
+/* Same lift as Agent 预设's creator button: the placeholder tints and firms its
+   outline rather than only reacting inside the dash gaps. */
+.addButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l4);
 }
 
 .addCard,
