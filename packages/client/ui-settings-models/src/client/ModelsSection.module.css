@@ -13,16 +13,16 @@
 
 .title {
   margin: 0;
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 500;
+  font-size: 18px;
+  line-height: 26px;
+  font-weight: 600;
   color: var(--dsw-alias-label-primary);
 }
 
 .intro {
   margin: 0;
-  font-size: 14px;
-  line-height: 22px;
+  font-size: 13px;
+  line-height: 20px;
   color: var(--dsw-alias-label-tertiary);
 }
 
@@ -127,18 +127,26 @@
 .secondaryButton,
 .addButton {
   box-sizing: border-box;
+  align-self: stretch;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  height: 36px;
+  gap: 6px;
+  height: 44px;
   padding: 0 14px;
-  border: none;
-  border-radius: 18px;
+  border: 1px dashed var(--dsw-alias-border-l3);
+  border-radius: 20px;
   font: inherit;
   font-size: 14px;
   line-height: 22px;
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
   cursor: pointer;
+}
+
+.addButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
+  border-color: var(--dsw-alias-border-l4);
 }
 
 .primaryButton {
@@ -187,14 +195,23 @@
   background: var(--dsw-alias-interactive-bg-hover-danger);
 }
 
-/* Provider-row controls take the dense capsule (Button `.sm`). */
+/* Provider-row controls take the dense quiet capsule (Agent 预设's row
+   actions): borderless, secondary-labeled, hover lifts to the shared tint. */
 .rowActions .secondaryButton,
 .rowActions .dangerButton {
   height: 28px;
   padding: 0 10px;
-  border-radius: 14px;
-  font-size: 12px;
+  border: none;
+  border-radius: 7px;
+  background: none;
+  font-size: 12.5px;
   line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.rowActions .secondaryButton:hover:not(:disabled),
+.rowActions .dangerButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover);
 }
 
 .primaryButton:disabled,

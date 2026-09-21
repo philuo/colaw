@@ -1,8 +1,12 @@
-/* The 电脑操控 section: one column of desktop-capability rows. */
+/* The 电脑操控 section: a title header, then one column of capability rows.
+   Shape matches the Agent 预设 section: 18px/600 title, tertiary intro, and a
+   720px column so wide windows read the same as the other settings pages. */
 .section {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 12px;
+  max-width: 720px;
+  color: var(--dsw-alias-label-primary);
 }
 
 .title {
@@ -12,10 +16,9 @@
 }
 
 .intro {
-  margin: 0 0 8px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--dsw-text-tertiary);
+  margin: 0;
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
 }
 
 .rows {
@@ -23,6 +26,8 @@
   flex-direction: column;
 }
 
+/* One capability row: glyph, title + description, trailing switch. A hairline
+   between rows keeps the three reads as one list, not three cards. */
 .row {
   display: flex;
   align-items: center;
@@ -32,7 +37,7 @@
 }
 
 .row + .row {
-  border-top: 1px solid var(--dsw-border-secondary);
+  border-top: 1px solid var(--dsw-alias-border-l2);
 }
 
 .glyph {
@@ -44,7 +49,7 @@
   justify-content: center;
   border-radius: 10px;
   background: var(--dsw-fill-secondary);
-  color: var(--dsw-icon-primary);
+  color: var(--dsw-alias-label-primary);
 }
 
 .texts {
@@ -55,14 +60,14 @@
   gap: 2px;
 }
 
-.title {
+.rowTitle {
   font-size: 14px;
   font-weight: 500;
-  color: var(--dsw-text-primary);
+  color: var(--dsw-alias-label-primary);
 }
 
 .description {
   font-size: 12px;
   line-height: 1.5;
-  color: var(--dsw-text-tertiary);
+  color: var(--dsw-alias-label-tertiary);
 }

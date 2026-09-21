@@ -50,7 +50,7 @@ export function DesktopSection({ t, snapshot, setField }: DesktopSectionComponen
             <div key={field} className={css.row}>
               <div className={css.glyph}><Icon size={20} /></div>
               <div className={css.texts}>
-                <span className={css.title}>{t(titleKey)}</span>
+                <span className={css.rowTitle}>{t(titleKey)}</span>
                 <span className={css.description}>{t(descriptionKey)}</span>
               </div>
               <Switch
