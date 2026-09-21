@@ -11,6 +11,7 @@ import { z } from 'zod'
 import type { CuaDriver as NativeDriver } from '@trycua/cua-driver'
 import type {} from '@deepseek-ai/dsh-computer-use'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
+import type { DesktopPermissionStatus } from './types.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 
@@ -28,13 +29,7 @@ interface DesktopSettingsReader {
   get(namespace: string): { computerUse?: boolean } | undefined
 }
 
-/** One TCC grant state pair as the tab renders it. */
-export interface DesktopPermissionStatus {
-  /** The host process may send Accessibility-driven input. */
-  accessibility: boolean
-  /** The host process may capture screen contents. */
-  screenRecording: boolean
-}
+export type { DesktopPermissionStatus } from './types.ts'
 
 /** The desktop-permission remote: a status probe plus the guided hand-off. */
 export class DesktopPermissionsController extends TypertRemoteService {

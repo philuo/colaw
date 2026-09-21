@@ -4,6 +4,8 @@ Status: implemented
 
 [English](2026-09-21-bun-ipc-control-channel.md) | 中文
 
+部分取代[《Subprocess control pipe》](2026-09-11-subprocess-control-pipe.zh.md)；又被[《控制通道回归继承 fd，以文件系统流消费》](2026-09-21-control-channel-fd-fs-streams.zh.md)部分取代——fd 传输随文件系统流的子进程侧回归，本笔记"描述符不可靠"的论断收窄为 Bun 上 `net.Socket({fd})` 的确定性缺陷。
+
 部分取代[《Subprocess control pipe》](2026-09-11-subprocess-control-pipe.zh.md)：专用通道、其环境标记与子进程 API 仍然有效；继承描述符这一传输方式及其 `overlapped` 处置不再有效。IPC 通道不是那篇笔记为负载请求所拒绝的 supervisor 自有管理协议。
 
 ## 问题

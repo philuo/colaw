@@ -54,7 +54,9 @@ describe('managed subprocess control channel', () => {
     if (channel === undefined) throw new Error('requested control channel is absent')
     channel.pause()
     expect(await handle.done).toEqual({ exitCode: 0, signal: null })
-    expect(channel.destroyed).toBe(false)
+    // The child's EOF may tear a paused endpoint down (Bun destroys the stdio
+    // socket at end-of-stream, Node holds it open); the durable contract is
+    // that disposal stays cheap and lands the endpoint closed either way.
     expect(await handle.waitForExit(AbortSignal.timeout(10_000))).toBe(true)
     await ctx.fiber.dispose()
     expect(channel.destroyed).toBe(true)

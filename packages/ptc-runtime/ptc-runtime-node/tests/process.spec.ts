@@ -3,9 +3,9 @@ import { copyFile, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import type { Duplex } from 'node:stream'
 import { expect, it, onTestFinished } from 'vitest'
-import { controlDuplex, SUBPROCESS_CONTROL_ENV, SUBPROCESS_CONTROL_MARKER } from '@deepseek-ai/dsh-subprocess/control'
-import type { ControlIpcPort } from '@deepseek-ai/dsh-subprocess/control'
+import { SUBPROCESS_CONTROL_ENV, SUBPROCESS_CONTROL_MARKER } from '@deepseek-ai/dsh-subprocess/control'
 import { JsonChannel } from '../src/channel.ts'
 import { decodePtcJsonWire, encodePtcJsonWire } from '../src/json-wire.ts'
 
@@ -18,11 +18,11 @@ it('boots an unbuilt source closure outside the workspace and exchanges tool rep
     await copyFile(new URL(`../src/${file}`, import.meta.url), join(directory, file))
   }
   // The copied closure is the unit under test; the transport helper is the shipped one,
-  // so the spawn shape matches production (an IPC control channel, not an inherited fd).
+  // so the spawn shape matches production (the inherited fd control channel).
   const source = `import {openInheritedControlChannel} from ${JSON.stringify(pathToFileURL(helper).href)};import {runNodeMain} from ${JSON.stringify(pathToFileURL(join(directory, 'process.ts')).href)};await runNodeMain(openInheritedControlChannel(),100000,process);`
   const child = spawn(process.execPath, ['--input-type=module', '--eval', source], {
     env: { PLACEHOLDER_SECRET: 'fixture-only', [SUBPROCESS_CONTROL_ENV]: SUBPROCESS_CONTROL_MARKER },
-    stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
+    stdio: ['ignore', 'pipe', 'pipe', 'ignore', 'ignore', 'ignore', 'ignore', 'overlapped'],
   })
   let stderr = ''
   child.stderr?.on('data', (chunk: Buffer) => { stderr += chunk.toString('utf8') })
@@ -30,7 +30,12 @@ it('boots an unbuilt source closure outside the workspace and exchanges tool rep
   const completed = Promise.withResolvers<unknown>()
   child.once('error', (error) => { completed.reject(error) })
   child.once('exit', (code) => { if (code !== 0) completed.reject(new Error(`child exit ${code}: ${stderr}`)) })
-  const channel = new JsonChannel(controlDuplex(child as unknown as ControlIpcPort), 100_000, (raw) => {
+  const streams = child.stdio as unknown as ReadonlyArray<Duplex | null>
+  const control = streams[7]
+  if (!(control !== null && typeof control === 'object' && 'write' in control)) {
+    throw new Error('missing child control descriptor')
+  }
+  const channel = new JsonChannel(control, 100_000, (raw) => {
     const message = raw as { type: string; id?: number; args?: unknown; value?: unknown; error?: unknown }
     if (message.type === 'ready') {
       void channel.send({ type: 'boot', data: {

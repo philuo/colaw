@@ -1,138 +1,28 @@
-import { once } from 'node:events'
+import { spawn } from 'node:child_process'
+import type { Duplex } from 'node:stream'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
-  controlChunk,
-  controlDuplex,
   openInheritedControlChannel,
+  SUBPROCESS_CONTROL_FD,
   SUBPROCESS_CONTROL_ENV,
   SUBPROCESS_CONTROL_MARKER,
 } from '../src/control.ts'
-import type { ControlIpcPort } from '../src/control.ts'
+
+const helper = new URL('../src/control.ts', import.meta.url).href
 
 afterEach(() => {
   vi.unstubAllEnvs()
 })
 
-/**
- * A port double that records writes.
- *
- * `deferReceipts` withholds every send receipt until the test releases it, which
- * is what a real transport does while a frame is in flight.
- */
-function fakePort(options: { deferReceipts?: boolean } = {}): ControlIpcPort & {
-  sent: unknown[]
-  disconnects: number
-  releaseReceipts(): void
-  deliver(message: unknown): void
-  disconnect(): void
-} {
-  const listeners: ((message: unknown) => void)[] = []
-  const disconnects: (() => void)[] = []
-  const receipts: (() => void)[] = []
-  const state = { disconnects: 0 }
-  return {
-    sent: [],
-    get disconnects(): number { return state.disconnects },
-    send(message: unknown, callback?: (error: Error | null) => void): boolean {
-      this.sent.push(message)
-      if (options.deferReceipts === true) receipts.push(() => { callback?.(null) })
-      else callback?.(null)
-      return true
-    },
-    on(event: 'message' | 'disconnect', listener: ((message: unknown) => void) | (() => void)): unknown {
-      if (event === 'message') listeners.push(listener as (message: unknown) => void)
-      else disconnects.push(listener as () => void)
-      return this
-    },
-    releaseReceipts(): void { for (const receipt of receipts.splice(0)) receipt() },
-    deliver(message: unknown): void { for (const listener of listeners) listener(message) },
-    disconnect(): void { state.disconnects += 1; for (const listener of disconnects) listener() },
-  }
-}
-
-describe('control chunk decoding', () => {
-  it('accepts every binary form a transport may deliver', () => {
-    const bytes = Buffer.from([0, 1, 2, 253, 254, 255])
-    expect(controlChunk(bytes)).toEqual(bytes)
-    expect(controlChunk(new Uint8Array(bytes))).toEqual(bytes)
-    // Both runtimes serialize a Buffer message into this JSON wire form.
-    expect(controlChunk({ type: 'Buffer', data: [...bytes] })).toEqual(bytes)
-  })
-
-  it('rejects a message that carries no bytes', () => {
-    expect(() => controlChunk({ hello: 'world' })).toThrow('non-binary message')
-    expect(() => controlChunk('text')).toThrow('non-binary message')
-    expect(() => controlChunk(undefined)).toThrow('non-binary message')
-  })
-})
-
-describe('control duplex over an IPC port', () => {
-  it('turns writes into messages and messages into reads', async () => {
-    const port = fakePort()
-    const channel = controlDuplex(port)
-    const received: Buffer[] = []
-    channel.on('data', (chunk: Buffer) => { received.push(chunk) })
-
-    const chunk = Buffer.from([9, 8, 7])
-    channel.write(chunk)
-    expect(port.sent).toEqual([chunk])
-
-    const read = once(channel, 'data')
-    port.deliver({ type: 'Buffer', data: [1, 2, 3] })
-    await read
-    expect(Buffer.concat(received)).toEqual(Buffer.from([1, 2, 3]))
-  })
-
-  it('ends the stream when the peer disconnects', async () => {
-    const port = fakePort()
-    const channel = controlDuplex(port)
-    // Reading puts the stream in flowing mode, which is what emits `end`.
-    channel.on('data', () => {})
-    const ended = once(channel, 'end')
-    port.disconnect()
-    await ended
-  })
-
-  it('hands every corked frame to the port before the cork is released', () => {
-    // A deferred receipt must not strand the frames a cork holds: `uncork` cannot
-    // flush while a write is in flight, so the receipt cannot gate the hand-off.
-    const port = fakePort({ deferReceipts: true })
-    const channel = controlDuplex(port)
-    channel.cork()
-    channel.write(Buffer.from([1]))
-    channel.write(Buffer.from([2]))
-    channel.uncork()
-    expect(port.sent).toEqual([Buffer.from([1]), Buffer.from([2])])
-  })
-
-  it('waits for outstanding receipts before disconnecting the port', async () => {
-    // A write-then-close caller must not lose the frame the transport still holds.
-    const port = fakePort({ deferReceipts: true })
-    const channel = controlDuplex(port)
-    channel.write(Buffer.from([1]))
-    const destroyed = once(channel, 'close')
-    channel.destroy()
-    await Promise.resolve()
-    expect(port.disconnects).toBe(0)
-    port.releaseReceipts()
-    await destroyed
-    expect(port.disconnects).toBe(1)
-  })
-})
-
 describe('inherited control channel', () => {
-  it('consumes the provider marker before refusing a process without an IPC channel', () => {
+  it('consumes the provider marker before opening the descriptor', () => {
     vi.stubEnv(SUBPROCESS_CONTROL_ENV, SUBPROCESS_CONTROL_MARKER)
-    const sendable = process as { send?: unknown }
-    const original = sendable.send
-    delete sendable.send
-    try {
-      expect(() => openInheritedControlChannel()).toThrow('IPC channel')
-      expect(process.env[SUBPROCESS_CONTROL_ENV]).toBeUndefined()
-    } finally {
-      if (original !== undefined) sendable.send = original
-    }
+    // The unit process owns no control descriptor; the call may only pass the
+    // marker gate, so a duplex over the absent fd is the expected outcome.
+    const channel = openInheritedControlChannel()
+    expect(process.env[SUBPROCESS_CONTROL_ENV]).toBeUndefined()
+    channel.destroy()
   })
 
   it.each([undefined, 'invalid'])('rejects an absent or invalid launch marker: %s', (marker) => {
@@ -140,4 +30,60 @@ describe('inherited control channel', () => {
     expect(() => openInheritedControlChannel()).toThrow('not inherited')
     expect(process.env[SUBPROCESS_CONTROL_ENV]).toBeUndefined()
   })
+})
+
+describe('fd control transport', () => {
+  /**
+   * Spawn a child that mirrors the production shape: the shipped helper opens
+   * the inherited descriptor, the child echoes every frame until the parent
+   * half-closes, then exits. The parent endpoint is the stdio socket itself.
+   */
+  function echoChild(size: number): ReturnType<typeof spawn> {
+    const source = `const {openInheritedControlChannel} = await import(${JSON.stringify(helper)});`
+      + 'const c = openInheritedControlChannel();'
+      + 'const chunks = []; let received = 0;'
+      + 'c.on(\'data\', (b) => { chunks.push(b); received += b.length;'
+      + `  if (received === ${size}) c.write(Buffer.concat(chunks), () => { c.destroy() }) });`
+      + 'setTimeout(() => process.exit(1), 10_000)'
+    return spawn(process.execPath, ['--input-type=module', '--eval', source], {
+      stdio: ['ignore', 'ignore', 'inherit',
+        ...(new Array(SUBPROCESS_CONTROL_FD - 3).fill('ignore')), 'overlapped'] as never,
+      env: { ...process.env, [SUBPROCESS_CONTROL_ENV]: SUBPROCESS_CONTROL_MARKER },
+    })
+  }
+
+  async function roundTrip(frame: Buffer): Promise<Buffer> {
+    const child = echoChild(frame.length)
+    // Node's stdio tuple type names only the first five slots; the extra
+    // control descriptor exists at runtime.
+    const streams = child.stdio as unknown as ReadonlyArray<Duplex | null>
+    const control = streams[SUBPROCESS_CONTROL_FD]
+    if (!(control !== null && typeof control === 'object' && 'write' in control)) {
+      throw new Error('missing child control descriptor')
+    }
+    const received: Buffer[] = []
+    const done = (async () => {
+      for await (const chunk of control as AsyncIterable<Buffer>) received.push(Buffer.from(chunk))
+    })()
+    control.write(frame)
+    await done
+    const all = Buffer.concat(received)
+    // Length first: a mismatch here reports as a count, not a wall of bytes.
+    expect(all.length).toBe(frame.length)
+    return all
+  }
+
+  it('echoes exact binary bytes through the inherited descriptor', async () => {
+    const input = Buffer.alloc(256 * 1024)
+    for (let index = 0; index < input.length; index++) input[index] = index % 256
+    expect(await roundTrip(input)).toEqual(input)
+  }, 15_000)
+
+  it('survives twenty sequential spawns without losing a frame', async () => {
+    for (let run = 0; run < 20; run += 1) {
+      expect(await roundTrip(Buffer.from([run, 1, 2, 3, 4, 5, 6, 7, 8]))).toEqual(
+        Buffer.from([run, 1, 2, 3, 4, 5, 6, 7, 8]),
+      )
+    }
+  }, 60_000)
 })

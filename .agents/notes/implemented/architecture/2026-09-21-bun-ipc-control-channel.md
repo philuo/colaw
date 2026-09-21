@@ -4,6 +4,8 @@ Status: implemented
 
 English | [中文](2026-09-21-bun-ipc-control-channel.zh.md)
 
+Supersedes in part [Subprocess control pipe](2026-09-11-subprocess-control-pipe.md); superseded in part by [The control channel returns to the inherited fd, consumed through filesystem streams](2026-09-21-control-channel-fd-fs-streams.md) — the fd transport returns with a filesystem-stream child side, and this note's descriptor-unreliability claim is narrowed to a deterministic `net.Socket({fd})` defect on Bun.
+
 Supersedes in part [Subprocess control pipe](2026-09-11-subprocess-control-pipe.md): the dedicated channel, its environment marker, and its child API stand; the inherited-descriptor transport and its `overlapped` disposition do not. The IPC channel is not the supervisor's own management protocol, which that note rejects for payload requests.
 
 ## Problem
