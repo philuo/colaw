@@ -34,6 +34,7 @@
 - id: session-telemetry-otel
   disabled: true
 
+
 # Don't print the URL or hand off to the default browser; Electrobun owns the
 # window. The loader entry id is `web-runtime` (plugin name `web-app`).
 - id: web-runtime

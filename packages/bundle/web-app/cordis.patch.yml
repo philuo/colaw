@@ -114,6 +114,13 @@
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
+    # Desktop computer use through the Cua Driver native SDK. The 电脑操控
+    # tab's Computer_use switch is the user-facing control: the provider reads
+    # it at apply and mounts inertly while it is off, so the row can ship
+    # mounted without the surface ever acting uninvited.
+    - id: experimental-computer-use-cua-driver-native
+      name: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'
+
     # Desktop-control switches namespace (电脑操控 tab): the durable store the
     # three capability toggles write and the desktop-facing providers read.
     - id: ui-settings-desktop
