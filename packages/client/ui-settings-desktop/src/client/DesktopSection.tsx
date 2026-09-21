@@ -38,6 +38,7 @@ const ROWS: readonly {
 export function DesktopSection({ t, snapshot, setField }: DesktopSectionComponentProps) {
   return (
     <div className={css.section}>
+      <h2 className={css.title}>{t('title')}</h2>
       <p className={css.intro}>{t('intro')}</p>
       <div className={css.rows}>
         {ROWS.map(({ field, titleKey, descriptionKey, Icon }) => {

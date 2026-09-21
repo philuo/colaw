@@ -5,6 +5,12 @@
   gap: 4px;
 }
 
+.title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
 .intro {
   margin: 0 0 8px;
   font-size: 12px;

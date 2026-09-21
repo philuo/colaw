@@ -4,7 +4,7 @@
 export const en = {
   nav: 'Desktop control',
   title: 'Desktop control',
-  intro: 'Choose which desktop surfaces Colaw may use. Turning a switch off stops new use; it does not revoke any macOS permission already granted in System Settings.',
+  intro: 'Choose which system capabilities Colaw may use.',
   browserUseTitle: 'Browser use',
   browserUseDescription: 'Let Colaw control a browser through CDP',
   computerUseTitle: 'Computer use',
@@ -20,7 +20,7 @@ export type DesktopKey = keyof typeof en
 export const zh: { [Key in keyof typeof en]: string } = {
   nav: '电脑操控',
   title: '电脑操控',
-  intro: '选择允许 Colaw 使用的桌面能力。关闭开关仅停止新的使用，不会撤销系统设置中已授予的 macOS 权限。',
+  intro: '选择允许 Colaw 使用的系统能力。',
   browserUseTitle: 'Browser_use',
   browserUseDescription: '允许 Colaw 通过 CDP 控制浏览器',
   computerUseTitle: 'Computer_use',
