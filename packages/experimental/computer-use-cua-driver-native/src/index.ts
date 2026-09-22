@@ -32,6 +32,17 @@ interface DesktopSettingsReader {
 
 export type { DesktopPermissionStatus } from './types.ts'
 
+/**
+ * Load the native driver SDK for one probe, deferring the binding to first use
+ * so it stays off every boot path. The require names the package (external in
+ * every bundle), never a sibling file a bundler would have to emit.
+ * @returns the SDK surface carrying the permission probes.
+ */
+function nativeProbe(): typeof import('@trycua/cua-driver') {
+  // oxlint-disable-next-line typescript/no-require-imports -- the deferred native load is deliberate; see the module doc.
+  return require('@trycua/cua-driver') as typeof import('@trycua/cua-driver')
+}
+
 /** The desktop-permission remote: a status probe plus the guided hand-off. */
 export class DesktopPermissionsController extends TypertRemoteService {
   static inject = []
@@ -49,10 +60,7 @@ export class DesktopPermissionsController extends TypertRemoteService {
   @Remote
   status(): DesktopPermissionStatus {
     try {
-      // Lazy: loads the native binding on first probe, not at boot.
-      // oxlint-disable-next-line typescript/no-require-imports -- the deferred native load is deliberate; see the module doc.
-      const sdk = require('./native-probe.ts') as typeof import('./native-probe.ts')
-      return sdk.currentPermissionStatus()
+      return nativeProbe().currentMacOsPermissionStatus()
     } catch {
       return { accessibility: false, screenRecording: false }
     }
@@ -74,9 +82,7 @@ export class DesktopPermissionsController extends TypertRemoteService {
         // The error callback keeps an `open` failure from crashing the host process.
         execFile('open', ['x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'], () => {})
       } else {
-        // oxlint-disable-next-line typescript/no-require-imports -- same deferred native load as `status()`.
-        const sdk = require('./native-probe.ts') as typeof import('./native-probe.ts')
-        sdk.openScreenRecordingSettings()
+        nativeProbe().openMacOsScreenRecordingSettings()
       }
       return this.status()
     } catch {
@@ -125,8 +131,10 @@ On macOS, cursor-overlay operations may return facility_unavailable even when sc
 export async function apply(ctx: Context): Promise<void> {
   // The permission remote mounts unconditionally: the 电脑操控 tab needs an
   // accurate TCC answer BEFORE the user turns Computer_use on, which is
-  // exactly when the gated provider below is not mounted.
-  ctx.provide('desktopPermissions', new DesktopPermissionsController(ctx))
+  // exactly when the gated provider below is not mounted. The Service base
+  // constructor registers the instance as `desktopPermissions` on `ctx` — an
+  // explicit provide here would be a duplicate registration and throw.
+  new DesktopPermissionsController(ctx)
   // The 电脑操控 tab owns the gate: with the switch off this provider mounts
   // inertly — no native runtime, no tools, no prompt section. Turning it on
   // takes effect from the next session; turning it off stops new use without

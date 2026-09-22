@@ -13,9 +13,17 @@ The 电脑操控 tab's macOS permission panel rendered 检测中… forever: the
 ## Decision
 
 - `DesktopPermissionsController` declares its `@Remote` boundary type in `./types` and its `package.json` exports `./typert` plus `./remote` exactly as the generator's validator requires; the workspace build emits `lib/typert.remote-client.js`.
-- The generated contribution mounts in the platform-neutral client assembly (`packages/api/remotes/src/client`), so `ctx.remote.desktopPermissions.{status,openPermissionSettings}` is callable from the 电脑操控 tab.
+- The generated contribution mounts in the platform-neutral client assembly (`packages/api/remotes/src/client`), so `ctx.remote.desktopPermissions.{status,openPermissionPane}` is callable from the 电脑操控 tab.
 - The client bundle isolation gate gained one narrow exception: generated `lib/typert.remote-client.*` artifacts of experimental packages may enter client bundles. They are model-driven schema descriptors with none of the owning package's runtime — the experimental-runtime ban itself is unchanged.
 - The section store holds the probe answer; every tab mount re-probes, and the Settings deep-link returns a fresh answer. A rejected call leaves the answer unset (检测中…) — an honest "no probe has answered" that the next mount retries — instead of a stale granted/missing claim.
+
+## Mounting requirements the wiring depends on (added 2026-09-22)
+
+Three composition and registration facts the probe needs, each earned by a packaged-app failure:
+
+- The web profile's bundle must mount the `computer-use` registry row (`@deepseek-ai/dsh-computer-use`). The provider injects the `computerUse` registry; without the row its fiber never activates — silently, with no loader error — and every probe answers `gateway/service-unavailable`.
+- The plugin must NOT call `ctx.provide('desktopPermissions', …)` explicitly. The `Service` constructor already registers the instance under the key; a second registration throws `already registered`, the loader swallows it, and the plugin fails silently. Construction alone is the registration.
+- The native probe is inlined in the controller and requires `@trycua/cua-driver` (an external package present in the payload) lazily per call. A sibling-file `require('./native-probe.ts')` survives source runs but dangles in the bundled payload, where the build emits no such file.
 
 ## Consequences
 

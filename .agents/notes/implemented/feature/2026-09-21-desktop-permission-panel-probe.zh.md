@@ -13,9 +13,17 @@ Status: implemented
 ## 决策
 
 - `DesktopPermissionsController` 把 `@Remote` 边界类型声明在 `./types`，其 `package.json` 按生成器校验器的要求精确导出 `./typert` 与 `./remote`；工作区构建产出 `lib/typert.remote-client.js`。
-- 生成的贡献挂载在平台中立的客户端装配（`packages/api/remotes/src/client`），电脑操控页由此可以调用 `ctx.remote.desktopPermissions.{status,openPermissionSettings}`。
+- 生成的贡献挂载在平台中立的客户端装配（`packages/api/remotes/src/client`），电脑操控页由此可以调用 `ctx.remote.desktopPermissions.{status,openPermissionPane}`。
 - 客户端 bundle 隔离门增加一个窄化例外：实验包生成的 `lib/typert.remote-client.*` 产物可进入客户端 bundle。它们是模型驱动的 schema 描述符，不含所属包的任何运行时——实验运行时的禁令本身不变。
 - 分节 store 持有探测应答；每次进入该页都会重新探测，系统设置深链返回新应答。被拒绝的调用让应答保持未设置（检测中…）——诚实的"尚无探测应答"，由下次挂载重试——而不是陈旧的已授权/未授权结论。
+
+## 接线所依赖的挂载要求（2026-09-22 补充）
+
+探测需要三个组合与注册事实，每一条都来自一次打包实测失败：
+
+- web profile 的 bundle 必须挂载 `computer-use` 注册表行（`@deepseek-ai/dsh-computer-use`）。提供方注入了 `computerUse` 注册表；缺了这一行，它的 fiber 永远不激活——静默地，没有任何加载器报错——每次探测都回答 `gateway/service-unavailable`。
+- 插件绝不能再显式调用 `ctx.provide('desktopPermissions', …)`。`Service` 构造器已经以该键注册了实例；二次注册会抛 `already registered`，加载器吞掉异常，插件静默失败。仅构造即是注册。
+- 原生探测已内联进控制器，按调用惰性 `require('@trycua/cua-driver')`（payload 中存在的外部包）。兄弟文件的 `require('./native-probe.ts')` 在源码运行有效，但在打包载荷中悬空——构建不会产出该文件。
 
 ## 后果
 

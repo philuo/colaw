@@ -114,6 +114,13 @@
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
+    # The shared computer-use registry: the sole-provider slot every computer-use
+    # provider registers into. Without this row the cua provider's inject never
+    # resolves, its fiber stays inactive, and the desktopPermissions remote the
+    # 电脑操控 tab probes never exists.
+    - id: computer-use
+      name: '@deepseek-ai/dsh-computer-use'
+
     # Desktop computer use through the Cua Driver native SDK. The 电脑操控
     # tab's Computer_use switch is the user-facing control: the provider reads
     # it at apply and mounts inertly while it is off, so the row can ship
