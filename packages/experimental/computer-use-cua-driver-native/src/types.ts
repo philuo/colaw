@@ -11,3 +11,6 @@ export interface DesktopPermissionStatus {
   /** The host process may capture screen contents. */
   screenRecording: boolean
 }
+
+/** The privacy panes a missing grant deep-links to. */
+export type DesktopPermissionPane = 'accessibility' | 'screenRecording'

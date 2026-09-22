@@ -162,3 +162,47 @@
 .permissionButton:hover:not(:disabled) {
   background: var(--dsw-alias-button-primary-hover);
 }
+
+/* Floating grant guide: Codex-style walkthrough card over the settings
+   surface, shown while System Settings holds the missing pane. */
+.guideCard {
+  position: fixed;
+  z-index: 40;
+  right: 24px;
+  top: 96px;
+  width: 320px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px;
+  border: 0.5px solid var(--dsw-alias-border-l4);
+  border-radius: 16px;
+  background: var(--dsw-alias-bg-elevated, var(--dsw-alias-bg-layer-1));
+  box-shadow: 0 12px 32px rgb(0 0 0 / 35%);
+  color: var(--dsw-alias-label-primary);
+}
+
+.guideTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.guideSteps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.guideActions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 /** The 电脑操控 section's permission block: probe-driven states over the slot store. */
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { GlobalStandardProps } from '@deepseek-ai/dsh-client-ui-slots'
 import { bindSnapshotSelector } from '@deepseek-ai/dsh-client-test-runtime'
@@ -31,12 +31,10 @@ const standard: GlobalStandardProps = {
 function mountSection(options: {
   status?: 'ready'
   refreshPermissions?: () => void
-  openPermissionSettings?: () => void
 } = {}) {
   const store = createDesktopSectionStore().create()
   store.actions.sync(undefined, options.status ?? 'ready')
   const refreshPermissions = options.refreshPermissions ?? vi.fn()
-  const openPermissionSettings = options.openPermissionSettings ?? vi.fn()
   render(<DesktopSection
     {...standard}
     close={vi.fn()}
@@ -45,9 +43,9 @@ function mountSection(options: {
     t={t}
     setField={vi.fn()}
     refreshPermissions={refreshPermissions}
-    openPermissionSettings={openPermissionSettings}
+    setGuide={(pane) => { store.actions.setGuide(pane) }}
   />)
-  return { store, refreshPermissions, openPermissionSettings }
+  return { store, refreshPermissions }
 }
 
 describe('DesktopSection permission block', () => {
@@ -66,16 +64,25 @@ describe('DesktopSection permission block', () => {
     expect(screen.queryByText(en.permissionOpenSettings)).toBeNull()
   })
 
-  it('itemizes each missing grant and deep-links System Settings on demand', async () => {
-    const openPermissionSettings = vi.fn()
-    const { store } = mountSection({ openPermissionSettings })
+  it('floats the grant guide when an enable finds a grant missing, and retires it on a full grant', () => {
+    const { store } = mountSection()
     act(() => { store.actions.setPermissions({ accessibility: true, screenRecording: false }) })
-    // The head pill and the failing row both read 未授权; the granted row
-    // reads 已授权. (Class tint is a stylesheet concern; jsdom sees no CSS.)
-    expect(screen.getAllByText(en.permissionMissing).length).toBe(2)
-    expect(screen.getAllByText(en.permissionGranted).length).toBe(1)
-    fireEvent.click(screen.getByText(en.permissionOpenSettings))
-    await waitFor(() => { expect(openPermissionSettings).toHaveBeenCalledTimes(1) })
+    act(() => { store.actions.setGuide('screenRecording') })
+    expect(screen.getByRole('dialog', { name: en.guideTitle })).toBeDefined()
+    expect(screen.getByText(en.guideRecheck)).toBeDefined()
+    // A full grant retires the guide without a dismissal click.
+    act(() => { store.actions.setPermissions({ accessibility: true, screenRecording: true }) })
+    expect(screen.queryByRole('dialog', { name: en.guideTitle })).toBeNull()
+  })
+
+  it('dismisses the guide and answers a re-check with the itemized list', () => {
+    const { store } = mountSection()
+    act(() => { store.actions.setPermissions({ accessibility: false, screenRecording: false }) })
+    act(() => { store.actions.setGuide('accessibility') })
+    expect(screen.getByRole('dialog', { name: en.guideTitle })).toBeDefined()
+    fireEvent.click(screen.getByText(en.guideDismiss))
+    expect(screen.queryByRole('dialog', { name: en.guideTitle })).toBeNull()
+    expect(screen.getAllByText(en.permissionMissing).length).toBe(3)
   })
 
   it('recovers the answer when a later probe succeeds after a rejected one', () => {

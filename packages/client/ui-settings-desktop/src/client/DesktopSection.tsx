@@ -12,10 +12,10 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Switch, IconBrowseOutline16, IconSkillOutline16, IconShieldOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { createDesktopSectionStore } from './desktop-store.ts'
+import type { createDesktopSectionStore, DesktopPermissionPane } from './desktop-store.ts'
 import css from './DesktopSection.module.css'
 
-export type { DesktopPermissionStatus } from './desktop-store.ts'
+export type { DesktopPermissionStatus, DesktopPermissionPane } from './desktop-store.ts'
 
 /** Full component props: section runtime share + store share + locale seat + actions. */
 export type DesktopSectionComponentProps =
@@ -27,8 +27,8 @@ export type DesktopSectionComponentProps =
     setField: (field: 'browserUse' | 'computerUse' | 'lockScreenOperation', value: boolean) => void
     /** Re-probe the host's TCC state and publish the answer to the store. */
     refreshPermissions: () => void
-    /** Deep-link macOS System Settings for the user to grant, then re-probe. */
-    openPermissionSettings: () => void
+    /** Dismiss the floating grant guide. */
+    setGuide: (pane: DesktopPermissionPane | undefined) => void
   }
 
 /** The three rows, in display order. */
@@ -49,7 +49,7 @@ const ROWS: readonly {
  * @returns the section element tree.
  */
 export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
-  const { t, useStore, setField, refreshPermissions, openPermissionSettings } = props
+  const { t, useStore, setField, setGuide, refreshPermissions } = props
   const state = useStore(s => s)
   const permissions = state.permissions
   const granted = permissions !== undefined && permissions.accessibility && permissions.screenRecording
@@ -107,12 +107,29 @@ export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
                   </span>
                 </li>
               </ul>
-              <button type="button" className={css.permissionButton} onClick={openPermissionSettings}>
-                {t('permissionOpenSettings')}
-              </button>
             </div>
           )}
       </div>
+      {state.guide === undefined
+        ? null
+        : (
+          <div className={css.guideCard} role="dialog" aria-label={t('guideTitle')}>
+            <p className={css.guideTitle}>{state.guide === 'accessibility' ? t('permissionAccessibility') : t('permissionScreenRecording')} · {t('guideTitle')}</p>
+            <ol className={css.guideSteps}>
+              <li>{t('guideStepPane')}</li>
+              <li>{t('guideStepAdd')}</li>
+              <li>{t('guideStepToggle')}</li>
+            </ol>
+            <div className={css.guideActions}>
+              <button type="button" className={css.permissionButton} onClick={() => { refreshPermissions() }}>
+                {t('guideRecheck')}
+              </button>
+              <button type="button" className={css.permissionButton} onClick={() => { setGuide(undefined) }}>
+                {t('guideDismiss')}
+              </button>
+            </div>
+          </div>
+        )}
     </div>
   )
 }

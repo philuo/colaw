@@ -10,8 +10,9 @@ import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
 import type { CuaDriver as NativeDriver } from '@trycua/cua-driver'
 import type {} from '@deepseek-ai/dsh-computer-use'
+import { execFile } from 'node:child_process'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import type { DesktopPermissionStatus } from './types.ts'
+import type { DesktopPermissionPane, DesktopPermissionStatus } from './types.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 
@@ -58,17 +59,26 @@ export class DesktopPermissionsController extends TypertRemoteService {
   }
 
   /**
-   * Open macOS's own screens: the privacy pane surfaces the toggles, and the
-   * native call deep-links the Screen Recording sub-pane when available.
-   * @returns after the Settings window has been asked to open.
+   * Deep-link System Settings to one privacy pane and re-probe on return.
+   *
+   * The native SDK only deep-links Screen Recording, so the Accessibility pane
+   * rides the system `open` URL — both land on the exact pane the user must
+   * toggle, rather than the top-level Privacy page.
+   * @param pane - the privacy pane whose grants are missing.
+   * @returns the host's TCC state after the Settings window has been asked to open.
    */
   @Remote
-  openPermissionSettings(): DesktopPermissionStatus {
+  openPermissionPane(pane: DesktopPermissionPane): DesktopPermissionStatus {
     try {
-      // oxlint-disable-next-line typescript/no-require-imports -- same deferred native load as `status()`.
-      const sdk = require('./native-probe.ts') as typeof import('./native-probe.ts')
-      sdk.openScreenRecordingSettings()
-      return sdk.currentPermissionStatus()
+      if (pane === 'accessibility') {
+        // The error callback keeps an `open` failure from crashing the host process.
+        execFile('open', ['x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'], () => {})
+      } else {
+        // oxlint-disable-next-line typescript/no-require-imports -- same deferred native load as `status()`.
+        const sdk = require('./native-probe.ts') as typeof import('./native-probe.ts')
+        sdk.openScreenRecordingSettings()
+      }
+      return this.status()
     } catch {
       return { accessibility: false, screenRecording: false }
     }

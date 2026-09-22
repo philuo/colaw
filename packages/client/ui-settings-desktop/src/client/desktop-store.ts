@@ -12,6 +12,13 @@ export interface DesktopPermissionStatus {
   screenRecording: boolean
 }
 
+/**
+ * The privacy pane a missing grant deep-links to. Spelled locally so the
+ * client bundle never imports the experimental provider package; the wire
+ * string is checked structurally against the remote's own union.
+ */
+export type DesktopPermissionPane = 'accessibility' | 'screenRecording'
+
 /** Mirror state: the three switches, the scope's sync facts, and the TCC answer. */
 export interface DesktopSectionState {
   status: 'loading' | 'ready' | 'unavailable'
@@ -24,6 +31,12 @@ export interface DesktopSectionState {
    * every Settings deep-link re-probes.
    */
   permissions: DesktopPermissionStatus | undefined
+  /**
+   * The pane whose grant the floating guide is walking the user through, set
+   * when an enable finds the grant missing. Cleared by dismissal or by a
+   * probe that shows the grant landed.
+   */
+  guide: DesktopPermissionPane | undefined
   /** Bumped on every sync so the store always publishes a change. */
   revision: number
 }
@@ -32,6 +45,7 @@ export interface DesktopSectionState {
 type DesktopSectionActions = {
   sync: (draft: DesktopSectionState, value: DesktopSettings | undefined, status: DesktopSectionState['status']) => void
   setPermissions: (draft: DesktopSectionState, value: DesktopPermissionStatus | undefined) => void
+  setGuide: (draft: DesktopSectionState, pane: DesktopPermissionPane | undefined) => void
 }
 
 /**
@@ -46,6 +60,7 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       computerUse: false,
       lockScreenOperation: false,
       permissions: undefined,
+      guide: undefined,
       revision: -1,
     }),
     actions: {
@@ -60,6 +75,12 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       },
       setPermissions: (d, value) => {
         d.permissions = value
+        // A landed grant retires the guide walking the user through it.
+        if (value !== undefined && value.accessibility && value.screenRecording) d.guide = undefined
+        d.revision += 1
+      },
+      setGuide: (d, pane) => {
+        d.guide = pane
         d.revision += 1
       },
     },

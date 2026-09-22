@@ -18,7 +18,13 @@ export const en = {
   permissionMissing: 'Not granted',
   permissionOpenSettings: 'Open System Settings',
   permissionChecking: 'Checking…',
-  permissionHint: 'Computer use needs these grants for Colaw itself. Open the pane, find Colaw, and switch the toggles on.',
+  permissionHint: 'Computer use needs these grants for Colaw itself.',
+  guideTitle: 'Grant access',
+  guideStepPane: 'In the System Settings window that just opened, find the matching pane.',
+  guideStepAdd: 'Press the add button (or drag Colaw in) and select the app.',
+  guideStepToggle: 'Switch the toggle on, then re-check below.',
+  guideRecheck: 'Re-check',
+  guideDismiss: 'Later',
 } as const
 
 /** The settings.desktop namespace key union. */
@@ -42,5 +48,11 @@ export const zh: { [Key in keyof typeof en]: string } = {
   permissionMissing: '未授权',
   permissionOpenSettings: '打开系统设置',
   permissionChecking: '检测中…',
-  permissionHint: '电脑操控需要 Colaw 本身获得这些授权。打开系统设置面板，找到 Colaw 并打开对应开关即可。',
+  permissionHint: '电脑操控需要 Colaw 本身获得这些授权。',
+  guideTitle: '授权引导',
+  guideStepPane: '在刚打开的「系统设置」窗口中，进入对应的面板。',
+  guideStepAdd: '点按添加按钮（或把 Colaw 拖入列表）并选择应用。',
+  guideStepToggle: '打开开关，然后点下方重新检测。',
+  guideRecheck: '重新检测',
+  guideDismiss: '稍后',
 }
