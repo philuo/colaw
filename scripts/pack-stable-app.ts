@@ -1403,6 +1403,29 @@ function publishStableApp(): void {
 }
 
 /**
+ * Drop the Electrobun dev-flavor bundle once nothing reads it any more.
+ *
+ * `electrobun build` always writes a runnable `Colaw-dev.app`, and that bundle
+ * carries the SHIPPING bundle identifier. It is therefore a second app — one
+ * LaunchServices and Spotlight will happily offer beside the real Colaw, and
+ * whose launch registers its own row in the privacy lists. That is how a
+ * `Colaw-dev` entry appeared in Accessibility, holding the grant that belongs
+ * to the app, and it reads as the product being confused with a dev build.
+ *
+ * The pack has taken everything it needs from the bundle by this point
+ * (publishStableApp copies the shell, emitHostBundle reads its bun), so the
+ * artifact is removed instead of left behind as a launchable twin. The next
+ * `electrobun build` recreates it.
+ */
+function removeDevBundle(): void {
+  if (!existsSync(builtApp)) return
+  rmSync(builtApp, { recursive: true, force: true })
+  const parent = dirname(builtApp)
+  if (existsSync(parent) && readdirSync(parent).length === 0) rmSync(parent, { recursive: true, force: true })
+  console.log('pack-stable-app: removed the dev-flavor bundle (no Colaw-dev twin left behind)')
+}
+
+/**
  * The icon layout ships exactly two icons at the Resources level: the
  * bundle's default AppIcon.icns (light) that Info.plist names, and
  * AppIconDark.icns for the runtime dark switch. The copies the config left
@@ -1932,6 +1955,7 @@ async function main(): Promise<void> {
   writeFileSync(join(stableApp, 'Contents', 'Resources', 'tsconfig.json'), '{ "compilerOptions": {} }\n')
   reportSize()
   stageStableApp()
+  removeDevBundle()
 }
 
 await main()
