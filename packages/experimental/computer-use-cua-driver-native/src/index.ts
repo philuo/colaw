@@ -193,19 +193,56 @@ export class DesktopPermissionsController extends TypertRemoteService {
   }
 
   /**
-   * Restart the app in place: the launcher relaunches the bundle while this
-   * process exits, so a freshly granted TCC state (and every other pending
-   * change) is picked up by a clean boot.
+   * Restart the app in place: the running process has to be replaced so a
+   * freshly granted TCC state (and every other pending change) is read by a
+   * clean boot — macOS caches the accessibility trust answer per process, so
+   * the granted surface stays dead until the process is new.
+   *
+   * The relaunch deliberately does NOT happen from this process. Spawning
+   * `Contents/MacOS/launcher` here starts a second instance beside a live one,
+   * and the two then fight over everything a single instance owns: the
+   * webserver port, the profile's storage, and the boot-time single-instance
+   * probe that answers a second launch by activating the first and exiting.
+   * Whichever side loses, the visible symptom is the same and is exactly the
+   * reported one — the app closes and never comes back.
+   *
+   * Instead a detached shell waits for this pid to disappear and only then
+   * hands the bundle to LaunchServices. The new instance therefore never
+   * coexists with this one, it is started by launchd rather than as a child of
+   * the process being replaced (so the app's own teardown cannot take it down
+   * with it, and TCC attributes the launch to the bundle), and `-n` makes the
+   * launch independent of when LaunchServices notices this instance quit.
    */
   @Remote
   restartApp(): void {
+    // The bundle is three levels above Contents/MacOS; a source run has none,
+    // and a relaunch of one is not a thing this remote can do.
+    const appBundle = dirname(dirname(dirname(process.execPath)))
     try {
-      const launcher = join(dirname(process.execPath), 'launcher')
-      const child = spawn(launcher, [], { detached: true, stdio: 'ignore' })
+      if (!appBundle.endsWith('.app')) return
+      const waiter = `while kill -0 ${String(process.pid)} 2>/dev/null; do sleep 0.2; done; `
+        + `exec /usr/bin/open -n ${shellQuote(appBundle)}`
+      const child = spawn('/bin/sh', ['-c', waiter], { detached: true, stdio: 'ignore' })
       child.unref()
-      setTimeout(() => { process.exit(0) }, 300)
-    } catch {}
+    } catch {
+      // Without a relauncher the app must NOT exit: a restart that cannot come
+      // back is a quit, and the user asked for the former.
+      return
+    }
+    // The waiter is armed and watches this pid: leaving is what starts the
+    // relaunch, so the exit is the second half of the operation, not a failure.
+    setTimeout(() => { process.exit(0) }, 300)
   }
+}
+
+/**
+ * Quote one path for `/bin/sh`. Single quotes with the standard close-escape
+ * keeps a bundle path with spaces, `$`, or a backslash literal.
+ * @param value - the path to quote.
+ * @returns the path as one shell word.
+ */
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`
 }
 
 /** Cordis plugin identity for the permissions controller. */
