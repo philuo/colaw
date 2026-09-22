@@ -121,7 +121,7 @@ export class DesktopPermissionsController extends TypertRemoteService {
   showGrantGuide(pane: DesktopPermissionPane): void {
     dismissGuideProcess()
     try {
-      const helper = join(dirname(dirname(dirname(process.execPath))), 'Resources', 'permission-guide')
+      const helper = join(dirname(dirname(process.execPath)), 'Resources', 'permission-guide')
       if (!existsSync(helper)) return
       const appBundle = dirname(dirname(dirname(process.execPath)))
       guideProcess = spawn(helper, [appBundle, pane], { detached: true, stdio: 'ignore' })
