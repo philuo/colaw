@@ -112,11 +112,19 @@ export function apply(ctx: ClientContext): void {
       const permissions = permissionsRef.value
       const pane = permissions === undefined || permissions.accessibility ? 'screenRecording' : 'accessibility'
       bound?.setGuide(pane)
+      // The native bar carries the draggable icon; the in-page bar remains as
+      // the fallback when the helper binary is absent.
+      void ctx.remote.desktopPermissions.showGrantGuide(pane).catch(() => {})
       void ctx.remote.desktopPermissions.openPermissionPane(pane)
         .then((status) => {
           if (status.ok) publish(status.value)
         })
         .catch(() => {})
+    }
+
+    /** Retire both guide surfaces (native bar + in-page state). */
+    const closeGuides = (): void => {
+      void ctx.remote.desktopPermissions.dismissGrantGuide().catch(() => {})
     }
 
     // While a grant guide is open the client polls the host: the moment the
@@ -136,6 +144,7 @@ export function apply(ctx: ClientContext): void {
       bound?.setPendingEnable(undefined)
       bound?.setGuide(undefined)
       stopGuidePoll()
+      closeGuides()
       persistOn(pending)
       // The long-running host may not see the fresh Accessibility grant until
       // its own restart; say so instead of leaving a dead switch on.
@@ -158,6 +167,7 @@ export function apply(ctx: ClientContext): void {
             bound?.setPendingEnable(undefined)
             bound?.setGuide(undefined)
             stopGuidePoll()
+            closeGuides()
           }
           return
         }
@@ -193,8 +203,12 @@ export function apply(ctx: ClientContext): void {
       openMissingPane,
       setGuide: (pane) => {
         bound?.setGuide(pane)
-        if (pane === undefined) stopGuidePoll()
-        else startGuidePoll()
+        if (pane === undefined) {
+          stopGuidePoll()
+          closeGuides()
+        } else {
+          startGuidePoll()
+        }
       },
       revealAppInFinder: () => {
         void ctx.remote.desktopPermissions.revealAppInFinder().catch(() => {})

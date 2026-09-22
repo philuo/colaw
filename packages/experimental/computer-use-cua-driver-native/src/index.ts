@@ -11,6 +11,7 @@ import { z } from 'zod'
 import type { CuaDriver as NativeDriver } from '@trycua/cua-driver'
 import type {} from '@deepseek-ai/dsh-computer-use'
 import { execFile, spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -49,6 +50,16 @@ function nativeProbe(): typeof import('@trycua/cua-driver') {
 const PROBE_SOURCE = `const { createRequire } = await import('node:module');
 const sdk = createRequire(__ROOT__ + '/index.js')('@trycua/cua-driver');
 process.stdout.write(JSON.stringify(sdk.currentMacOsPermissionStatus()));`
+
+/** The live drag-guide helper process, if one is showing. */
+let guideProcess: ReturnType<typeof spawn> | undefined
+
+/** Terminate the drag-guide helper; a missing or exited process is fine. */
+function dismissGuideProcess(): void {
+  if (guideProcess === undefined) return
+  try { guideProcess.kill() } catch {}
+  guideProcess = undefined
+}
 
 /** The desktop-permission remote: a status probe plus the guided hand-off. */
 export class DesktopPermissionsController extends TypertRemoteService {
@@ -97,6 +108,36 @@ export class DesktopPermissionsController extends TypertRemoteService {
    * moment the grant lands.
    * @returns the current TCC state, or undefined when the probe child fails.
    */
+  /**
+   * Show the native drag-guide bar for one pane: the floating helper whose
+   * app icon the user drags straight into the System Settings list. The host
+   * owns the helper's lifetime — a guide already showing is replaced, and
+   * `dismissGrantGuide` ends it when the grant lands or the user gives up.
+   * Absent helper binary (non-macOS, no toolchain at pack time) is a no-op:
+   * the in-page bar carries the same guidance.
+   * @param pane - the privacy pane whose grant is missing.
+   */
+  @Remote
+  showGrantGuide(pane: DesktopPermissionPane): void {
+    dismissGuideProcess()
+    try {
+      const helper = join(dirname(dirname(dirname(process.execPath))), 'Resources', 'permission-guide')
+      if (!existsSync(helper)) return
+      const appBundle = dirname(dirname(dirname(process.execPath)))
+      guideProcess = spawn(helper, [appBundle, pane], { detached: true, stdio: 'ignore' })
+      guideProcess.unref()
+    } catch {}
+  }
+
+  /**
+   * End the native drag-guide bar, if showing. The client calls this when a
+   * probe sees the grant land (or the user dismisses the guide).
+   */
+  @Remote
+  dismissGrantGuide(): void {
+    dismissGuideProcess()
+  }
+
   /**
    * Deep-link System Settings to one privacy pane and re-probe on return.
    *

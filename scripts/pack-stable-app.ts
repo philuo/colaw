@@ -795,6 +795,29 @@ function analyzeClosure(entryNames: readonly string[], bundleNames: readonly str
     }
   }
 
+  // The Cua Driver SDK resolves its native platform payload through
+  // `require.resolve("@trycua/cua-driver-${triple}/package.json")` inside
+  // @ubjs/node — a computed resolve the scanner's plain-require pass cannot
+  // see. The probe and the runtime both need the installed darwin-arm64
+  // variant. Bun's isolated layout keeps platform packages only in the
+  // .bun store (no nested node_modules link), so the seed resolves from the
+  // driver package's own store entry, falling back to the flat store root.
+  for (const variant of ['@trycua/cua-driver-darwin-arm64']) {
+    const candidates: string[] = []
+    const driverDir = closure.packages.get('@trycua/cua-driver')?.dir
+    if (driverDir !== undefined) {
+      // <store>/node_modules/@trycua/cua-driver → <store>/node_modules
+      candidates.push(join(dirname(dirname(driverDir)), 'node_modules', '@trycua', 'cua-driver-darwin-arm64'))
+    }
+    candidates.push(join(repoRoot, 'node_modules', '.bun', 'node_modules', '@trycua', 'cua-driver-darwin-arm64'))
+    const found = candidates.find(dir => existsSync(join(dir, 'package.json')))
+    if (found === undefined) {
+      closure.unresolved.add(variant)
+    } else {
+      recordResolution(variant, found, 'scripts/pack-stable-app.ts', 'native probe platform package')
+      closure.specifiers.add(variant)
+    }
+  }
   for (const name of [...entryNames, ...bundleNames]) {
     closure.specifiers.add(name)
     addUnit(name, resolveBareFile(name, cliAnchor).file, cliAnchor)
@@ -1539,6 +1562,7 @@ function reportSize(): void {
   ensurePinnedBun()
   ensureBunxShim()
   ensureNoSourceMaps()
+  ensurePermissionGuide()
   ensureStableSignature()
   const total = sizeOf(stableApp)
   const modules = sizeOf(join(appResourcesApp, 'node_modules'))
@@ -1669,6 +1693,34 @@ function ensureBunxShim(): void {
     process.exit(1)
   }
   console.log(`pack-stable-app: bunx shim → bun (${reported})`)
+}
+
+/**
+ * Compile and place the native permission guide (the floating bar whose icon
+ * the user drags into System Settings; see native/permission-guide). macOS
+ * only, arm64: swiftc lives on the build machine and the binary rides the
+ * payload — end users need nothing. A missing toolchain skips the step with
+ * the guide falling back to the in-page bar.
+ */
+function ensurePermissionGuide(): void {
+  if (process.platform !== 'darwin') return
+  const source = join(repoRoot, 'native', 'permission-guide', 'PermissionGuide.swift')
+  if (!existsSync(source)) return
+  const which = (globalThis as unknown as { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null } } })
+    .Bun.spawnSync(['xcrun', '--find', 'swiftc'], { stdout: 'pipe', stderr: 'pipe' })
+  if (which.exitCode !== 0) {
+    console.error('pack-stable-app: no swiftc toolchain — the native permission guide is skipped')
+    return
+  }
+  const out = join(stableApp, 'Contents', 'Resources', 'permission-guide')
+  const build = (globalThis as unknown as { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null } } })
+    .Bun.spawnSync(['swiftc', '-O', source, '-o', out], { stdout: 'inherit', stderr: 'inherit' })
+  if (build.exitCode !== 0) {
+    console.error(`pack-stable-app: permission-guide compile failed (${String(build.exitCode)})`)
+    process.exit(1)
+  }
+  chmodSync(out, 0o755)
+  console.log('pack-stable-app: permission-guide compiled into the payload')
 }
 
 /**
