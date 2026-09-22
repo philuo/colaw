@@ -1848,14 +1848,26 @@ function ensureStableSignature(): void {
   console.log(`pack-stable-app: signed ${signed ? `stable (${identity})` : 'ad-hoc (grants will not survive updates)'}`)
 }
 
-/** Copy the packed payload out of the build tree before the official stable build replaces it. */
+/**
+ * Copy the packed payload out of the build tree before the official stable
+ * build replaces it.
+ *
+ * `verbatimSymlinks` is required, not cosmetic: without it `cpSync` resolves a
+ * link and re-creates it at its absolute target. The bundle's `bunx` shim is a
+ * relative `bun` (ensureBunxShim), so resolving it does two kinds of damage —
+ * the copy stops matching the code signature's sealed resources (`codesign
+ * --verify --deep --strict`: "file modified: …/MacOS/bunx"), and the link ends
+ * up naming the build machine's path, which is the bundle the release chain
+ * restores and zips. publishStableApp's copyTree already copies links verbatim
+ * by hand, which is why only the staged copy showed it.
+ */
 function stageStableApp(): void {
   const stagingRoot = process.env.COLAW_PACK_STAGING
   if (stagingRoot === undefined || stagingRoot === '') return
   const stagedApp = join(stagingRoot, 'Colaw.app')
   rmSync(stagedApp, { recursive: true, force: true })
   mkdirSync(stagingRoot, { recursive: true })
-  cpSync(stableApp, stagedApp, { recursive: true })
+  cpSync(stableApp, stagedApp, { recursive: true, verbatimSymlinks: true })
   console.log(`pack-stable-app: staged ${stagedApp}`)
 }
 
@@ -1936,16 +1948,15 @@ function stabilizePayload(): void {
 
 async function main(): Promise<void> {
   ensureBuilds()
-  // The shell must be built as the INTERNAL flavor: asking for the product one
-  // here would have Hutch name this dev bundle `Colaw-dev.app` again — the
-  // second app answering to the product that this pack exists to prevent.
-  const shellEnvironment: Record<string, string | undefined> = { ...process.env, COLAW_PACK_BOOTSTRAP: '1' }
-  delete shellEnvironment.COLAW_APP_FLAVOR
+  // No `--env`, so the shell is the dev flavor (`dsh-shell` /
+  // `ai.colawdev.harness`; see apps/electrobun-host/electrobun.config.ts). Only
+  // `--env=stable` claims the product identity, and that build is the release
+  // chain's own step — never this pack's bootstrap.
   run(
     process.execPath,
     [join(hostDir, 'node_modules', 'electrobun', 'bin', 'electrobun.cjs'), 'build'],
     hostDir,
-    shellEnvironment,
+    { ...process.env, COLAW_PACK_BOOTSTRAP: '1' },
   )
 
   publishStableApp()

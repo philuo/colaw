@@ -111,7 +111,11 @@ if (!existsSync(join(stagedApp, 'Contents', 'Resources', 'app'))) {
   process.exit(1)
 }
 rmSync(join(stableDir, 'Colaw.app'), { recursive: true, force: true })
-cpSync(stagedApp, join(stableDir, 'Colaw.app'), { recursive: true })
+// `verbatimSymlinks`: the bundle ships a relative `bunx → bun` shim, and a
+// resolved copy would re-point it at this machine's build path and stop
+// matching the signature's sealed resources — exactly the state the staged
+// copy was in before the packer learned to pass this flag.
+cpSync(stagedApp, join(stableDir, 'Colaw.app'), { recursive: true, verbatimSymlinks: true })
 
 run(
   'stage 4/4 — stage the install image (build-dmg)',

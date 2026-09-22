@@ -1,23 +1,32 @@
 import type { ElectrobunConfig } from "electrobun";
 
 /**
- * The bundle identity Hutch stamps into the app, by flavor.
+ * The bundle identity Hutch stamps into the app, by BUILD ENVIRONMENT.
  *
  * macOS keys an app — and every TCC grant made to it — on the bundle
  * identifier, so two bundles claiming one identifier are a single app to
  * LaunchServices: the privacy list resolves the display name to whichever
  * bundle registered last, and a development build could therefore appear
  * beside the product as `Colaw-dev` while holding the grant that belongs to
- * the app. The identifier is therefore distinct per flavor, and the name is
- * outside the product's namespace altogether.
+ * the app. The identifier is therefore distinct per flavor, and the dev name
+ * sits outside the product's namespace altogether.
  *
- * The product identity gets exactly one entry point: pack-stable-app asks for
- * it explicitly and re-brands the shell it built. Every other build — the dev
- * shell loop, a bare `electrobun build` — gets the internal shell identity, so
- * the two can never read as one Colaw.
+ * The flavor follows `ELECTROBUN_BUILD_ENV`, which Hutch exports into this
+ * config — `--env=stable` IS the official release build, so the product
+ * identity needs no flag from any caller: the local chain
+ * (scripts/pack-stable-release.ts), CI (.github/workflows/colaw-release.yml),
+ * and the packer's own dev-env shell build all resolve correctly by their env
+ * alone. Anything that is not `stable` gets the internal shell identity, so a
+ * build can never claim the product's name or identifier by accident — the
+ * failure this replaced was exactly that: the official build silently
+ * producing `dsh-shell.app` under `ai.colawdev.harness`, and the release set
+ * (DMG, zip, update feed) naming itself after it.
+ *
+ * Do not print from this file. Hutch reads this config back by parsing the
+ * loader's stdout, and a stray console.log fails the entire build with a bare
+ * `error: SyntaxError`.
  */
-const productFlavor = process.env.COLAW_APP_FLAVOR === "product";
-const appIdentity = productFlavor
+const appIdentity = process.env.ELECTROBUN_BUILD_ENV === "stable"
   ? { name: "Colaw", identifier: "ai.colaw.harness" }
   : { name: "dsh-shell", identifier: "ai.colawdev.harness" };
 
