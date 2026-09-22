@@ -1,9 +1,29 @@
 import type { ElectrobunConfig } from "electrobun";
 
+/**
+ * The bundle identity Hutch stamps into the app, by flavor.
+ *
+ * macOS keys an app — and every TCC grant made to it — on the bundle
+ * identifier, so two bundles claiming one identifier are a single app to
+ * LaunchServices: the privacy list resolves the display name to whichever
+ * bundle registered last, and a development build could therefore appear
+ * beside the product as `Colaw-dev` while holding the grant that belongs to
+ * the app. The identifier is therefore distinct per flavor, and the name is
+ * outside the product's namespace altogether.
+ *
+ * The product identity gets exactly one entry point: pack-stable-app asks for
+ * it explicitly and re-brands the shell it built. Every other build — the dev
+ * shell loop, a bare `electrobun build` — gets the internal shell identity, so
+ * the two can never read as one Colaw.
+ */
+const productFlavor = process.env.COLAW_APP_FLAVOR === "product";
+const appIdentity = productFlavor
+  ? { name: "Colaw", identifier: "ai.colaw.harness" }
+  : { name: "dsh-shell", identifier: "ai.colawdev.harness" };
+
 export default {
   app: {
-    name: "Colaw",
-    identifier: "ai.deepseek.harness",
+    ...appIdentity,
     version: "1.0.8",
   },
   // The stable release identity (hash, manifest, delta patches) belongs to

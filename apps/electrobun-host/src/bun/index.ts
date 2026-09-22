@@ -67,6 +67,24 @@ const BUNDLED_APP_DIR = (() => {
 })()
 
 /**
+ * This app's own bundle identifier, read from the bundle the process runs
+ * from. The single-instance hand-off below has to activate the app the user
+ * just tried to launch, and a development shell carries an identity of its
+ * own — naming the product there would raise a different app, or nothing at
+ * all. Source runs (no bundle around the executable) keep the product's
+ * identifier, which is what a source run means to register as.
+ */
+const BUNDLE_IDENTIFIER = (() => {
+  const infoPlist = join(dirname(dirname(dirname(process.execPath))), 'Contents', 'Info.plist')
+  try {
+    const declared = /<key>CFBundleIdentifier<\/key>\s*<string>([^<]+)<\/string>/u.exec(readFileSync(infoPlist, 'utf8'))
+    return declared?.[1] ?? 'ai.colaw.harness'
+  } catch {
+    return 'ai.colaw.harness'
+  }
+})()
+
+/**
  * Dev installs resolve the overlay patch from the repository (source of truth
  * while iterating); stable installs read the copy packaged beside the bundle,
  * so the app never depends on the build machine's checkout.
@@ -666,7 +684,7 @@ async function main(): Promise<void> {
     console.log('[electrobun-host] another instance holds the webserver; activating it')
     // Buffered stdout is dropped by exit(); give the line a beat to land.
     await new Promise(resolve => setTimeout(resolve, 50))
-    spawnSync('/usr/bin/osascript', ['-e', 'tell application id "ai.deepseek.harness" to activate'])
+    spawnSync('/usr/bin/osascript', ['-e', `tell application id "${BUNDLE_IDENTIFIER}" to activate`])
     process.exit(0)
   }
 

@@ -72,12 +72,30 @@ const bun = (globalThis as unknown as { Bun: {
   Transpiler: new (options: { loader: 'ts' | 'js' }) => { scanImports: (code: string) => { path: string }[] }
 } }).Bun
 
+/**
+ * The synchronous spawn face, typed structurally for the same reason: the pack
+ * reads back what it shells out to (signing identities, plist values).
+ */
+type BunSpawn = { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null; stdout: Uint8Array } } }
+
 const repoRoot = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const hostDir = join(repoRoot, 'apps', 'electrobun-host')
 /** The Hutch devkit projection backing every `electrobun/*` specifier. */
 const devkitDir = join(hostDir, '.hutch', 'devkit')
-const builtApp = join(hostDir, 'build', 'dev-macos-arm64', 'Colaw-dev.app')
+/**
+ * The shell Hutch builds, and the product bundle this pack assembles from it.
+ *
+ * The shell is the dev flavor — an internal app (`dsh-shell` /
+ * `ai.colawdev.harness`; see apps/electrobun-host/electrobun.config.ts),
+ * never a second `Colaw`. The product identity is written here, onto the copy
+ * (rewriteDevMarkers), and the shell is removed once nothing reads it
+ * (removeDevBundle); the build tree therefore never holds two apps that
+ * answer to the product.
+ */
+const builtApp = join(hostDir, 'build', 'dev-macos-arm64', 'dsh-shell-dev.app')
 const stableApp = join(hostDir, 'build', 'stable-macos-arm64', 'Colaw.app')
+/** The one bundle identifier macOS — and so TCC — may attribute to Colaw. */
+const PRODUCT_IDENTIFIER = 'ai.colaw.harness'
 
 /**
  * The Bun the desktop shell ships, pinned exactly — and it must equal the
@@ -1334,7 +1352,7 @@ function emitHostBundle(closure: Closure): void {
     .filter(spec => packageRootName(spec) !== 'electrobun')
   const outDir = join(appResourcesApp, 'bun')
   mkdirSync(outDir, { recursive: true })
-  const appBun = join(repoRoot, 'apps', 'electrobun-host', 'build', 'dev-macos-arm64', 'Colaw-dev.app', 'Contents', 'MacOS', 'bun')
+  const appBun = join(builtApp, 'Contents', 'MacOS', 'bun')
   const devkit = join(repoRoot, 'apps', 'electrobun-host', '.hutch', 'devkit')
   run(appBun, [
     join(repoRoot, 'scripts', 'build-host-bytecode.ts'), dirname(hostEntry), outDir, devkit,
@@ -1403,26 +1421,21 @@ function publishStableApp(): void {
 }
 
 /**
- * Drop the Electrobun dev-flavor bundle once nothing reads it any more.
+ * Drop the shell bundle once nothing reads it any more.
  *
- * `electrobun build` always writes a runnable `Colaw-dev.app`, and that bundle
- * carries the SHIPPING bundle identifier. It is therefore a second app — one
- * LaunchServices and Spotlight will happily offer beside the real Colaw, and
- * whose launch registers its own row in the privacy lists. That is how a
- * `Colaw-dev` entry appeared in Accessibility, holding the grant that belongs
- * to the app, and it reads as the product being confused with a dev build.
- *
- * The pack has taken everything it needs from the bundle by this point
+ * `electrobun build` always writes a runnable `dsh-shell-dev.app` beside the
+ * product. The pack has taken everything it needs from it by this point
  * (publishStableApp copies the shell, emitHostBundle reads its bun), so the
- * artifact is removed instead of left behind as a launchable twin. The next
- * `electrobun build` recreates it.
+ * artifact is removed rather than left behind as a second app LaunchServices
+ * and Spotlight would offer next to Colaw. The next `electrobun build`
+ * recreates it.
  */
 function removeDevBundle(): void {
   if (!existsSync(builtApp)) return
   rmSync(builtApp, { recursive: true, force: true })
   const parent = dirname(builtApp)
   if (existsSync(parent) && readdirSync(parent).length === 0) rmSync(parent, { recursive: true, force: true })
-  console.log('pack-stable-app: removed the dev-flavor bundle (no Colaw-dev twin left behind)')
+  console.log('pack-stable-app: removed the shell bundle (no second app beside Colaw)')
 }
 
 /**
@@ -1444,15 +1457,43 @@ function rewriteIconLayout(): void {
   }
 }
 
+/** One string out of the Info.plist the app actually ships, read back for verification. */
+function plistValue(infoPlist: string, key: string): string {
+  const result = (globalThis as unknown as BunSpawn).Bun.spawnSync(
+    ['/usr/bin/plutil', '-extract', key, 'raw', infoPlist],
+    { stdout: 'pipe', stderr: 'ignore' },
+  )
+  if (result.exitCode !== 0) return ''
+  return new TextDecoder().decode(result.stdout ?? new Uint8Array()).trim()
+}
+
 /**
- * The stable app is a copy of the dev build; its dev markers must not ship.
- * The Electrobun SDK derives its install-root name from the channel, and the
- * host treats a dev root as license to start the repository's dev watcher —
- * a stable channel keeps the app off the build machine's checkout.
+ * The stable app is a copy of the shell build, so the product identity is
+ * written here — in both places the copy carries one: Info.plist, and
+ * version.json (which the SDK reads for the install/update root).
+ *
+ * The identifier is not a formality. macOS attributes the app — and every TCC
+ * grant the user makes to it, by way of the signature's designated
+ * requirement — to whatever identifier the bundle claims, so shipping the
+ * shell's own (`ai.colawdev.harness`) would hand the user's Accessibility
+ * grant to a different app entirely. Each value is written rather than assumed
+ * and then read back, because a wrong identity here is silent everywhere else.
+ *
+ * The dev *markers* matter for a second reason: the Electrobun SDK derives its
+ * install-root name from the channel, and the host treats a dev root as
+ * license to start the repository's dev watcher — a stable channel keeps the
+ * app off the build machine's checkout.
  */
 function rewriteDevMarkers(): void {
   const infoPlist = join(stableApp, 'Contents', 'Info.plist')
-  writeFileSync(infoPlist, readFileSync(infoPlist, 'utf8').replace('<string>Colaw-dev</string>', '<string>Colaw</string>'))
+  for (const [key, value] of [['CFBundleName', 'Colaw'], ['CFBundleIdentifier', PRODUCT_IDENTIFIER]] as const) {
+    run('/usr/bin/plutil', ['-replace', key, '-string', value, infoPlist], repoRoot)
+    const actual = plistValue(infoPlist, key)
+    if (actual !== value) {
+      console.error(`pack-stable-app: ${key} is "${actual}", expected "${value}"`)
+      process.exit(1)
+    }
+  }
   const versionJson = join(stableApp, 'Contents', 'Resources', 'version.json')
   const version = JSON.parse(readFileSync(versionJson, 'utf8')) as Record<string, unknown>
   // The Updater keys releases off this hash (manifest comparison, `{prefix}-{hash}.patch`
@@ -1473,9 +1514,19 @@ function rewriteDevMarkers(): void {
     ...version,
     name: 'Colaw',
     channel: 'stable',
+    // Hutch stamps version.json from the flavor it built, and the Electrobun
+    // SDK reads the install/update root off it (`Application Support/<id>/<channel>`)
+    // — so the shell's own identifier here moves the product's data root into
+    // the dev namespace. Written, then read back, like the plist keys above.
+    identifier: PRODUCT_IDENTIFIER,
     hash: contentHash.digest('hex').slice(0, 12),
     baseUrl: updateBaseUrl,
   })}\n`)
+  const shippedIdentifier = (JSON.parse(readFileSync(versionJson, 'utf8')) as { identifier?: unknown }).identifier
+  if (shippedIdentifier !== PRODUCT_IDENTIFIER) {
+    console.error(`pack-stable-app: version.json identifier is "${String(shippedIdentifier)}", expected "${PRODUCT_IDENTIFIER}"`)
+    process.exit(1)
+  }
   const buildJson = join(stableApp, 'Contents', 'Resources', 'build.json')
   const build = JSON.parse(readFileSync(buildJson, 'utf8')) as Record<string, unknown>
   writeFileSync(buildJson, `${JSON.stringify({ ...build, buildEnvironment: 'stable' })}\n`)
@@ -1765,7 +1816,6 @@ function ensureStableSignature(): void {
   // `codesign` reports "The specified item could not be found in the keychain"
   // for an unlisted keychain even when `--keychain` names it.
   const keychain = join(homedir(), '.colaw', 'colaw-sign.keychain-db')
-  type BunSpawn = { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null; stdout: Uint8Array } } }
   const listed = (globalThis as unknown as BunSpawn).Bun.spawnSync(
     ['security', 'find-identity', '-v', '-p', 'codesigning', keychain],
     { cwd: stableApp, stdout: 'pipe', stderr: 'pipe' },
@@ -1776,7 +1826,7 @@ function ensureStableSignature(): void {
   // covers every nested binary, so a drag-in TCC grant (keyed on the app's
   // designated requirement) matches the launcher, the bun host, and the probe
   // children alike — the ad-hoc fallback cannot promise that.
-  const args = ['--force', '--deep', '--sign', signed ? identity : '-', '--identifier', 'ai.deepseek.harness']
+  const args = ['--force', '--deep', '--sign', signed ? identity : '-', '--identifier', PRODUCT_IDENTIFIER]
   if (signed) {
     const pass = readFileSync(join(homedir(), '.colaw', 'colaw-sign.keychain-pass'), 'utf8')
     const unlock = (globalThis as unknown as BunSpawn)
@@ -1886,11 +1936,16 @@ function stabilizePayload(): void {
 
 async function main(): Promise<void> {
   ensureBuilds()
+  // The shell must be built as the INTERNAL flavor: asking for the product one
+  // here would have Hutch name this dev bundle `Colaw-dev.app` again — the
+  // second app answering to the product that this pack exists to prevent.
+  const shellEnvironment: Record<string, string | undefined> = { ...process.env, COLAW_PACK_BOOTSTRAP: '1' }
+  delete shellEnvironment.COLAW_APP_FLAVOR
   run(
     process.execPath,
     [join(hostDir, 'node_modules', 'electrobun', 'bin', 'electrobun.cjs'), 'build'],
     hostDir,
-    { ...process.env, COLAW_PACK_BOOTSTRAP: '1' },
+    shellEnvironment,
   )
 
   publishStableApp()

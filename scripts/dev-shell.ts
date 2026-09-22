@@ -16,6 +16,12 @@
  * chain (`pnpm run dev:web`, auto-started by the dev app itself) and must not
  * trigger a full app restart.
  *
+ * The app it builds and drives is the INTERNAL shell (`dsh-shell-dev`), never
+ * the product: `electrobun build` stamps the dev flavor's own identity, so an
+ * iterating shell cannot register as a second Colaw in the privacy lists and
+ * hold a grant that belongs to the app (see
+ * apps/electrobun-host/electrobun.config.ts).
+ *
  * Usage: `bun scripts/dev-shell.ts` from the repository root.
  * @module scripts/dev-shell
  */
@@ -27,7 +33,7 @@ import { execa } from 'execa'
 
 const repoRoot = fileURLToPath(new URL('..', import.meta.url))
 const hostDir = join(repoRoot, 'apps', 'electrobun-host')
-const launcher = join(hostDir, 'build', 'dev-macos-arm64', 'Colaw-dev.app', 'Contents', 'MacOS', 'launcher')
+const launcher = join(hostDir, 'build', 'dev-macos-arm64', 'dsh-shell-dev.app', 'Contents', 'MacOS', 'launcher')
 const electrobunCli = join(hostDir, 'node_modules', 'electrobun', 'bin', 'electrobun.cjs')
 
 /** Watch roots, relative to the host package: everything the build consumes. */
@@ -53,19 +59,19 @@ let pending = false
 
 /** Quit a running dev app, then hard-stop anything the graceful quit missed. */
 async function stopApp(): Promise<void> {
-  await execa('osascript', ['-e', 'tell application "Colaw-dev" to quit'], { reject: false, timeout: QUIT_WAIT_MS })
+  await execa('osascript', ['-e', 'tell application "dsh-shell-dev" to quit'], { reject: false, timeout: QUIT_WAIT_MS })
   const deadline = Date.now() + QUIT_WAIT_MS
   while (Date.now() < deadline && isAppRunning()) {
     await new Promise(resolvePromise => setTimeout(resolvePromise, 200))
   }
   if (isAppRunning()) {
-    spawnSync('pkill', ['-9', '-f', 'Colaw-dev.app/Contents/MacOS'])
+    spawnSync('pkill', ['-9', '-f', 'dsh-shell-dev.app/Contents/MacOS'])
   }
 }
 
-/** True while any Colaw-dev process (launcher or Bun main) is still alive. */
+/** True while any dev-shell process (launcher or Bun main) is still alive. */
 function isAppRunning(): boolean {
-  return spawnSync('pgrep', ['-f', 'Colaw-dev.app/Contents/MacOS']).status === 0
+  return spawnSync('pgrep', ['-f', 'dsh-shell-dev.app/Contents/MacOS']).status === 0
 }
 
 /** Rebuild the dev app bundle and relaunch it detached from this watcher. */
