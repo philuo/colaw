@@ -53,10 +53,20 @@ export interface DesktopSectionState {
   guide: DesktopPermissionPane | undefined
   /**
    * The switch the user asked to turn on whose grants have not landed yet.
-   * The switch stays off while this is set; when a probe sees the grants, the
-   * capability enables itself — the user never clicks the switch again.
+   * The switch stays OFF while this is set: a grant landing in System Settings
+   * never moves a control the user is looking at — the user flips the switch
+   * themselves once the section reports the grants are in (see the section's
+   * pending block).
    */
   pendingEnable: DesktopCapabilityField | undefined
+  /**
+   * A grant the user had was revoked in System Settings while the app was
+   * running. macOS reports no callback for a revoke and the running host keeps
+   * answering its pre-revoke value, so only a periodic fresh probe can witness
+   * it; the flag is what that witness publishes. It never changes a switch —
+   * it is a statement about the host, and the section renders it as one.
+   */
+  revoked: boolean
   /**
    * The capability whose grants landed and whose enable is persisted, while
    * the running host still needs one restart before the surface is usable.
@@ -75,6 +85,7 @@ type DesktopSectionActions = {
   setGuide: (draft: DesktopSectionState, pane: DesktopPermissionPane | undefined) => void
   setPendingEnable: (draft: DesktopSectionState, field: DesktopCapabilityField | undefined) => void
   setGrantDone: (draft: DesktopSectionState, field: DesktopCapabilityField | undefined) => void
+  setRevoked: (draft: DesktopSectionState, value: boolean) => void
   setNativeGuide: (draft: DesktopSectionState, value: boolean) => void
 }
 
@@ -93,6 +104,7 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       guide: undefined,
       pendingEnable: undefined,
       grantDone: undefined,
+      revoked: false,
       nativeGuide: false,
       revision: -1,
     }),
@@ -122,6 +134,11 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       },
       setGrantDone: (d, field) => {
         d.grantDone = field
+        d.revision += 1
+      },
+      setRevoked: (d, value) => {
+        if (d.revoked === value) return
+        d.revoked = value
         d.revision += 1
       },
       setNativeGuide: (d, value) => {

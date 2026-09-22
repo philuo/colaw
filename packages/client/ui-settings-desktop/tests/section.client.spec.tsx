@@ -32,6 +32,9 @@ function mountSection(options: {
   status?: 'ready'
   refreshPermissions?: () => void
   setField?: (field: 'browserUse' | 'computerUse' | 'lockScreenOperation', value: boolean) => void
+  setRevoked?: (value: boolean) => void
+  dismissPending?: () => void
+  openMissingPane?: () => void
 } = {}) {
   const store = createDesktopSectionStore().create()
   store.actions.sync(undefined, options.status ?? 'ready')
@@ -46,6 +49,9 @@ function mountSection(options: {
     refreshPermissions={refreshPermissions}
     setGuide={(pane) => { store.actions.setGuide(pane) }}
     setGrantDone={(field) => { store.actions.setGrantDone(field) }}
+    setRevoked={options.setRevoked ?? ((value) => { store.actions.setRevoked(value) })}
+    dismissPending={options.dismissPending ?? vi.fn()}
+    openMissingPane={options.openMissingPane ?? vi.fn()}
     revealAppInFinder={vi.fn()}
     restartApp={vi.fn()}
   />)
@@ -89,13 +95,50 @@ describe('DesktopSection permission block', () => {
     act(() => { store.actions.setGuide('screenRecording') })
     expect(screen.getByRole('switch', { name: en.computerUseTitle }).getAttribute('aria-checked')).toBe('false')
     expect(screen.getByRole('dialog', { name: en.guideTitle })).toBeDefined()
-    // Grants landing retire the guide; the wiring then persists the enable and
-    // the accepted write syncs the store — only then does the switch read on.
+    expect(screen.getByText(en.pendingWaiting)).toBeDefined()
+  })
+
+  it('asks the user to flip the switch once the grants land — it never flips it for them', () => {
+    const setField = vi.fn()
+    const { store } = mountSection({ setField })
+    act(() => { store.actions.setPendingEnable('computerUse') })
     act(() => { store.actions.setPermissions({ accessibility: true, screenRecording: true }) })
-    act(() => { store.actions.setPendingEnable(undefined) })
-    act(() => { store.actions.sync({ browserUse: false, computerUse: true, lockScreenOperation: false }, 'ready') })
-    expect(screen.getByRole('switch', { name: en.computerUseTitle }).getAttribute('aria-checked')).toBe('true')
-    expect(screen.queryByRole('dialog', { name: en.guideTitle })).toBeNull()
+    // The grant retiring the guide is the wiring's job; the store's own write
+    // is what the section reacts to here.
+    act(() => { store.actions.setGuide(undefined) })
+    expect(screen.getByRole('switch', { name: en.computerUseTitle }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByText(en.pendingTitle)).toBeDefined()
+    // Nothing enabled the capability on its own: the switch is the user's.
+    expect(setField).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByText(en.pendingAction))
+    expect(setField).toHaveBeenCalledWith('computerUse', true)
+  })
+
+  it('dismisses the pending prompt without touching the switch', () => {
+    const setField = vi.fn()
+    const dismissPending = vi.fn()
+    const { store } = mountSection({ setField, dismissPending })
+    act(() => { store.actions.setPendingEnable('computerUse') })
+    expect(screen.getByText(en.pendingWaiting)).toBeDefined()
+    fireEvent.click(screen.getByText(en.guideDismiss))
+    expect(dismissPending).toHaveBeenCalledTimes(1)
+    expect(setField).not.toHaveBeenCalled()
+  })
+
+  it('reports a revoked grant as a warning and offers the walkthrough again', () => {
+    const openMissingPane = vi.fn()
+    const { store } = mountSection({ openMissingPane })
+    act(() => { store.actions.setPermissions({ accessibility: true, screenRecording: true }) })
+    expect(screen.queryByRole('alert', { name: en.revokedTitle })).toBeNull()
+    // The watcher witnessed a grant that was there and is gone.
+    act(() => { store.actions.setRevoked(true) })
+    expect(screen.getByRole('alert', { name: en.revokedTitle })).toBeDefined()
+    expect(screen.getByText(en.revokedHint)).toBeDefined()
+    fireEvent.click(screen.getByText(en.revokedRegrant))
+    expect(openMissingPane).toHaveBeenCalledTimes(1)
+    // Dismissing is the user's acknowledgement, not a state change.
+    fireEvent.click(screen.getByText(en.guideDismiss))
+    expect(screen.queryByRole('alert', { name: en.revokedTitle })).toBeNull()
   })
 
   it('stands the in-page bar down while the native drag-guide is up', () => {

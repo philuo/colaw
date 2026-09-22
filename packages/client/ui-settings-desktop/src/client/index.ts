@@ -40,6 +40,18 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 const NS = 'settings.desktop'
 
 /**
+ * How often the running app re-asks a FRESH process for the TCC state while a
+ * capability that needs a grant is switched on. macOS raises no callback for a
+ * revoke, and the host's own answer stays at its pre-revoke value for as long
+ * as it runs, so polling a child process is the only way to notice a user who
+ * turned a grant off behind the app's back. The cost is one short-lived child
+ * per tick, which is why the watch is bounded to the moments a missing grant
+ * actually breaks something: a switch is on. It starts when one is switched on
+ * and stops when the last one goes off (see the watch effect in `apply`).
+ */
+const PERMISSION_WATCH_MS = 8_000
+
+/**
  * Required services. `settingsScope` makes ui-settings activate first (the
  * slot declaration lives there); `remote` carries the pushed settings
  * invalidation that keeps an open page current without polling, and answers
@@ -65,6 +77,10 @@ export function apply(ctx: ClientContext): void {
   const permissionsRef: { value: DesktopPermissionStatus | undefined } = { value: undefined }
   // The capability switch the user asked for whose grants have not landed.
   const pendingEnableRef: { field: DesktopCapabilityField | undefined } = { field: undefined }
+  // Grants seen granted at least once in this session. A grant that was never
+  // granted is a missing permission; a grant that was granted and is gone now
+  // is a REVOKE, which is a different thing to tell the user.
+  const everGranted = { accessibility: false, screenRecording: false }
 
   const sync = (): void => {
     const snapshot = scope.getSnapshot()
@@ -72,33 +88,62 @@ export function apply(ctx: ClientContext): void {
   }
   ctx.effect(() => scope.subscribe(sync), 'ui-settings-desktop: scope mirror')
 
+  /**
+   * Publish one probe answer to the store and the pane picker's mirror.
+   *
+   * The revocation check lives here rather than at the probe's call site: every
+   * answer passes through, so a revoke is noticed whichever probe witnessed it
+   * — the periodic watch, a mount, or a re-check the user asked for.
+   */
+  const publish = (status: DesktopPermissionStatus): void => {
+    permissionsRef.value = status
+    if (status.accessibility) everGranted.accessibility = true
+    if (status.screenRecording) everGranted.screenRecording = true
+    bound?.setPermissions(status)
+    bound?.setRevoked(
+      (everGranted.accessibility && !status.accessibility)
+      || (everGranted.screenRecording && !status.screenRecording),
+    )
+  }
+
+  /** Probe the host's TCC state once, answering the stored truth. */
+  const probe = (): Promise<DesktopPermissionStatus | undefined> =>
+    ctx.remote.desktopPermissions.statusFresh()
+      .then((status) => {
+        if (status === undefined || !status.ok || status.value === undefined) return undefined
+        publish(status.value)
+        return status.value
+      })
+      .catch(() => undefined)
+
+  // The running app watches for a grant the user takes away. Only a fresh
+  // process can see it (see PERMISSION_WATCH_MS), and only the gated switches
+  // make it matter: with every one of them off there is nothing to break, so
+  // the watch costs nothing. Turning a switch off never touches macOS grants,
+  // but a grant that is gone makes the capability unusable — the app says so
+  // instead of silently failing later.
+  ctx.effect(() => {
+    const timer = setInterval(() => {
+      const settings = scope.getSnapshot().value
+      if (settings?.computerUse !== true && settings?.lockScreenOperation !== true) return
+      void probe()
+    }, PERMISSION_WATCH_MS)
+    return () => { clearInterval(timer) }
+  }, 'ui-settings-desktop: revoked-grant watch')
+
   const injected = (actions: BoundActions<typeof store>): {
     setField: (field: DesktopCapabilityField, value: boolean) => void
     setGuide: (pane: DesktopPermissionPane | undefined) => void
     refreshPermissions: () => void
     setGrantDone: (field: DesktopCapabilityField | undefined) => void
+    setRevoked: (value: boolean) => void
+    dismissPending: () => void
     openMissingPane: () => void
     revealAppInFinder: () => void
     restartApp: () => void
   } => {
     bound = actions
     sync()
-
-    /** Publish one probe answer to the store and the pane picker's mirror. */
-    const publish = (status: DesktopPermissionStatus): void => {
-      permissionsRef.value = status
-      bound?.setPermissions(status)
-    }
-
-    /** Probe the host's TCC state once, answering the stored truth. */
-    const probe = (): Promise<DesktopPermissionStatus | undefined> =>
-      ctx.remote.desktopPermissions.statusFresh()
-        .then((status) => {
-          if (status === undefined || !status.ok || status.value === undefined) return undefined
-          publish(status.value)
-          return status.value
-        })
-        .catch(() => undefined)
 
     /** Persist one capability switch (the optimistic flip + durable write). */
     const persistOn = (field: DesktopCapabilityField): void => {
@@ -108,20 +153,27 @@ export function apply(ctx: ClientContext): void {
 
     // Deep-link the pane of the FIRST missing grant: the user toggles that
     // exact switch instead of hunting the Privacy page.
+    //
+    // The pane comes FIRST, the guide bar second: the native helper shows its
+    // draggable icon only once the System Settings window is on screen, and
+    // spawning it ahead of the pane it points into is the one ordering that
+    // makes the guide the answer to the window rather than a bar that arrived
+    // before it. The helper additionally anchors itself under that window — so
+    // the summon has to be in flight before the bar exists at all.
     const openMissingPane = (): void => {
       const permissions = permissionsRef.value
       const pane = permissions === undefined || permissions.accessibility ? 'screenRecording' : 'accessibility'
       bound?.setGuide(pane)
-      // The native bar carries the draggable icon; the in-page bar remains as
-      // the fallback when the helper binary is absent.
-      void ctx.remote.desktopPermissions.showGrantGuide(pane)
-        .then((shown) => {
-          if (shown.ok) bound?.setNativeGuide(shown.value === true)
-        })
-        .catch(() => {})
       void ctx.remote.desktopPermissions.openPermissionPane(pane)
         .then((status) => {
           if (status.ok) publish(status.value)
+          // The native bar carries the draggable icon; the in-page bar remains
+          // as the fallback when the helper binary is absent. Summoned after
+          // the pane has been asked for, so the two never cross.
+          return ctx.remote.desktopPermissions.showGrantGuide(pane)
+        })
+        .then((shown) => {
+          if (shown?.ok === true) bound?.setNativeGuide(shown.value === true)
         })
         .catch(() => {})
     }
@@ -133,31 +185,30 @@ export function apply(ctx: ClientContext): void {
     }
 
     // While a grant guide is open the client polls the host: the moment the
-    // missing grants land, the pending capability enables itself and the guide
-    // retires — the user never clicks the switch again.
+    // missing grants land, the guide retires — the user is done dragging and
+    // should not keep being walked through a step they already took.
     let guidePoll: ReturnType<typeof setInterval> | undefined
     const stopGuidePoll = (): void => {
       if (guidePoll === undefined) return
       clearInterval(guidePoll)
       guidePoll = undefined
     }
-    const checkPendingEnable = (): void => {
+    const settlePending = (): void => {
       const pending = pendingEnableRef.field
       const permissions = permissionsRef.value
       if (pending === undefined || permissions === undefined) return
       if (!DESKTOP_REQUIRED_GRANTS[pending].every(grant => permissions[grant])) return
-      bound?.setPendingEnable(undefined)
       bound?.setGuide(undefined)
       stopGuidePoll()
       closeGuides()
-      persistOn(pending)
-      // The long-running host may not see the fresh Accessibility grant until
-      // its own restart; say so instead of leaving a dead switch on.
-      bound?.setGrantDone(pending)
+      // Deliberately NOT the enable. A grant landing in System Settings must
+      // never move a control the user is looking at: `pendingEnable` stays set
+      // so the section can say the permission is in and ask for the switch,
+      // and the switch is flipped by the user's own click.
     }
     const startGuidePoll = (): void => {
       if (guidePoll !== undefined) return
-      guidePoll = setInterval(() => { void probe().then(checkPendingEnable) }, 2_500)
+      guidePoll = setInterval(() => { void probe().then(settlePending) }, 2_500)
     }
 
     return {
@@ -184,11 +235,23 @@ export function apply(ctx: ClientContext): void {
         // Turning ON is gated on the grants the capability needs: the switch
         // may only stay on once the OS grants exist. Missing grants keep the
         // switch off, open the exact System Settings pane, and start polling —
-        // the enable completes itself when the grants land.
+        // the guide retires by itself when the grants land, and the user then
+        // flips the switch (never the other way round).
         void probe().then((status) => {
           const granted = status !== undefined && required.every(grant => status[grant])
           if (granted) {
+            const wasPending = pendingEnableRef.field === field
             persistOn(field)
+            if (!wasPending) return
+            pendingEnableRef.field = undefined
+            bound?.setPendingEnable(undefined)
+            bound?.setGuide(undefined)
+            stopGuidePoll()
+            closeGuides()
+            // The grant landed under this very process: the long-running host
+            // keeps serving its pre-grant TCC answer (macOS caches the trust
+            // state per process), so the surface only works after a relaunch.
+            bound?.setGrantDone(field)
             return
           }
           pendingEnableRef.field = field
@@ -202,9 +265,25 @@ export function apply(ctx: ClientContext): void {
       // it from there. A rejected call leaves the answer unset — undefined
       // means "no probe has answered", and the next mount probes again.
       refreshPermissions: () => {
-        void probe().then(checkPendingEnable)
+        void probe().then(settlePending)
       },
       setGrantDone: (field) => { bound?.setGrantDone(field) },
+      dismissPending: () => {
+        pendingEnableRef.field = undefined
+        bound?.setPendingEnable(undefined)
+        bound?.setGuide(undefined)
+        stopGuidePoll()
+        closeGuides()
+      },
+      setRevoked: (value) => {
+        bound?.setRevoked(value)
+        if (!value) return
+        // A revoked grant makes any guide stale: the bar was walking the user
+        // through a pane whose grant is now gone rather than pending.
+        bound?.setGuide(undefined)
+        stopGuidePoll()
+        closeGuides()
+      },
       openMissingPane,
       setGuide: (pane) => {
         bound?.setGuide(pane)
@@ -219,8 +298,9 @@ export function apply(ctx: ClientContext): void {
         void ctx.remote.desktopPermissions.revealAppInFinder().catch(() => {})
       },
       restartApp: () => {
-        // The host restarts itself: it relaunches the bundle, then exits, so
-        // the freshly granted TCC state is read by a clean boot.
+        // The host arms its own relaunch: a detached waiter brings the bundle
+        // back once this process is gone, then exits. Relaunching in place is
+        // what used to leave the app closed — see the remote's own note.
         void ctx.remote.desktopPermissions.restartApp().catch(() => {})
       },
     }
@@ -239,6 +319,8 @@ export function apply(ctx: ClientContext): void {
         setField: face.setField,
         setGuide: face.setGuide,
         setGrantDone: face.setGrantDone,
+        setRevoked: face.setRevoked,
+        dismissPending: face.dismissPending,
         refreshPermissions: face.refreshPermissions,
         openMissingPane: face.openMissingPane,
         revealAppInFinder: face.revealAppInFinder,

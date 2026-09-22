@@ -12,7 +12,12 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Switch, IconBrowseOutline16, IconSkillOutline16, IconShieldOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { createDesktopSectionStore, DesktopCapabilityField, DesktopPermissionPane } from './desktop-store.ts'
+import {
+  DESKTOP_REQUIRED_GRANTS,
+  type createDesktopSectionStore,
+  type DesktopCapabilityField,
+  type DesktopPermissionPane,
+} from './desktop-store.ts'
 import css from './DesktopSection.module.css'
 
 export type { DesktopPermissionStatus, DesktopPermissionPane } from './desktop-store.ts'
@@ -27,6 +32,12 @@ export interface DesktopSectionActions {
   setGuide: (pane: DesktopPermissionPane | undefined) => void
   /** Clear the grants-landed banner. */
   setGrantDone: (field: DesktopCapabilityField | undefined) => void
+  /** Clear the revoked-grant alert once the user has seen it. */
+  setRevoked: (value: boolean) => void
+  /** Abandon a pending enable: clears the prompt without touching the switch. */
+  dismissPending: () => void
+  /** Deep-link the pane of the first missing grant and summon the guide. */
+  openMissingPane: () => void
   /** Reveal Colaw.app in Finder for the drag-into-list grant gesture. */
   revealAppInFinder: () => void
   /** Restart the app so the freshly granted surface activates. */
@@ -62,12 +73,22 @@ const ROWS: readonly {
  * @returns the section element tree.
  */
 export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
-  const { t, useStore, setField, setGuide, setGrantDone, refreshPermissions, revealAppInFinder, restartApp } = props
+  const {
+    t, useStore, setField, setGuide, setGrantDone, setRevoked, dismissPending, refreshPermissions,
+    openMissingPane, revealAppInFinder, restartApp,
+  } = props
   if (setField === undefined || setGuide === undefined || setGrantDone === undefined
-    || refreshPermissions === undefined || revealAppInFinder === undefined || restartApp === undefined) return null
+    || refreshPermissions === undefined || revealAppInFinder === undefined || restartApp === undefined
+    || setRevoked === undefined || dismissPending === undefined || openMissingPane === undefined) return null
   const state = useStore(s => s)
   const permissions = state.permissions
   const granted = permissions !== undefined && permissions.accessibility && permissions.screenRecording
+  // The switch the user asked for whose grants have not landed. The switch
+  // itself stays off until the user flips it: this section only reports that
+  // the permission is now in and hands them the switch.
+  const pending = state.pendingEnable
+  const pendingReady = pending !== undefined && permissions !== undefined
+    && DESKTOP_REQUIRED_GRANTS[pending].every(grant => permissions[grant])
   // Every mount re-probes: the store's answer may predate a grant the user
   // made in System Settings after the last visit.
   useEffect(() => { refreshPermissions() }, [refreshPermissions])
@@ -125,6 +146,52 @@ export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
             </div>
           )}
       </div>
+      {state.revoked
+        ? (
+          <div className={`${css.notice} ${css.noticeDanger}`} role="alert" aria-label={t('revokedTitle')}>
+            <span className={css.noticeIcon} aria-hidden>!</span>
+            <span className={css.noticeText}>
+              {t('revokedTitle')}
+              <em>{t('revokedHint')}</em>
+            </span>
+            <div className={css.noticeActions}>
+              <button type="button" className={css.guideAction} onClick={openMissingPane}>{t('revokedRegrant')}</button>
+              <button type="button" className={css.guideAction} onClick={() => { setRevoked(false) }}>{t('guideDismiss')}</button>
+            </div>
+          </div>
+        )
+        : null}
+      {pending === undefined
+        ? null
+        : pendingReady
+          ? (
+            <div className={css.notice} role="status" aria-label={t('pendingTitle')}>
+              <span className={css.noticeIcon} aria-hidden>✓</span>
+              <span className={css.noticeText}>{t('pendingTitle')}</span>
+              <div className={css.noticeActions}>
+                {/* The switch is the user's to flip: a grant landing in System
+                    Settings must never move a control they are looking at. */}
+                <button
+                  type="button"
+                  className={css.guideAction}
+                  onClick={() => { setField(pending, true) }}
+                >
+                  {t('pendingAction')}
+                </button>
+                <button type="button" className={css.guideAction} onClick={dismissPending}>{t('guideDismiss')}</button>
+              </div>
+            </div>
+          )
+          : (
+            <div className={css.notice} role="status" aria-label={t('pendingWaiting')}>
+              <span className={css.noticeIcon} aria-hidden>…</span>
+              <span className={css.noticeText}>{t('pendingWaiting')}</span>
+              <div className={css.noticeActions}>
+                <button type="button" className={css.guideAction} onClick={refreshPermissions}>{t('guideRecheck')}</button>
+                <button type="button" className={css.guideAction} onClick={dismissPending}>{t('guideDismiss')}</button>
+              </div>
+            </div>
+          )}
       {state.grantDone === undefined
         ? null
         : (
