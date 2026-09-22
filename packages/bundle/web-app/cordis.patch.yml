@@ -114,6 +114,24 @@
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
+    # Desktop-control switches namespace (电脑操控 tab): the durable store the
+    # three capability toggles write and the desktop-facing providers read.
+    # This is the tab's ONLY row: `EntryTree.ensureId` keeps a supplied id
+    # verbatim and the tree store is keyed by it, so a second row carrying this
+    # id orphans the first fiber and reports it FAILED — a duplicate here is
+    # not a harmless spare.
+    #
+    # It comes before both providers on purpose, but the ordering is NOT what
+    # makes their reads safe: `EntryGroup.update` creates every child through
+    # one `Promise.all`, so rows start concurrently and a provider's own
+    # `disabled` expression would be evaluated before this row's `apply` could
+    # register the namespace — a fail-closed row, forever. What actually orders
+    # them is `inject`: each provider takes the `settings` service, so cordis
+    # holds its `apply` until the tab has registered. Putting the namespace
+    # first just removes the doubt for a reader.
+    - id: ui-settings-desktop
+      name: '@deepseek-ai/dsh-client-ui-settings-desktop'
+
     # The shared computer-use registry: the sole-provider slot every computer-use
     # provider registers into. Without this row the cua provider's inject never
     # resolves, its fiber stays inactive, and the desktopPermissions remote the
@@ -128,10 +146,24 @@
     - id: experimental-computer-use-cua-driver-native
       name: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'
 
-    # Desktop-control switches namespace (电脑操控 tab): the durable store the
-    # three capability toggles write and the desktop-facing providers read.
-    - id: ui-settings-desktop
-      name: '@deepseek-ai/dsh-client-ui-settings-desktop'
+    # The shared browser-use registry: the sole-provider slot a browser
+    # provider registers into.
+    - id: browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+
+    # Browser control through the pinned Chrome DevTools MCP server, one
+    # server process per live Session. The 电脑操控 tab's Browser_use switch is
+    # the user-facing control and this provider reads it at apply, exactly like
+    # the cua provider above: with the switch off no `chrome-devtools-mcp`
+    # process is ever spawned and the model is handed no browser.
+    #
+    # The provider's `apply` runs once per process, so a flip lands from the
+    # next app start — which is what the tab's restart bar reports.
+    - id: experimental-browser-use-chrome-devtools-mcp
+      name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp'
+      config:
+        mode: launch
+        headless: true
 
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
@@ -250,9 +282,13 @@
     - id: ui-sidebar-documentpreview
       name: '@deepseek-ai/dsh-client-ui-sidebar-documentpreview'
 
-    # Upstream's sandboxed-browser sidebar tab is deliberately not mounted:
-    # the fork has not integrated the browser-use host surface. The package
-    # stays in the tree, unmounted, like ui-message-feedback.
+    # Upstream's sandboxed-browser sidebar tab is deliberately not mounted.
+    # It is the *viewer* half of the browser surface — a tab that renders a
+    # page image beside the conversation — while this fork ships the control
+    # half only: the 电脑操控 tab's Browser_use switch mounts the
+    # chrome-devtools-mcp provider above, whose browser runs isolated and
+    # headless with no page a sidebar could mirror. The package stays in the
+    # tree, unmounted, like ui-message-feedback.
     - id: ui-sidebar-terminal
       name: '@deepseek-ai/dsh-client-ui-sidebar-terminal'
     # The right Sidebar's workspace file tree tab type.
@@ -267,11 +303,6 @@
 
     - id: ui-settings-models
       name: '@deepseek-ai/dsh-client-ui-settings-models'
-
-    # 电脑操控 tab: three capability switches over the ui-desktop-control
-    # namespace the desktop-facing providers read.
-    - id: ui-settings-desktop
-      name: '@deepseek-ai/dsh-client-ui-settings-desktop'
 
     # Upstream's sidebar plugin-management page (install/enable/disable/remove
     # profile bundles through the pluginManager Remote) is not shipped: the

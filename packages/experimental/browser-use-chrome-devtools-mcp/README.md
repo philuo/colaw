@@ -49,6 +49,12 @@ The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-exper
 
 When configuring the system prompt's `toolOrder` for the whole process, leave browser tools under `<unlisted-tools>`. Explicitly listing browser tool names can make prompt assembly fail for Sessions without a browser connection.
 
+### The 电脑操控 gate in this product
+
+The packaged app mounts this provider from the 电脑操控 settings tab, and `apply` reads that tab's `ui-desktop-control` section: unless `browserUse` is `true` the provider returns before it resolves the CLI. With the switch off it mounts inertly — no MCP server for any Session, no browser, no tools.
+
+The read belongs in `apply` and deliberately not in the mount row's `disabled` expression: a row's siblings are created through one `Promise.all`, so a `disabled` expression is evaluated before the tab's own `apply` could register the namespace, and the row would fail closed for the whole process. `inject: ['settings']` is what orders them. Because `apply` runs once per process, a flip lands from the next app start — which is what the tab's restart bar reports.
+
 -----
 
 <a id="understand-the-implementation"></a>

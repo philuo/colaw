@@ -49,6 +49,12 @@ kind: "package-reference"
 
 为整个进程配置系统提示词的 `toolOrder` 时，将浏览器工具留在 `<unlisted-tools>` 中。显式列出浏览器工具名称可能导致未获得浏览器连接的 Session 无法组装提示词。
 
+### 本产品里的「电脑操控」门控
+
+打包应用从「电脑操控」设置页挂载本提供方，`apply` 会读该页的 `ui-desktop-control` 段：除非 `browserUse` 为 `true`，否则提供方在解析 CLI 之前就返回。开关关闭时它是**惰性挂载**——任何 Session 都不会有 MCP 服务器、不会启动浏览器、也不会提供任何工具。
+
+这个读取放在 `apply` 里，**故意不**放进挂载行的 `disabled` 表达式：一行的兄弟条目由同一个 `Promise.all` 并发创建，`disabled` 表达式会在设置页自己的 `apply` 来得及注册命名空间之前求值，于是整行对该进程永久 fail-closed。真正决定顺序的是 `inject: ['settings']`。又因为 `apply` 每个进程只跑一次，拨动开关要**下次启动应用**才生效——设置页的重启提示条说的就是这件事。
+
 -----
 
 <a id="understand-the-implementation"></a>

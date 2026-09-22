@@ -42,6 +42,15 @@ export async function verifyMcpBrowser(
   try {
     server.listen(0, '127.0.0.1')
     await once(server, 'listening')
+    // A gated provider (Chrome DevTools in this product) declares `settings`
+    // and returns early unless the 电脑操控 tab's Browser_use switch is on;
+    // upstream providers ignore the service. Answering as the switched-on tab
+    // does keeps a gated provider's fiber from staying pending forever, which
+    // would surface here as an empty catalog rather than as a gate.
+    ctx.provide('settings', {
+      get: (namespace: string): Record<string, unknown> | undefined =>
+        namespace === 'ui-desktop-control' ? { browserUse: true } : undefined,
+    } as never)
     const address = server.address()
     if (address === null || typeof address === 'string') throw new Error('Fixture has no TCP listener')
     const url = `http://127.0.0.1:${address.port}/${namespace}-${mode}`

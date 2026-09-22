@@ -154,6 +154,19 @@ grep -A2 'id: session-log-deepseek' "$APP/Contents/Resources/app/config/electrob
 | overlay `disabled: true` | `session-telemetry-otel` | 个人构建不向外发送遥测；OTLP 树已从闭包排除 |
 | 打包排除 | `@deepseek-ai/dsh-session-telemetry-otel` 及其 `@opentelemetry` 树 | 同上（`pack-stable-app.ts` 有断言：两处必须一致） |
 
+### 我们新增的挂载（fork 主动开启）
+
+这几行只存在于 **`packages/bundle/web-app/cordis.patch.yml`**，官方 `origin/master` 里**根本没有**——合并时它们会被当成"官方侧缺失"整块删掉或覆盖，必须逐行保回来。删掉一行的后果不是"少个功能"，而是**整个桌面能力面消失**。
+
+| 位置 | 项 | 作用与保护理由 |
+| --- | --- | --- |
+| web-app patch | `ui-settings-desktop`（`@deepseek-ai/dsh-client-ui-settings-desktop`） | 「电脑操控」设置页 + `ui-desktop-control` 命名空间。**有且只能有一行**：`EntryTree.ensureId` 原样保留提供的 id、`tree.store[id]` 按 id 键控，第二行同 id 会孤立第一个 fiber 并把它报成 FAILED（真实事故，见第 5 节）。 |
+| web-app patch | `computer-use` + `experimental-computer-use-cua-driver-native` | 电脑操控的 sole-provider registry 与 cua 驱动。 |
+| web-app patch | `browser-use` + `experimental-browser-use-chrome-devtools-mcp`（`config: {mode: launch, headless: true}`） | Browser_use 的 sole-provider registry 与 Chrome DevTools MCP 提供方。**门控在 provider 的 `apply` 里**（读 `settings.get('ui-desktop-control').browserUse`），不能改写成 overlay 的 `disabled:`——`EntryGroup.update` 用一个 `Promise.all` 并发创建兄弟条目，`disabled` 表达式会在设置页自己的 `apply` 注册命名空间之前求值，从而**永久 fail-closed**；真正保证顺序的是 `inject: ['settings']`。 |
+| web-app patch 注释 | `ui-sidebar-documentpreview` 上方那段"不挂载上游沙箱浏览器侧栏"说明 | 上游那是浏览器面的**查看器**半边；本 fork 只出**控制**半边，浏览器 isolated + headless，没有可镜像的页面。 |
+
+打包侧配套：`chrome-devtools-mcp` 在 `scripts/pack-stable-app.ts` 的 `VERBATIM_TREE_PACKAGES` 里**整树原样出货**（14 MB）。它既不能被 `bun build` 打包（rollup 产物仍带 `../../../node_modules/puppeteer-core/…`、`@toon-format/toon` 这类条件动态导入），内部又按相对路径互相寻址，只有发布布局能让 CLI 加载。
+
 ### 官方有、我们尚未吸收
 
 | 项 | 状态 |

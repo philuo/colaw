@@ -1034,6 +1034,30 @@ interface ShippedManifestParts {
 const PRUNE_DIR_NAMES = new Set(['node_modules', 'tests', 'test', '__tests__', 'coverage', '.git', '.github',
   '.yarn', '.bin', '.circleci', 'benchmark', 'benchmarks', 'bench', 'example', 'examples', 'install'])
 
+/**
+ * Packages whose published tree ships whole and unbundled, like a CommonJS
+ * package, because a spawned child process executes their own files.
+ *
+ * `chrome-devtools-mcp` is the browser-use provider's MCP server: the provider
+ * resolves `build/src/bin/chrome-devtools-mcp.js` through `import.meta.resolve`
+ * and spawns it under the app's Bun, once per live Session. Two properties put
+ * it beyond the unit pipeline:
+ *
+ * - It cannot be bundled at all. Its published `build/src` is a rollup output
+ *   that still carries conditional dynamic imports of packages the tarball
+ *   does not ship (`../../../node_modules/puppeteer-core/…`,
+ *   `@toon-format/toon`) which the runtime tolerates and a bundler cannot
+ *   resolve — `bun build` on the CLI entry fails outright.
+ * - Its files address each other relatively (`./chrome-devtools-mcp-main.js`
+ *   and the rest of the tree), so only the published layout keeps the CLI
+ *   loadable; a single minified unit at that path would strand every sibling
+ *   it imports.
+ *
+ * The package declares no dependencies and ships no `exports`, so the verbatim
+ * copy is also all the closure owes it: nothing else has to join the plane.
+ */
+const VERBATIM_TREE_PACKAGES = new Set(['chrome-devtools-mcp'])
+
 /** Directory names an npm package may carry that only its own tests load. */
 function isTestTreeDir(name: string): boolean {
   return PRUNE_DIR_NAMES.has(name) || name.endsWith('-test') || name.endsWith('-tests')
@@ -1135,6 +1159,14 @@ async function emitPackage(pkg: string, pkgDir: string, closure: Closure, manife
   // devkit's TypeScript natively, so the projection needs no build step.
   if (pkgDir === devkitDir) {
     emitDevkitPackage(pkgDir, outDir)
+    return
+  }
+
+  // A spawned CLI's tree ships as-is for the reason in VERBATIM_TREE_PACKAGES:
+  // its own files are the payload, so neither the unit pass nor the manifest
+  // rewrite may touch them.
+  if (VERBATIM_TREE_PACKAGES.has(pkg)) {
+    emitCommonJSPackage(pkg, pkgDir, outDir, manifest)
     return
   }
 
@@ -1309,10 +1341,14 @@ function emitStubPackage(name: string, bindings: readonly string[]): void {
 }
 
 /**
- * Ship one CommonJS package verbatim: the published tree (pruned like every
- * other data copy, binaries kept executable) and the source manifest's own
- * main/exports/type, so Node's CJS↔ESM interop reads it exactly as upstream
- * installs do.
+ * Ship one package's published tree verbatim: the pruned tree (binaries kept
+ * executable) and the source manifest's own main/exports/type, so Node's
+ * CJS↔ESM interop reads it exactly as upstream installs do.
+ *
+ * Two callers: a CommonJS package, whose named exports a CJS→ESM bundle would
+ * drop; and a package in {@link VERBATIM_TREE_PACKAGES}, whose files a spawned
+ * process loads by their published relative paths. Neither needs a build step,
+ * which is why the copied manifest is never rewritten.
  */
 function emitCommonJSPackage(pkg: string, pkgDir: string, outDir: string, manifest: Record<string, unknown>): void {
   const { files } = packageDataFiles(pkg, pkgDir, manifest, new Set<string>(), new Set<string>(), true)
