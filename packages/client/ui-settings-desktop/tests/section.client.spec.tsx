@@ -31,6 +31,7 @@ const standard: GlobalStandardProps = {
 function mountSection(options: {
   status?: 'ready'
   refreshPermissions?: () => void
+  setField?: (field: 'browserUse' | 'computerUse' | 'lockScreenOperation', value: boolean) => void
 } = {}) {
   const store = createDesktopSectionStore().create()
   store.actions.sync(undefined, options.status ?? 'ready')
@@ -41,9 +42,10 @@ function mountSection(options: {
     useStore={bindSnapshotSelector(store)}
     actions={store.actions}
     t={t}
-    setField={vi.fn()}
+    setField={options.setField ?? vi.fn()}
     refreshPermissions={refreshPermissions}
     setGuide={(pane) => { store.actions.setGuide(pane) }}
+    revealAppInFinder={vi.fn()}
   />)
   return { store, refreshPermissions }
 }
@@ -73,6 +75,25 @@ describe('DesktopSection permission block', () => {
     // A full grant retires the guide without a dismissal click.
     act(() => { store.actions.setPermissions({ accessibility: true, screenRecording: true }) })
     expect(screen.queryByRole('dialog', { name: en.guideTitle })).toBeNull()
+  })
+
+  it('keeps the switch off while grants are missing but shows the pending claim', () => {
+    const setField = vi.fn()
+    const { store } = mountSection({ setField })
+    // The wiring probes before enabling: with grants missing the durable
+    // switch stays off, yet the row shows the pending claim so the user sees
+    // the enable is in flight.
+    expect(setField).not.toHaveBeenCalled()
+    act(() => { store.actions.setPendingEnable('computerUse') })
+    const sw = screen.getByRole('switch', { name: en.computerUseTitle })
+    expect(sw.getAttribute('aria-checked')).toBe('true')
+    expect(store.getSnapshot().computerUse).toBe(false)
+    // Grants landing retire the pending claim; the wiring persists the enable
+    // (setField) and the accepted write syncs the store — switch stays on.
+    act(() => { store.actions.setPermissions({ accessibility: true, screenRecording: true }) })
+    act(() => { store.actions.setPendingEnable(undefined) })
+    act(() => { store.actions.sync({ browserUse: false, computerUse: true, lockScreenOperation: false }, 'ready') })
+    expect(screen.getByRole('switch', { name: en.computerUseTitle }).getAttribute('aria-checked')).toBe('true')
   })
 
   it('dismisses the guide and answers a re-check with the itemized list', () => {

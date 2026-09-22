@@ -29,6 +29,8 @@ export type DesktopSectionComponentProps =
     refreshPermissions: () => void
     /** Dismiss the floating grant guide. */
     setGuide: (pane: DesktopPermissionPane | undefined) => void
+    /** Reveal Colaw.app in Finder for the drag-into-list grant gesture. */
+    revealAppInFinder: () => void
   }
 
 /** The three rows, in display order. */
@@ -49,7 +51,7 @@ const ROWS: readonly {
  * @returns the section element tree.
  */
 export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
-  const { t, useStore, setField, setGuide, refreshPermissions } = props
+  const { t, useStore, setField, setGuide, refreshPermissions, revealAppInFinder } = props
   const state = useStore(s => s)
   const permissions = state.permissions
   const granted = permissions !== undefined && permissions.accessibility && permissions.screenRecording
@@ -69,7 +71,7 @@ export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
               <span className={css.description}>{t(descriptionKey)}</span>
             </div>
             <Switch
-              checked={state[field]}
+              checked={state[field] || state.pendingEnable === field}
               disabled={state.status !== 'ready'}
               label={t(titleKey)}
               onChange={(next) => { setField(field, next) }}
@@ -113,20 +115,21 @@ export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
       {state.guide === undefined
         ? null
         : (
-          <div className={css.guideCard} role="dialog" aria-label={t('guideTitle')}>
-            <p className={css.guideTitle}>{state.guide === 'accessibility' ? t('permissionAccessibility') : t('permissionScreenRecording')} · {t('guideTitle')}</p>
-            <ol className={css.guideSteps}>
-              <li>{t('guideStepPane')}</li>
-              <li>{t('guideStepAdd')}</li>
-              <li>{t('guideStepToggle')}</li>
-            </ol>
+          <div className={css.guideBar} role="dialog" aria-label={t('guideTitle')}>
+            <span className={css.guideIcon}>C</span>
+            <span className={css.guideArrow} aria-hidden>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M8 13V3M8 3L3.5 7.5M8 3l4.5 4.5" stroke="var(--dsw-alias-brand-primary)" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </span>
+            <span className={css.guideText}>
+              {t('guideBarDrag').replace('{pane}', state.guide === 'accessibility' ? t('permissionAccessibility') : t('permissionScreenRecording'))}
+              <em>{t('guideBarHint')}</em>
+            </span>
             <div className={css.guideActions}>
-              <button type="button" className={css.permissionButton} onClick={() => { refreshPermissions() }}>
-                {t('guideRecheck')}
-              </button>
-              <button type="button" className={css.permissionButton} onClick={() => { setGuide(undefined) }}>
-                {t('guideDismiss')}
-              </button>
+              <button type="button" className={css.guideAction} onClick={revealAppInFinder}>{t('guideReveal')}</button>
+              <button type="button" className={css.guideAction} onClick={() => { refreshPermissions() }}>{t('guideRecheck')}</button>
+              <button type="button" className={css.guideAction} onClick={() => { setGuide(undefined) }}>{t('guideDismiss')}</button>
             </div>
           </div>
         )}

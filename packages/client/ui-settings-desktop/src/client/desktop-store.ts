@@ -19,6 +19,20 @@ export interface DesktopPermissionStatus {
  */
 export type DesktopPermissionPane = 'accessibility' | 'screenRecording'
 
+/** The capability switches, by field name. */
+export type DesktopCapabilityField = 'browserUse' | 'computerUse' | 'lockScreenOperation'
+
+/**
+ * The TCC grants each capability needs before its switch may stay on.
+ * Browser-over-CDP needs no macOS grant; locked-Mac operation rides the same
+ * Accessibility grant as computer use.
+ */
+export const DESKTOP_REQUIRED_GRANTS: Readonly<Record<DesktopCapabilityField, readonly ('accessibility' | 'screenRecording')[]>> = {
+  browserUse: [],
+  computerUse: ['accessibility', 'screenRecording'],
+  lockScreenOperation: ['accessibility'],
+}
+
 /** Mirror state: the three switches, the scope's sync facts, and the TCC answer. */
 export interface DesktopSectionState {
   status: 'loading' | 'ready' | 'unavailable'
@@ -37,6 +51,12 @@ export interface DesktopSectionState {
    * probe that shows the grant landed.
    */
   guide: DesktopPermissionPane | undefined
+  /**
+   * The switch the user asked to turn on whose grants have not landed yet.
+   * The switch stays off while this is set; when a probe sees the grants, the
+   * capability enables itself — the user never clicks the switch again.
+   */
+  pendingEnable: DesktopCapabilityField | undefined
   /** Bumped on every sync so the store always publishes a change. */
   revision: number
 }
@@ -46,6 +66,7 @@ type DesktopSectionActions = {
   sync: (draft: DesktopSectionState, value: DesktopSettings | undefined, status: DesktopSectionState['status']) => void
   setPermissions: (draft: DesktopSectionState, value: DesktopPermissionStatus | undefined) => void
   setGuide: (draft: DesktopSectionState, pane: DesktopPermissionPane | undefined) => void
+  setPendingEnable: (draft: DesktopSectionState, field: DesktopCapabilityField | undefined) => void
 }
 
 /**
@@ -61,6 +82,7 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       lockScreenOperation: false,
       permissions: undefined,
       guide: undefined,
+      pendingEnable: undefined,
       revision: -1,
     }),
     actions: {
@@ -81,6 +103,10 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       },
       setGuide: (d, pane) => {
         d.guide = pane
+        d.revision += 1
+      },
+      setPendingEnable: (d, field) => {
+        d.pendingEnable = field
         d.revision += 1
       },
     },

@@ -18,7 +18,12 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import { DesktopSection } from './DesktopSection.tsx'
 import { createDesktopSectionStore } from './desktop-store.ts'
 import type { BoundActions } from '@deepseek-ai/dsh-client-store'
-import type { DesktopPermissionPane, DesktopPermissionStatus } from './desktop-store.ts'
+import {
+  DESKTOP_REQUIRED_GRANTS,
+  type DesktopCapabilityField,
+  type DesktopPermissionPane,
+  type DesktopPermissionStatus,
+} from './desktop-store.ts'
 import { DESKTOP_SETTINGS_NAMESPACE, type DesktopSettings } from '../desktop-settings.ts'
 import { en, zh, type DesktopKey } from './locales.ts'
 
@@ -58,6 +63,8 @@ export function apply(ctx: ClientContext): void {
   // The probe answer, mirrored outside the store for the pane picker: the
   // deep-link needs the current answer at call time, not a re-render.
   const permissionsRef: { value: DesktopPermissionStatus | undefined } = { value: undefined }
+  // The capability switch the user asked for whose grants have not landed.
+  const pendingEnableRef: { field: DesktopCapabilityField | undefined } = { field: undefined }
 
   const sync = (): void => {
     const snapshot = scope.getSnapshot()
@@ -66,10 +73,11 @@ export function apply(ctx: ClientContext): void {
   ctx.effect(() => scope.subscribe(sync), 'ui-settings-desktop: scope mirror')
 
   const injected = (actions: BoundActions<typeof store>): {
-    setField: (field: 'browserUse' | 'computerUse' | 'lockScreenOperation', value: boolean) => void
+    setField: (field: DesktopCapabilityField, value: boolean) => void
     setGuide: (pane: DesktopPermissionPane | undefined) => void
     refreshPermissions: () => void
     openMissingPane: () => void
+    revealAppInFinder: () => void
   } => {
     bound = actions
     sync()
@@ -78,6 +86,21 @@ export function apply(ctx: ClientContext): void {
     const publish = (status: DesktopPermissionStatus): void => {
       permissionsRef.value = status
       bound?.setPermissions(status)
+    }
+
+    /** Probe the host's TCC state once, answering the stored truth. */
+    const probe = (): Promise<DesktopPermissionStatus | undefined> =>
+      ctx.remote.desktopPermissions.status()
+        .then((status) => {
+          if (status.ok) publish(status.value)
+          return status.ok ? status.value : undefined
+        })
+        .catch(() => undefined)
+
+    /** Persist one capability switch (the optimistic flip + durable write). */
+    const persistOn = (field: DesktopCapabilityField): void => {
+      bound?.sync(({ ...scope.getSnapshot().value, [field]: true }) as DesktopSettings | undefined, 'ready')
+      void scope.set(field, true)
     }
 
     // Deep-link the pane of the FIRST missing grant: the user toggles that
@@ -93,34 +116,82 @@ export function apply(ctx: ClientContext): void {
         .catch(() => {})
     }
 
+    // While a grant guide is open the client polls the host: the moment the
+    // missing grants land, the pending capability enables itself and the guide
+    // retires — the user never clicks the switch again.
+    let guidePoll: ReturnType<typeof setInterval> | undefined
+    const stopGuidePoll = (): void => {
+      if (guidePoll === undefined) return
+      clearInterval(guidePoll)
+      guidePoll = undefined
+    }
+    const checkPendingEnable = (): void => {
+      const pending = pendingEnableRef.field
+      const permissions = permissionsRef.value
+      if (pending === undefined || permissions === undefined) return
+      if (!DESKTOP_REQUIRED_GRANTS[pending].every(grant => permissions[grant])) return
+      bound?.setPendingEnable(undefined)
+      bound?.setGuide(undefined)
+      stopGuidePoll()
+      persistOn(pending)
+    }
+    const startGuidePoll = (): void => {
+      if (guidePoll !== undefined) return
+      guidePoll = setInterval(() => { void probe().then(checkPendingEnable) }, 2_500)
+    }
+
     return {
       setField: (field, value) => {
-        // Optimistic: the switch flips now, and the accepted durable write
-        // (or the recovery read after a rejection) converges the store.
-        bound?.sync(({ ...scope.getSnapshot().value, [field]: value }) as DesktopSettings | undefined, 'ready')
-        void scope.set(field, value)
-        // Enabling computer use is the moment its grants become necessary:
-        // take the user straight to the missing pane instead of leaving the
-        // guidance for a second visit.
-        if (field === 'computerUse' && value === true) {
-          void ctx.remote.desktopPermissions.status().then((status) => {
-            if (status.ok && !(status.value.accessibility && status.value.screenRecording)) openMissingPane()
-          }).catch(() => {})
+        if (value === false) {
+          // Turning a capability off only stops new use; it never touches the
+          // macOS grants, so re-enabling later needs no new permission.
+          bound?.sync(({ ...scope.getSnapshot().value, [field]: false }) as DesktopSettings | undefined, 'ready')
+          void scope.set(field, false)
+          if (pendingEnableRef.field === field) {
+            pendingEnableRef.field = undefined
+            bound?.setPendingEnable(undefined)
+            bound?.setGuide(undefined)
+            stopGuidePoll()
+          }
+          return
         }
+        const required = DESKTOP_REQUIRED_GRANTS[field]
+        if (required.length === 0) {
+          persistOn(field)
+          return
+        }
+        // Turning ON is gated on the grants the capability needs: the switch
+        // may only stay on once the OS grants exist. Missing grants keep the
+        // switch off, open the exact System Settings pane, and start polling —
+        // the enable completes itself when the grants land.
+        void probe().then((status) => {
+          const granted = status !== undefined && required.every(grant => status[grant])
+          if (granted) {
+            persistOn(field)
+            return
+          }
+          pendingEnableRef.field = field
+          bound?.setPendingEnable(field)
+          openMissingPane()
+          startGuidePoll()
+        })
       },
       // The probe runs in the host process, so the OS attributes the request
       // to Colaw itself; the answer lands in the store and the section reads
       // it from there. A rejected call leaves the answer unset — undefined
       // means "no probe has answered", and the next mount probes again.
       refreshPermissions: () => {
-        void ctx.remote.desktopPermissions.status()
-          .then((status) => {
-            if (status.ok) publish(status.value)
-          })
-          .catch(() => {})
+        void probe().then(checkPendingEnable)
       },
       openMissingPane,
-      setGuide: (pane) => { bound?.setGuide(pane) },
+      setGuide: (pane) => {
+        bound?.setGuide(pane)
+        if (pane === undefined) stopGuidePoll()
+        else startGuidePoll()
+      },
+      revealAppInFinder: () => {
+        void ctx.remote.desktopPermissions.revealAppInFinder().catch(() => {})
+      },
     }
   }
 
@@ -138,6 +209,7 @@ export function apply(ctx: ClientContext): void {
         setGuide: face.setGuide,
         refreshPermissions: face.refreshPermissions,
         openMissingPane: face.openMissingPane,
+        revealAppInFinder: face.revealAppInFinder,
       }
     },
   }, DesktopSection))

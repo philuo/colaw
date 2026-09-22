@@ -11,6 +11,7 @@ import { z } from 'zod'
 import type { CuaDriver as NativeDriver } from '@trycua/cua-driver'
 import type {} from '@deepseek-ai/dsh-computer-use'
 import { execFile } from 'node:child_process'
+import { dirname } from 'node:path'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { DesktopPermissionPane, DesktopPermissionStatus } from './types.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -64,6 +65,21 @@ export class DesktopPermissionsController extends TypertRemoteService {
     } catch {
       return { accessibility: false, screenRecording: false }
     }
+  }
+
+  /**
+   * Reveal Colaw.app in Finder: dragging the app from Finder into the
+   * System Settings list is the grant path the floating guide points at.
+   */
+  @Remote
+  revealAppInFinder(): void {
+    try {
+      // process.execPath lives in Colaw.app/Contents/MacOS; the bundle is
+      // three levels up.
+      const appDir = dirname(dirname(dirname(process.execPath)))
+      // The error callback keeps an `open` failure from crashing the host process.
+      execFile('open', ['-R', appDir], () => {})
+    } catch {}
   }
 
   /**
