@@ -62,6 +62,8 @@ export interface DesktopSectionState {
    * the running host still needs one restart before the surface is usable.
    */
   grantDone: DesktopCapabilityField | undefined
+  /** True while the native drag-guide bar carries the guidance; the in-page bar stands down. */
+  nativeGuide: boolean
   /** Bumped on every sync so the store always publishes a change. */
   revision: number
 }
@@ -73,6 +75,7 @@ type DesktopSectionActions = {
   setGuide: (draft: DesktopSectionState, pane: DesktopPermissionPane | undefined) => void
   setPendingEnable: (draft: DesktopSectionState, field: DesktopCapabilityField | undefined) => void
   setGrantDone: (draft: DesktopSectionState, field: DesktopCapabilityField | undefined) => void
+  setNativeGuide: (draft: DesktopSectionState, value: boolean) => void
 }
 
 /**
@@ -90,6 +93,7 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       guide: undefined,
       pendingEnable: undefined,
       grantDone: undefined,
+      nativeGuide: false,
       revision: -1,
     }),
     actions: {
@@ -118,6 +122,10 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       },
       setGrantDone: (d, field) => {
         d.grantDone = field
+        d.revision += 1
+      },
+      setNativeGuide: (d, value) => {
+        d.nativeGuide = value
         d.revision += 1
       },
     },

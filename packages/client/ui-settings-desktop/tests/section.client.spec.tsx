@@ -98,6 +98,17 @@ describe('DesktopSection permission block', () => {
     expect(screen.queryByRole('dialog', { name: en.guideTitle })).toBeNull()
   })
 
+  it('stands the in-page bar down while the native drag-guide is up', () => {
+    const { store } = mountSection()
+    act(() => { store.actions.setGuide('accessibility') })
+    expect(screen.getByRole('dialog', { name: en.guideTitle })).toBeDefined()
+    act(() => { store.actions.setNativeGuide(true) })
+    // The native bar owns the guidance; the page stops drawing its own.
+    expect(screen.queryByRole('dialog', { name: en.guideTitle })).toBeNull()
+    act(() => { store.actions.setNativeGuide(false) })
+    expect(screen.getByRole('dialog', { name: en.guideTitle })).toBeDefined()
+  })
+
   it('dismisses the guide and answers a re-check with the itemized list', () => {
     const { store } = mountSection()
     act(() => { store.actions.setPermissions({ accessibility: false, screenRecording: false }) })

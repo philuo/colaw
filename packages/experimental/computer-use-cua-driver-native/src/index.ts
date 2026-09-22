@@ -116,17 +116,22 @@ export class DesktopPermissionsController extends TypertRemoteService {
    * Absent helper binary (non-macOS, no toolchain at pack time) is a no-op:
    * the in-page bar carries the same guidance.
    * @param pane - the privacy pane whose grant is missing.
+   * @returns whether the native bar actually spawned; the client hides its
+   *   in-page bar only then, keeping it as the fallback.
    */
   @Remote
-  showGrantGuide(pane: DesktopPermissionPane): void {
+  showGrantGuide(pane: DesktopPermissionPane): boolean {
     dismissGuideProcess()
     try {
       const helper = join(dirname(dirname(process.execPath)), 'Resources', 'permission-guide')
-      if (!existsSync(helper)) return
+      if (!existsSync(helper)) return false
       const appBundle = dirname(dirname(dirname(process.execPath)))
       guideProcess = spawn(helper, [appBundle, pane], { detached: true, stdio: 'ignore' })
       guideProcess.unref()
-    } catch {}
+      return true
+    } catch {
+      return false
+    }
   }
 
   /**

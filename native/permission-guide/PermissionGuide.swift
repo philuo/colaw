@@ -8,6 +8,10 @@
 // dismissing the guide (it terminates this process when the grant lands or
 // the user dismisses).
 //
+// The panel is a STRONG property of the application delegate: a window held
+// only by a local variable outlives its owner on screen and crashes the
+// process on first interaction — exactly the click-kills-the-drag failure.
+//
 // Usage: permission-guide <path-to-Colaw.app> <accessibility|screenRecording>
 
 import AppKit
@@ -41,7 +45,6 @@ final class DraggableIconView: NSImageView, NSDraggingSource {
         image = NSWorkspace.shared.icon(forFile: appURL.path)
         imageScaling = .scaleProportionallyUpOrDown
         isEditable = false
-        registerForDraggedTypes([])
     }
 
     @available(*, unavailable)
@@ -49,9 +52,7 @@ final class DraggableIconView: NSImageView, NSDraggingSource {
 
     override func mouseDown(with event: NSEvent) {
         let item = NSDraggingItem(pasteboardWriter: appURL as NSURL)
-        // The drag image is the icon itself, sized as displayed.
-        let frame = bounds
-        image?.size = frame.size
+        item.draggingFrame = bounds
         beginDraggingSession(with: [item], event: event, source: self)
     }
 
@@ -64,6 +65,9 @@ final class DraggableIconView: NSImageView, NSDraggingSource {
 
 final class GuideController: NSObject, NSApplicationDelegate {
     let config: Configuration
+    /// Strong owner of the on-screen panel (see the file header).
+    var panel: NSPanel?
+    var positioningTimer: Timer?
 
     init(config: Configuration) {
         self.config = config
@@ -71,14 +75,18 @@ final class GuideController: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_: Notification) {
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 76),
+            contentRect: NSRect(x: 0, y: 0, width: 372, height: 72),
             styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
             backing: .buffered,
             defer: false,
         )
         panel.title = ""
         panel.titlebarAppearsTransparent = true
+        panel.standardWindowButton(.closeButton)?.isHidden = true
+        panel.standardWindowButton(.miniaturizeButton)?.isHidden = true
+        panel.standardWindowButton(.zoomButton)?.isHidden = true
         panel.isMovableByWindowBackground = true
+        panel.isReleasedWhenClosed = false
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
@@ -108,10 +116,15 @@ final class GuideController: NSObject, NSApplicationDelegate {
         text.alignment = .leading
         text.spacing = 2
 
-        let row = NSStackView(views: [icon, arrow, text])
+        let close = NSButton(title: "✕", target: self, action: #selector(closeGuide))
+        close.isBordered = false
+        close.font = .systemFont(ofSize: 12)
+        close.contentTintColor = NSColor.white.withAlphaComponent(0.5)
+
+        let row = NSStackView(views: [icon, arrow, text, close])
         row.orientation = .horizontal
         row.spacing = 14
-        row.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 16)
+        row.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 12)
 
         let content = NSView()
         content.addSubview(row)
@@ -125,8 +138,83 @@ final class GuideController: NSObject, NSApplicationDelegate {
             row.centerYAnchor.constraint(equalTo: content.centerYAnchor),
         ])
 
-        panel.center()
+        self.panel = panel
+        positionFallback(panel)
         panel.orderFrontRegardless()
+        followSystemSettings()
+    }
+
+    /** Center the bar near the top of the main display until Settings appears. */
+    private func positionFallback(_ panel: NSPanel) {
+        guard let screen = NSScreen.main else { return }
+        let frame = screen.frame
+        let size = panel.frame.size
+        panel.setFrame(
+            NSRect(
+                x: frame.midX - size.width / 2,
+                y: frame.maxY - size.height - 72,
+                width: size.width,
+                height: size.height,
+            ),
+            display: false,
+        )
+    }
+
+    /**
+     * Keep the bar directly under the System Settings window. Settings opens
+     * asynchronously after this helper, so poll the on-screen window list for
+     * a few seconds; once found (and whenever it moves), re-anchor below it.
+     */
+    private func followSystemSettings() {
+        var found = false
+        positioningTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+            guard let self, let panel = self.panel else { return timer.invalidate() }
+            if let anchor = Self.systemSettingsFrame() {
+                found = true
+                let size = panel.frame.size
+                let margin: CGFloat = 12
+                let x = anchor.midX - size.width / 2
+                let y = anchor.minY - size.height - margin
+                if panel.frame.origin != NSPoint(x: x, y: y) {
+                    panel.setFrameOrigin(NSPoint(x: x, y: y))
+                }
+            } else if found {
+                // Settings closed: retire with it.
+                timer.invalidate()
+                NSApplication.shared.terminate(nil)
+            } else if timer.fireDate.timeIntervalSinceNow < -6 {
+                timer.invalidate()
+            }
+        }
+    }
+
+    /** The frontmost System Settings window, in AppKit coordinates, if on screen. */
+    private static func systemSettingsFrame() -> NSRect? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+            as? [[String: Any]]
+        else { return nil }
+        for window in list {
+            let owner = window[kCGWindowOwnerName as String] as? String ?? ""
+            guard owner.contains("System Settings") || owner.contains("系统设置") || owner.contains("System Preferences") else { continue }
+            let layer = window[kCGWindowLayer as String] as? Int ?? 0
+            guard layer == 0 else { continue }
+            guard let boundsDict = window[kCGWindowBounds as String] as? [String: Any],
+                let quartz = CGRect(dictionaryRepresentation: boundsDict as CFDictionary)
+            else { continue }
+            guard let screen = NSScreen.main else { continue }
+            // Quartz is top-left origin; AppKit is bottom-left.
+            return NSRect(
+                x: quartz.minX,
+                y: screen.frame.maxY - quartz.maxY,
+                width: quartz.width,
+                height: quartz.height,
+            )
+        }
+        return nil
+    }
+
+    @objc private func closeGuide() {
+        NSApplication.shared.terminate(nil)
     }
 }
 

@@ -114,7 +114,11 @@ export function apply(ctx: ClientContext): void {
       bound?.setGuide(pane)
       // The native bar carries the draggable icon; the in-page bar remains as
       // the fallback when the helper binary is absent.
-      void ctx.remote.desktopPermissions.showGrantGuide(pane).catch(() => {})
+      void ctx.remote.desktopPermissions.showGrantGuide(pane)
+        .then((shown) => {
+          if (shown.ok) bound?.setNativeGuide(shown.value === true)
+        })
+        .catch(() => {})
       void ctx.remote.desktopPermissions.openPermissionPane(pane)
         .then((status) => {
           if (status.ok) publish(status.value)
@@ -124,6 +128,7 @@ export function apply(ctx: ClientContext): void {
 
     /** Retire both guide surfaces (native bar + in-page state). */
     const closeGuides = (): void => {
+      bound?.setNativeGuide(false)
       void ctx.remote.desktopPermissions.dismissGrantGuide().catch(() => {})
     }
 

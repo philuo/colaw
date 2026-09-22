@@ -137,7 +137,7 @@ export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
             </div>
           </div>
         )}
-      {state.guide === undefined
+      {state.guide === undefined || state.nativeGuide
         ? null
         : (
           <div className={css.guideBar} role="dialog" aria-label={t('guideTitle')}>
