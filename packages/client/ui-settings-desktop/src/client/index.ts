@@ -211,6 +211,20 @@ export function apply(ctx: ClientContext): void {
       guidePoll = setInterval(() => { void probe().then(settlePending) }, 2_500)
     }
 
+    // The two capabilities that reach the model through a provider — computer
+    // use and browser use — are mounted from this switch at *boot*: each
+    // provider reads the namespace in its own `apply`, and that runs once per
+    // process. So a flip is a saved intention, not a live change, in both
+    // directions: turning one off stops the next process, not the running one.
+    // Saying that where the switch was just touched is the difference between
+    // "not working yet" and "broken". `lockScreenOperation` has no provider to
+    // mount, so it stays quiet rather than training the user to ignore the bar.
+    const RESTART_GATED_FIELDS: ReadonlySet<DesktopCapabilityField> = new Set(['computerUse', 'browserUse'])
+    const announceRestart = (field: DesktopCapabilityField): void => {
+      if (!RESTART_GATED_FIELDS.has(field)) return
+      bound?.setGrantDone(field)
+    }
+
     return {
       setField: (field, value) => {
         if (value === false) {
@@ -218,6 +232,7 @@ export function apply(ctx: ClientContext): void {
           // macOS grants, so re-enabling later needs no new permission.
           bound?.sync(({ ...scope.getSnapshot().value, [field]: false }) as DesktopSettings | undefined, 'ready')
           void scope.set(field, false)
+          announceRestart(field)
           if (pendingEnableRef.field === field) {
             pendingEnableRef.field = undefined
             bound?.setPendingEnable(undefined)
@@ -229,7 +244,10 @@ export function apply(ctx: ClientContext): void {
         }
         const required = DESKTOP_REQUIRED_GRANTS[field]
         if (required.length === 0) {
+          // No macOS grant backs this capability, so the switch is the whole
+          // gate: persist it and report when it lands.
           persistOn(field)
+          announceRestart(field)
           return
         }
         // Turning ON is gated on the grants the capability needs: the switch
@@ -242,16 +260,18 @@ export function apply(ctx: ClientContext): void {
           if (granted) {
             const wasPending = pendingEnableRef.field === field
             persistOn(field)
-            if (!wasPending) return
-            pendingEnableRef.field = undefined
-            bound?.setPendingEnable(undefined)
-            bound?.setGuide(undefined)
-            stopGuidePoll()
-            closeGuides()
-            // The grant landed under this very process: the long-running host
-            // keeps serving its pre-grant TCC answer (macOS caches the trust
-            // state per process), so the surface only works after a relaunch.
-            bound?.setGrantDone(field)
+            if (wasPending) {
+              pendingEnableRef.field = undefined
+              bound?.setPendingEnable(undefined)
+              bound?.setGuide(undefined)
+              stopGuidePoll()
+              closeGuides()
+            }
+            // Both routes need the restart: the grants landed under this very
+            // process, whose host keeps serving its pre-grant TCC answer, and
+            // the provider that acts on the capability mounts at boot either
+            // way.
+            announceRestart(field)
             return
           }
           pendingEnableRef.field = field

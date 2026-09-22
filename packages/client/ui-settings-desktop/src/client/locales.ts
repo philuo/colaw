@@ -23,7 +23,10 @@ export const en = {
   guideBarDrag: 'Drag Colaw into the {pane} list above',
   guideBarHint: 'Release to finish the grant — then switch the capability on yourself.',
   guideReveal: 'Show in Finder',
-  grantDoneTitle: 'Grant complete — restart Colaw to activate.',
+  // Direction-neutral on purpose: the bar also reports a plain switch flip,
+  // and both the grants the host caches and the providers that mount at boot
+  // only land in the next process — whether the switch went on or off.
+  grantDoneTitle: 'Setting saved — restart Colaw to apply it.',
   grantRestart: 'Restart Colaw',
   pendingTitle: 'Permission granted — turn the switch on.',
   pendingAction: 'Turn on',
@@ -61,7 +64,7 @@ export const zh: { [Key in keyof typeof en]: string } = {
   guideBarDrag: '把 Colaw 拖进上方的「{pane}」列表',
   guideBarHint: '松手即完成授权 —— 之后请自行打开开关。',
   guideReveal: '在 Finder 中显示',
-  grantDoneTitle: '授权完成 —— 重启 Colaw 后生效。',
+  grantDoneTitle: '已保存 —— 重启 Colaw 后生效。',
   grantRestart: '重启 Colaw',
   pendingTitle: '授权已完成 —— 请打开开关。',
   pendingAction: '打开开关',

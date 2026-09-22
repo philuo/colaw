@@ -35,6 +35,7 @@ function mountSection(options: {
   setRevoked?: (value: boolean) => void
   dismissPending?: () => void
   openMissingPane?: () => void
+  restartApp?: () => void
 } = {}) {
   const store = createDesktopSectionStore().create()
   store.actions.sync(undefined, options.status ?? 'ready')
@@ -53,7 +54,7 @@ function mountSection(options: {
     dismissPending={options.dismissPending ?? vi.fn()}
     openMissingPane={options.openMissingPane ?? vi.fn()}
     revealAppInFinder={vi.fn()}
-    restartApp={vi.fn()}
+    restartApp={options.restartApp ?? vi.fn()}
   />)
   return { store, refreshPermissions }
 }
@@ -123,6 +124,21 @@ describe('DesktopSection permission block', () => {
     fireEvent.click(screen.getByText(en.guideDismiss))
     expect(dismissPending).toHaveBeenCalledTimes(1)
     expect(setField).not.toHaveBeenCalled()
+  })
+
+  it('announces the restart a saved capability needs, and offers it', () => {
+    const restartApp = vi.fn()
+    const { store } = mountSection({ restartApp })
+    // The switch's own wiring raises this once the capability is persisted:
+    // both gated capabilities mount their provider from `apply` at boot, so a
+    // saved flip only lands on the next start.
+    act(() => { store.actions.setGrantDone('browserUse') })
+    expect(screen.getByText(en.grantDoneTitle)).toBeDefined()
+    fireEvent.click(screen.getByText(en.grantRestart))
+    // `restartApp` is the host's own relaunch; the section only asks for it.
+    expect(restartApp).toHaveBeenCalledTimes(1)
+    fireEvent.click(screen.getByText(en.guideDismiss))
+    expect(screen.queryByText(en.grantDoneTitle)).toBeNull()
   })
 
   it('reports a revoked grant as a warning and offers the walkthrough again', () => {
