@@ -76,6 +76,7 @@ export function apply(ctx: ClientContext): void {
     setField: (field: DesktopCapabilityField, value: boolean) => void
     setGuide: (pane: DesktopPermissionPane | undefined) => void
     refreshPermissions: () => void
+    setGrantDone: (field: DesktopCapabilityField | undefined) => void
     openMissingPane: () => void
     revealAppInFinder: () => void
     restartApp: () => void
@@ -188,6 +189,7 @@ export function apply(ctx: ClientContext): void {
       refreshPermissions: () => {
         void probe().then(checkPendingEnable)
       },
+      setGrantDone: (field) => { bound?.setGrantDone(field) },
       openMissingPane,
       setGuide: (pane) => {
         bound?.setGuide(pane)
@@ -217,6 +219,7 @@ export function apply(ctx: ClientContext): void {
       return {
         setField: face.setField,
         setGuide: face.setGuide,
+        setGrantDone: face.setGrantDone,
         refreshPermissions: face.refreshPermissions,
         openMissingPane: face.openMissingPane,
         revealAppInFinder: face.revealAppInFinder,

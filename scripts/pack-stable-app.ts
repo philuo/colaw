@@ -1689,9 +1689,7 @@ function ensureStableSignature(): void {
   )
   const identities = new TextDecoder().decode(listed.stdout ?? new Uint8Array())
   const signed = identities.includes(identity)
-  const args = signed
-    ? ['--force', '--deep', '--sign', identity, '--identifier', 'ai.deepseek.harness']
-    : ['-']
+  const args = ['--force', '--deep', '--sign', signed ? identity : '-', '--identifier', 'ai.deepseek.harness']
   if (!signed) {
     console.error(
       `pack-stable-app: no "${identity}" codesigning identity — signing ad-hoc. TCC grants will NOT survive the next update;`
