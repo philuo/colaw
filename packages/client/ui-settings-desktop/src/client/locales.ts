@@ -23,6 +23,8 @@ export const en = {
   guideBarDrag: 'Drag Colaw into the {pane} list above',
   guideBarHint: 'Release to finish the grant — no need to touch the switch again.',
   guideReveal: 'Show in Finder',
+  grantDoneTitle: 'Grant complete — restart Colaw to activate.',
+  grantRestart: 'Restart Colaw',
   guideRecheck: 'Re-check',
   guideDismiss: 'Later',
 } as const
@@ -53,6 +55,8 @@ export const zh: { [Key in keyof typeof en]: string } = {
   guideBarDrag: '把 Colaw 拖进上方的「{pane}」列表',
   guideBarHint: '松手即完成授权，无需再点开关。',
   guideReveal: '在 Finder 中显示',
+  grantDoneTitle: '授权完成 —— 重启 Colaw 后生效。',
+  grantRestart: '重启 Colaw',
   guideRecheck: '重新检测',
   guideDismiss: '稍后',
 }

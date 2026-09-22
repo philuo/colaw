@@ -1539,6 +1539,7 @@ function reportSize(): void {
   ensurePinnedBun()
   ensureBunxShim()
   ensureNoSourceMaps()
+  ensureStableSignature()
   const total = sizeOf(stableApp)
   const modules = sizeOf(join(appResourcesApp, 'node_modules'))
   const install = sizeOf(installDir)
@@ -1668,6 +1669,42 @@ function ensureBunxShim(): void {
     process.exit(1)
   }
   console.log(`pack-stable-app: bunx shim → bun (${reported})`)
+}
+
+/**
+ * Sign the assembled .app with the stable self-signed codesigning identity
+ * (see scripts/create-colaw-signing-cert.sh). TCC grants — Accessibility,
+ * Screen Recording — are keyed on the app's Designated Requirement, so a
+ * build signed by this same certificate keeps every user grant across
+ * updates. An ad-hoc fallback keeps local builds working but prints the
+ * re-grant warning loud: TCC keys a bare ad-hoc app on its cdhash, which
+ * every rebuild changes.
+ */
+function ensureStableSignature(): void {
+  const identity = process.env.COLAW_SIGN_IDENTITY ?? 'colaw-codesign'
+  type BunSpawn = { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null; stdout: Uint8Array } } }
+  const listed = (globalThis as unknown as BunSpawn).Bun.spawnSync(
+    ['security', 'find-identity', '-v', '-p', 'codesign'],
+    { cwd: stableApp, stdout: 'pipe', stderr: 'pipe' },
+  )
+  const identities = new TextDecoder().decode(listed.stdout ?? new Uint8Array())
+  const signed = identities.includes(identity)
+  const args = signed
+    ? ['--force', '--deep', '--sign', identity, '--identifier', 'ai.deepseek.harness']
+    : ['-']
+  if (!signed) {
+    console.error(
+      `pack-stable-app: no "${identity}" codesigning identity — signing ad-hoc. TCC grants will NOT survive the next update;`
+      + ' run scripts/create-colaw-signing-cert.sh once to fix.',
+    )
+  }
+  const result = (globalThis as unknown as { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null } } })
+    .Bun.spawnSync(['codesign', ...args, stableApp], { stdout: 'inherit', stderr: 'inherit' })
+  if (result.exitCode !== 0) {
+    console.error(`pack-stable-app: codesign failed with exit ${String(result.exitCode)}`)
+    process.exit(1)
+  }
+  console.log(`pack-stable-app: signed ${signed ? `stable (${identity})` : 'ad-hoc (grants will not survive updates)'}`)
 }
 
 /** Copy the packed payload out of the build tree before the official stable build replaces it. */

@@ -12,26 +12,37 @@ import { useEffect } from 'react'
 import type { ReactNode } from 'react'
 import { Switch, IconBrowseOutline16, IconSkillOutline16, IconShieldOutline16 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime, PropsStore } from '@deepseek-ai/dsh-client-ui-slots'
-import type { createDesktopSectionStore, DesktopPermissionPane } from './desktop-store.ts'
+import type { createDesktopSectionStore, DesktopCapabilityField, DesktopPermissionPane } from './desktop-store.ts'
 import css from './DesktopSection.module.css'
 
 export type { DesktopPermissionStatus, DesktopPermissionPane } from './desktop-store.ts'
 
-/** Full component props: section runtime share + store share + locale seat + actions. */
+/** The action face the wiring injects alongside the store mirror. */
+export interface DesktopSectionActions {
+  /** Optimistically flip one switch; the scope write settles in the store. */
+  setField: (field: 'browserUse' | 'computerUse' | 'lockScreenOperation', value: boolean) => void
+  /** Re-probe the host's TCC state and publish the answer to the store. */
+  refreshPermissions: () => void
+  /** Open the floating grant guide for a pane. */
+  setGuide: (pane: DesktopPermissionPane | undefined) => void
+  /** Clear the grants-landed banner. */
+  setGrantDone: (field: DesktopCapabilityField | undefined) => void
+  /** Reveal Colaw.app in Finder for the drag-into-list grant gesture. */
+  revealAppInFinder: () => void
+  /** Restart the app so the freshly granted surface activates. */
+  restartApp: () => void
+}
+
+/**
+ * Full component props. The action face is partial at the type level because
+ * the slot contract declares no inject seat — the renderer binds what the
+ * registration returned; the component renders nothing when it is absent.
+ */
 export type DesktopSectionComponentProps =
   PropsRuntime<'settings.section'>
   & PropsStore<ReturnType<typeof createDesktopSectionStore>>
   & PropsLocale<'settings.desktop'>
-  & {
-    /** Optimistically flip one switch; the scope write settles in the store. */
-    setField: (field: 'browserUse' | 'computerUse' | 'lockScreenOperation', value: boolean) => void
-    /** Re-probe the host's TCC state and publish the answer to the store. */
-    refreshPermissions: () => void
-    /** Dismiss the floating grant guide. */
-    setGuide: (pane: DesktopPermissionPane | undefined) => void
-    /** Reveal Colaw.app in Finder for the drag-into-list grant gesture. */
-    revealAppInFinder: () => void
-  }
+  & Partial<DesktopSectionActions>
 
 /** The three rows, in display order. */
 const ROWS: readonly {
@@ -51,7 +62,9 @@ const ROWS: readonly {
  * @returns the section element tree.
  */
 export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
-  const { t, useStore, setField, setGuide, refreshPermissions, revealAppInFinder } = props
+  const { t, useStore, setField, setGuide, setGrantDone, refreshPermissions, revealAppInFinder, restartApp } = props
+  if (setField === undefined || setGuide === undefined || setGrantDone === undefined
+    || refreshPermissions === undefined || revealAppInFinder === undefined || restartApp === undefined) return null
   const state = useStore(s => s)
   const permissions = state.permissions
   const granted = permissions !== undefined && permissions.accessibility && permissions.screenRecording
@@ -112,6 +125,18 @@ export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
             </div>
           )}
       </div>
+      {state.grantDone === undefined
+        ? null
+        : (
+          <div className={css.guideBar} role="status" aria-label={t('grantDoneTitle')}>
+            <span className={css.guideIcon}>✓</span>
+            <span className={css.guideText}>{t('grantDoneTitle')}</span>
+            <div className={css.guideActions}>
+              <button type="button" className={css.guideAction} onClick={restartApp}>{t('grantRestart')}</button>
+              <button type="button" className={css.guideAction} onClick={() => { setGrantDone(undefined) }}>{t('guideDismiss')}</button>
+            </div>
+          </div>
+        )}
       {state.guide === undefined
         ? null
         : (

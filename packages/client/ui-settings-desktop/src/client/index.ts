@@ -78,6 +78,7 @@ export function apply(ctx: ClientContext): void {
     refreshPermissions: () => void
     openMissingPane: () => void
     revealAppInFinder: () => void
+    restartApp: () => void
   } => {
     bound = actions
     sync()
@@ -90,10 +91,11 @@ export function apply(ctx: ClientContext): void {
 
     /** Probe the host's TCC state once, answering the stored truth. */
     const probe = (): Promise<DesktopPermissionStatus | undefined> =>
-      ctx.remote.desktopPermissions.status()
+      ctx.remote.desktopPermissions.statusFresh()
         .then((status) => {
-          if (status.ok) publish(status.value)
-          return status.ok ? status.value : undefined
+          if (status === undefined || !status.ok || status.value === undefined) return undefined
+          publish(status.value)
+          return status.value
         })
         .catch(() => undefined)
 
@@ -134,6 +136,9 @@ export function apply(ctx: ClientContext): void {
       bound?.setGuide(undefined)
       stopGuidePoll()
       persistOn(pending)
+      // The long-running host may not see the fresh Accessibility grant until
+      // its own restart; say so instead of leaving a dead switch on.
+      bound?.setGrantDone(pending)
     }
     const startGuidePoll = (): void => {
       if (guidePoll !== undefined) return
@@ -192,6 +197,11 @@ export function apply(ctx: ClientContext): void {
       revealAppInFinder: () => {
         void ctx.remote.desktopPermissions.revealAppInFinder().catch(() => {})
       },
+      restartApp: () => {
+        // The host restarts itself: it relaunches the bundle, then exits, so
+        // the freshly granted TCC state is read by a clean boot.
+        void ctx.remote.desktopPermissions.restartApp().catch(() => {})
+      },
     }
   }
 
@@ -210,6 +220,7 @@ export function apply(ctx: ClientContext): void {
         refreshPermissions: face.refreshPermissions,
         openMissingPane: face.openMissingPane,
         revealAppInFinder: face.revealAppInFinder,
+        restartApp: face.restartApp,
       }
     },
   }, DesktopSection))

@@ -57,6 +57,11 @@ export interface DesktopSectionState {
    * capability enables itself — the user never clicks the switch again.
    */
   pendingEnable: DesktopCapabilityField | undefined
+  /**
+   * The capability whose grants landed and whose enable is persisted, while
+   * the running host still needs one restart before the surface is usable.
+   */
+  grantDone: DesktopCapabilityField | undefined
   /** Bumped on every sync so the store always publishes a change. */
   revision: number
 }
@@ -67,6 +72,7 @@ type DesktopSectionActions = {
   setPermissions: (draft: DesktopSectionState, value: DesktopPermissionStatus | undefined) => void
   setGuide: (draft: DesktopSectionState, pane: DesktopPermissionPane | undefined) => void
   setPendingEnable: (draft: DesktopSectionState, field: DesktopCapabilityField | undefined) => void
+  setGrantDone: (draft: DesktopSectionState, field: DesktopCapabilityField | undefined) => void
 }
 
 /**
@@ -83,6 +89,7 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       permissions: undefined,
       guide: undefined,
       pendingEnable: undefined,
+      grantDone: undefined,
       revision: -1,
     }),
     actions: {
@@ -107,6 +114,10 @@ export function createDesktopSectionStore(): EngineStoreHandle<DesktopSectionSta
       },
       setPendingEnable: (d, field) => {
         d.pendingEnable = field
+        d.revision += 1
+      },
+      setGrantDone: (d, field) => {
+        d.grantDone = field
         d.revision += 1
       },
     },

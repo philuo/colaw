@@ -10,8 +10,9 @@ import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
 import type { CuaDriver as NativeDriver } from '@trycua/cua-driver'
 import type {} from '@deepseek-ai/dsh-computer-use'
-import { execFile } from 'node:child_process'
-import { dirname } from 'node:path'
+import { execFile, spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
+import { dirname, join } from 'node:path'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type { DesktopPermissionPane, DesktopPermissionStatus } from './types.ts'
 import type {} from '@deepseek-ai/dsh-system-prompt'
@@ -43,6 +44,11 @@ function nativeProbe(): typeof import('@trycua/cua-driver') {
   // oxlint-disable-next-line typescript/no-require-imports -- the deferred native load is deliberate; see the module doc.
   return require('@trycua/cua-driver') as typeof import('@trycua/cua-driver')
 }
+
+/** The probe child's program: the TCC state read from a fresh runtime. */
+const PROBE_SOURCE = `const { createRequire } = await import('node:module');
+const sdk = createRequire(__ROOT__ + '/index.js')('@trycua/cua-driver');
+process.stdout.write(JSON.stringify(sdk.currentMacOsPermissionStatus()));`
 
 /** The desktop-permission remote: a status probe plus the guided hand-off. */
 export class DesktopPermissionsController extends TypertRemoteService {
@@ -83,6 +89,15 @@ export class DesktopPermissionsController extends TypertRemoteService {
   }
 
   /**
+   * Read the TCC state from a FRESH child process. macOS evaluates TCC per
+   * process and the long-running host keeps serving its stale (pre-grant)
+   * answer even after the user flips the toggle in System Settings — a new
+   * process reads the database's current truth. Slower (~200ms spawn); the
+   * grant guide's polling uses this so the pending switch completes the
+   * moment the grant lands.
+   * @returns the current TCC state, or undefined when the probe child fails.
+   */
+  /**
    * Deep-link System Settings to one privacy pane and re-probe on return.
    *
    * The native SDK only deep-links Screen Recording, so the Accessibility pane
@@ -104,6 +119,46 @@ export class DesktopPermissionsController extends TypertRemoteService {
     } catch {
       return { accessibility: false, screenRecording: false }
     }
+  }
+
+  @Remote
+  async statusFresh(): Promise<DesktopPermissionStatus | undefined> {
+    try {
+      // A fresh process reads the TCC database's CURRENT state; the
+      // long-running host keeps answering its stale pre-grant cache.
+      const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)))
+      const stdout = await new Promise<string>((resolve, reject) => {
+        execFile(process.execPath, ['--input-type=module', '--eval', PROBE_SOURCE.replace('__ROOT__', JSON.stringify(packageRoot))], {
+          cwd: packageRoot,
+          timeout: 8_000,
+          maxBuffer: 4 * 1024,
+        }, (error, stdout) => {
+          if (stdout === '') reject(error ?? new Error('probe produced no output'))
+          else resolve(stdout)
+        })
+      })
+      const parsed = JSON.parse(stdout) as DesktopPermissionStatus
+      return { accessibility: parsed.accessibility === true, screenRecording: parsed.screenRecording === true }
+    } catch {
+      // The fresh probe is best-effort: fall back to the in-process answer,
+      // which stays correct until macOS's per-process TCC cache expires.
+      return this.status()
+    }
+  }
+
+  /**
+   * Restart the app in place: the launcher relaunches the bundle while this
+   * process exits, so a freshly granted TCC state (and every other pending
+   * change) is picked up by a clean boot.
+   */
+  @Remote
+  restartApp(): void {
+    try {
+      const launcher = join(dirname(process.execPath), 'launcher')
+      const child = spawn(launcher, [], { detached: true, stdio: 'ignore' })
+      child.unref()
+      setTimeout(() => { process.exit(0) }, 300)
+    } catch {}
   }
 }
 

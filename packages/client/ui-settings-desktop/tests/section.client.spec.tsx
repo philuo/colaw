@@ -45,7 +45,9 @@ function mountSection(options: {
     setField={options.setField ?? vi.fn()}
     refreshPermissions={refreshPermissions}
     setGuide={(pane) => { store.actions.setGuide(pane) }}
+    setGrantDone={(field) => { store.actions.setGrantDone(field) }}
     revealAppInFinder={vi.fn()}
+    restartApp={vi.fn()}
   />)
   return { store, refreshPermissions }
 }
