@@ -77,23 +77,23 @@ describe('DesktopSection permission block', () => {
     expect(screen.queryByRole('dialog', { name: en.guideTitle })).toBeNull()
   })
 
-  it('keeps the switch off while grants are missing but shows the pending claim', () => {
+  it('keeps the switch off while grants are missing — the guide carries the pending state', () => {
     const setField = vi.fn()
     const { store } = mountSection({ setField })
-    // The wiring probes before enabling: with grants missing the durable
-    // switch stays off, yet the row shows the pending claim so the user sees
-    // the enable is in flight.
+    // The wiring probes before enabling: with grants missing the switch never
+    // turns on — the drag-guide bar is what shows the enable is in flight.
     expect(setField).not.toHaveBeenCalled()
     act(() => { store.actions.setPendingEnable('computerUse') })
-    const sw = screen.getByRole('switch', { name: en.computerUseTitle })
-    expect(sw.getAttribute('aria-checked')).toBe('true')
-    expect(store.getSnapshot().computerUse).toBe(false)
-    // Grants landing retire the pending claim; the wiring persists the enable
-    // (setField) and the accepted write syncs the store — switch stays on.
+    act(() => { store.actions.setGuide('screenRecording') })
+    expect(screen.getByRole('switch', { name: en.computerUseTitle }).getAttribute('aria-checked')).toBe('false')
+    expect(screen.getByRole('dialog', { name: en.guideTitle })).toBeDefined()
+    // Grants landing retire the guide; the wiring then persists the enable and
+    // the accepted write syncs the store — only then does the switch read on.
     act(() => { store.actions.setPermissions({ accessibility: true, screenRecording: true }) })
     act(() => { store.actions.setPendingEnable(undefined) })
     act(() => { store.actions.sync({ browserUse: false, computerUse: true, lockScreenOperation: false }, 'ready') })
     expect(screen.getByRole('switch', { name: en.computerUseTitle }).getAttribute('aria-checked')).toBe('true')
+    expect(screen.queryByRole('dialog', { name: en.guideTitle })).toBeNull()
   })
 
   it('dismisses the guide and answers a re-check with the itemized list', () => {

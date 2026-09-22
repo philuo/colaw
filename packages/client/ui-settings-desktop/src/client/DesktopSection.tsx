@@ -71,7 +71,7 @@ export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
               <span className={css.description}>{t(descriptionKey)}</span>
             </div>
             <Switch
-              checked={state[field] || state.pendingEnable === field}
+              checked={state[field]}
               disabled={state.status !== 'ready'}
               label={t(titleKey)}
               onChange={(next) => { setField(field, next) }}
