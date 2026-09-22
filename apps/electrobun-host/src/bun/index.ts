@@ -551,14 +551,23 @@ const bootProfile = process.env.COLAW_BOOT_PROFILE === '1'
 
 /** The webserver port the overlay patch will pin, read the same way boot will. */
 function readOverlayWebserverPort(): number | undefined {
-  for (const candidate of ['../../config/electrobun.cordis.patch.yml', '../config/electrobun.cordis.patch.yml']) {
-    try {
-      const path = fileURLToPath(new URL(candidate, bundleUrl()))
-      if (!existsSync(path)) continue
-      const found = /port:\s*(\d+)/u.exec(readFileSync(path, 'utf8'))
+  try {
+    // The bundled copy leads: in a packaged app that file is the overlay boot
+    // itself loads (`Resources/app/config/`), and none of the `..`-relative
+    // source layouts below reach it. Missing it left the single-instance probe
+    // below inert exactly where a second launch is most likely — a packaged
+    // app, where the second instance then fought the first for port 3090 and
+    // the profile behind it.
+    const candidates: string[] = []
+    if (BUNDLED_APP_DIR !== undefined) candidates.push(join(BUNDLED_APP_DIR, 'config', 'electrobun.cordis.patch.yml'))
+    const layouts = ['config/electrobun.cordis.patch.yml', '../../config/electrobun.cordis.patch.yml', '../config/electrobun.cordis.patch.yml']
+    for (const layout of layouts) candidates.push(fileURLToPath(new URL(layout, bundleUrl())))
+    for (const candidate of candidates) {
+      if (!existsSync(candidate)) continue
+      const found = /port:\s*(\d+)/u.exec(readFileSync(candidate, 'utf8'))
       if (found !== null) return Number(found[1])
-    } catch { /* try the next layout */ }
-  }
+    }
+  } catch { /* no readable overlay: the probe below simply stays off */ }
   return undefined
 }
 
