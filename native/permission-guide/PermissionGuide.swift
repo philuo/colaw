@@ -12,6 +12,11 @@
 // only by a local variable outlives its owner on screen and crashes the
 // process on first interaction — exactly the click-kills-the-drag failure.
 //
+// The bar is HIDDEN until the System Settings window exists, then anchored
+// 12pt under it: the guide is the answer to the pane, so it must not precede
+// it. Only the discovery deadline (Settings never showed) falls back to a
+// floating position, so the draggable icon is never simply missing.
+//
 // Usage: permission-guide <path-to-Colaw.app> <accessibility|screenRecording>
 
 import AppKit
@@ -68,6 +73,22 @@ final class GuideController: NSObject, NSApplicationDelegate {
     /// Strong owner of the on-screen panel (see the file header).
     var panel: NSPanel?
     var positioningTimer: Timer?
+    /// Whether the bar has been put on screen yet. The bar stays hidden until
+    /// the System Settings window exists: showing it first (at a fallback
+    /// position) put the guide ahead of the pane it points into.
+    var shown = false
+    /// Whether Settings was seen at least once. Only then does the bar retire
+    /// with it — a bar that fell back for lack of a Settings window must not
+    /// conclude on the next tick that Settings has closed.
+    var anchored = false
+    /// When polling began, for the give-up deadline.
+    let startedAt = Date()
+    /// Give up finding Settings after this long and fall back to the top of
+    /// the screen, so a missing/renamed Settings process still leaves the user
+    /// with a draggable icon rather than no guidance at all.
+    let discoveryDeadline: TimeInterval = 12
+    /// How long to keep following Settings once the bar is up.
+    let followDeadline: TimeInterval = 180
 
     init(config: Configuration) {
         self.config = config
@@ -139,12 +160,14 @@ final class GuideController: NSObject, NSApplicationDelegate {
         ])
 
         self.panel = panel
-        positionFallback(panel)
-        panel.orderFrontRegardless()
+        // Deliberately NOT ordered front here. The bar appears the moment the
+        // System Settings window is on screen, anchored under it; showing it
+        // first (at a fallback position) put the guide ahead of the pane it
+        // points into, which reads as the wrong order.
         followSystemSettings()
     }
 
-    /** Center the bar near the top of the main display until Settings appears. */
+    /** Center the bar near the top of the main display. */
     private func positionFallback(_ panel: NSPanel) {
         guard let screen = NSScreen.main else { return }
         let frame = screen.frame
@@ -161,34 +184,58 @@ final class GuideController: NSObject, NSApplicationDelegate {
     }
 
     /**
-     * Keep the bar directly under the System Settings window. Settings opens
-     * asynchronously after this helper, so poll the on-screen window list for
-     * a few seconds; once found (and whenever it moves), re-anchor below it.
+     * Show the bar under the System Settings window and keep it there.
+     *
+     * Settings opens asynchronously after this helper, so poll the on-screen
+     * window list: the first frame that carries it is both the moment to put
+     * the bar on screen and the anchor to sit 12pt below. After that the poll
+     * only re-anchors as Settings moves, and retires the bar with it.
      */
     private func followSystemSettings() {
-        var found = false
-        positioningTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
+        positioningTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] timer in
             guard let self, let panel = self.panel else { return timer.invalidate() }
+            let elapsed = Date().timeIntervalSince(self.startedAt)
             if let anchor = Self.systemSettingsFrame() {
-                found = true
+                self.anchored = true
                 let size = panel.frame.size
                 let margin: CGFloat = 12
-                let x = anchor.midX - size.width / 2
-                let y = anchor.minY - size.height - margin
-                if panel.frame.origin != NSPoint(x: x, y: y) {
-                    panel.setFrameOrigin(NSPoint(x: x, y: y))
+                let origin = NSPoint(x: anchor.midX - size.width / 2, y: anchor.minY - size.height - margin)
+                if !self.shown {
+                    panel.setFrameOrigin(origin)
+                    panel.orderFrontRegardless()
+                    self.shown = true
+                } else if panel.frame.origin != origin {
+                    panel.setFrameOrigin(origin)
                 }
-            } else if found {
+                if elapsed > self.followDeadline { timer.invalidate() }
+                return
+            }
+            if self.anchored {
                 // Settings closed: retire with it.
                 timer.invalidate()
                 NSApplication.shared.terminate(nil)
-            } else if timer.fireDate.timeIntervalSinceNow < -6 {
-                timer.invalidate()
+                return
             }
+            if !self.shown && elapsed > self.discoveryDeadline {
+                // No Settings window to anchor under. Fall back to the top of
+                // the screen so the draggable icon still exists, and keep
+                // polling in case the pane is simply slow to open.
+                self.positionFallback(panel)
+                panel.orderFrontRegardless()
+                self.shown = true
+            }
+            if elapsed > self.followDeadline { timer.invalidate() }
         }
     }
 
-    /** The frontmost System Settings window, in AppKit coordinates, if on screen. */
+    /**
+     * The frontmost System Settings window, in AppKit coordinates, if on screen.
+     *
+     * `kCGWindowBounds` is Quartz (top-left origin, measured from the primary
+     * display); AppKit puts the origin at the bottom left, so the flip uses the
+     * primary screen's height rather than whatever `NSScreen.main` happens to
+     * report for an accessory app.
+     */
     private static func systemSettingsFrame() -> NSRect? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
             as? [[String: Any]]
@@ -201,11 +248,13 @@ final class GuideController: NSObject, NSApplicationDelegate {
             guard let boundsDict = window[kCGWindowBounds as String] as? [String: Any],
                 let quartz = CGRect(dictionaryRepresentation: boundsDict as CFDictionary)
             else { continue }
-            guard let screen = NSScreen.main else { continue }
-            // Quartz is top-left origin; AppKit is bottom-left.
+            // Skip transient chrome (the launch stub, tooltips): only the real
+            // Settings window is wide enough to be worth anchoring under.
+            guard quartz.width >= 400, quartz.height >= 300 else { continue }
+            let primaryHeight = NSScreen.screens.first?.frame.height ?? NSScreen.main?.frame.height ?? quartz.maxY
             return NSRect(
                 x: quartz.minX,
-                y: screen.frame.maxY - quartz.maxY,
+                y: primaryHeight - quartz.maxY,
                 width: quartz.width,
                 height: quartz.height,
             )

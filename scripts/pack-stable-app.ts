@@ -1734,14 +1734,32 @@ function ensurePermissionGuide(): void {
  */
 function ensureStableSignature(): void {
   const identity = process.env.COLAW_SIGN_IDENTITY ?? 'colaw-codesign'
+  // The identity lives in Colaw's dedicated keychain. Name that keychain
+  // explicitly and query it with the policy `security` calls `codesigning`
+  // (`-p codesign` is a usage error that matches nothing, so the check
+  // silently fell through and every build was signed ad-hoc). The creation
+  // script also puts the keychain in the user's search list, without which
+  // `codesign` reports "The specified item could not be found in the keychain"
+  // for an unlisted keychain even when `--keychain` names it.
+  const keychain = join(homedir(), '.colaw', 'colaw-sign.keychain-db')
   type BunSpawn = { Bun: { spawnSync: (cmd: readonly string[], options: object) => { exitCode: number | null; stdout: Uint8Array } } }
   const listed = (globalThis as unknown as BunSpawn).Bun.spawnSync(
-    ['security', 'find-identity', '-v', '-p', 'codesign'],
+    ['security', 'find-identity', '-v', '-p', 'codesigning', keychain],
     { cwd: stableApp, stdout: 'pipe', stderr: 'pipe' },
   )
   const identities = new TextDecoder().decode(listed.stdout ?? new Uint8Array())
-  const signed = identities.includes(identity)
+  const signed = existsSync(keychain) && identities.includes(identity)
+  // Unlock the keychain and name it on the codesign call: a stable identity
+  // covers every nested binary, so a drag-in TCC grant (keyed on the app's
+  // designated requirement) matches the launcher, the bun host, and the probe
+  // children alike — the ad-hoc fallback cannot promise that.
   const args = ['--force', '--deep', '--sign', signed ? identity : '-', '--identifier', 'ai.deepseek.harness']
+  if (signed) {
+    const pass = readFileSync(join(homedir(), '.colaw', 'colaw-sign.keychain-pass'), 'utf8')
+    const unlock = (globalThis as unknown as BunSpawn)
+      .Bun.spawnSync(['security', 'unlock-keychain', '-p', pass.trim(), keychain], { stdout: 'ignore', stderr: 'ignore' })
+    if (unlock.exitCode === 0) args.push('--keychain', keychain)
+  }
   if (!signed) {
     console.error(
       `pack-stable-app: no "${identity}" codesigning identity — signing ad-hoc. TCC grants will NOT survive the next update;`
