@@ -40,7 +40,7 @@ const NS = 'settings.desktop'
  * invalidation that keeps an open page current without polling, and answers
  * the TCC probes.
  */
-export const inject = ['slots', 'locale', 'remote', 'settingsScope']
+export const inject = ['slots', 'locale', 'remote', 'remote.desktopPermissions', 'settingsScope']
 
 /**
  * Register the Desktop-control section over the shared settings namespace.
