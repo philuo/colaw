@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/computer-use-cua-driver-native/README.md
-README.md: 28e47f17020297ef7e1c2fa6656c8fda0b808a8f
-README.zh.md: ce25309e77fcd05836b4fccddd2482ecf2f1ad17
+README.md: b6af6a652f1223105ab9fbaf247ebc73dc573416
+README.zh.md: ced964b46dc5da6106be2b282b17e47b56d3a6b6
