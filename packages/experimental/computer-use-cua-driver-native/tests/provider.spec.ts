@@ -12,6 +12,12 @@ import * as NativeProvider from '../src/index.ts'
 import { catalog, fixture, resetFixture } from './fixtures/cua-driver.ts'
 
 vi.mock('@trycua/cua-driver', async () => import('./fixtures/cua-driver.ts'))
+// The provider reaches the driver through a child process now. These cases
+// assert what it does with the driver's answers — exposure filtering, catalog
+// validation, result adaptation — so the host is swapped for an in-process
+// one against the same external fixture. `driver-host.spec.ts` owns the
+// process boundary itself.
+vi.mock('../src/driver-host.ts', async () => import('./fixtures/driver-host.ts'))
 
 /**
  * The provider gates on the 电脑操控 namespace. The harness answers with the

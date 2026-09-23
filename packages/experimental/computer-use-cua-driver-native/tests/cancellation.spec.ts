@@ -16,6 +16,9 @@ import * as NativeProvider from '../src/index.ts'
 import { fixture, resetFixture } from './fixtures/cua-driver.ts'
 
 vi.mock('@trycua/cua-driver', async () => import('./fixtures/cua-driver.ts'))
+// Unload semantics are the provider's, not the child's; the host is swapped
+// so this case keeps asserting settlement and teardown without a real process.
+vi.mock('../src/driver-host.ts', async () => import('./fixtures/driver-host.ts'))
 
 let ctx: Context
 let root: string | undefined

@@ -22,6 +22,9 @@ import * as NativeProvider from '../src/index.ts'
 import { resetFixture, screenshotBase64 } from './fixtures/cua-driver.ts'
 
 vi.mock('@trycua/cua-driver', async () => import('./fixtures/cua-driver.ts'))
+// Composition, not the process boundary: the host is swapped so the loaded
+// provider composes against the same in-process fixture as the other cases.
+vi.mock('../src/driver-host.ts', async () => import('./fixtures/driver-host.ts'))
 
 class VisualModel extends LlmAdapter {
   readonly requests: GenerateOptions[] = []

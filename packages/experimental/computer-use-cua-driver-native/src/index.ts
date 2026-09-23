@@ -1,5 +1,9 @@
 /**
- * Computer use through the in-process Cua Driver native SDK and its own tools.
+ * Computer use through the Cua Driver native SDK, run in a child process.
+ *
+ * The driver used to load into this process. It no longer does: see
+ * `driver-host.ts` for why an in-process driver can abort the whole
+ * application and what hosting it in a child buys instead.
  * @module @deepseek-ai/dsh-experimental-computer-use-cua-driver-native
  */
 
@@ -8,7 +12,8 @@ import Schema from '@deepseek-ai/schemastery'
 import { ComputerUseProviderName } from '@deepseek-ai/dsh-computer-use/brand'
 import { createMcpToolDefinition } from '@deepseek-ai/dsh-mcp-client'
 import { z } from 'zod'
-import type { CuaDriver as NativeDriver } from '@trycua/cua-driver'
+import { openDriverHost } from './driver-host.ts'
+import type { DriverHost } from './driver-host.ts'
 import type {} from '@deepseek-ai/dsh-computer-use'
 import { execFile, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
@@ -403,11 +408,12 @@ Prefer background delivery. A refusal does not authorize a foreground retry — 
 On macOS, cursor-overlay operations may return facility_unavailable even when screenshots and input work. Application-menu invocation is not part of this tool surface: resolving a menu path reaches AppKit's window-raise path from the driver's own worker thread, where macOS asserts and aborts the whole host process, so reach a window's menu commands through its own controls or a keyboard equivalent instead. delivery_mode:"foreground" is what briefly fronts a window, and it restores the previous frontmost afterwards.`
 
 /**
- * Own one native runtime and expose its catalog through the MCP result adapter.
+ * Own one hosted driver and expose its catalog through the MCP result adapter.
  * Startup failures roll back every registration. Unload removes tools, aborts
- * calls and image admission, awaits settlement and SDK shutdown, then releases computer use.
+ * calls and image admission, awaits settlement and child shutdown, then
+ * releases computer use.
  * @param ctx - context providing the exclusive registration and tool services.
- * @returns after native import, runtime creation, and tool discovery complete.
+ * @returns after the child starts, the runtime is created, and tool discovery completes.
  */
 export async function apply(ctx: Context): Promise<void> {
   // The permission remote mounts unconditionally: the 电脑操控 tab needs an
@@ -425,7 +431,7 @@ export async function apply(ctx: Context): Promise<void> {
   if (!enabled) return
   const lifetime = new AbortController()
   const pending = new Set<Promise<unknown>>()
-  let driver: NativeDriver | undefined
+  let driver: DriverHost | undefined
   // Cordis announces disposal before it awaits asynchronous plugin startup.
   ctx.on('internal/plugin', (fiber) => {
     if (fiber === ctx.fiber && fiber.uid === null) lifetime.abort()
@@ -438,10 +444,9 @@ export async function apply(ctx: Context): Promise<void> {
       // apply() reports startup failure; teardown still owns its native handle.
       await ready.catch(() => {})
       await Promise.allSettled(pending)
-      if (driver !== undefined) {
-        await driver.shutdown()
-        driver.uniffiDestroy()
-      }
+      // The child owns the driver handle, so closing it is one operation:
+      // shutdown settles what is still in flight and reaps the process.
+      if (driver !== undefined) await driver.shutdown()
     }
     const child = ctx.plugin({
       name: 'computer-use-cua-driver-native-runtime',
@@ -458,16 +463,14 @@ export async function apply(ctx: Context): Promise<void> {
     throw error
   }
 
-  /** The child owns tool registrations; the outer effect owns native teardown. */
+  /** The child owns tool registrations; the outer effect owns child teardown. */
   async function mountRuntime(inner: Context): Promise<void> {
-    // The policy has to be in place before the runtime exists: the engine reads
-    // the variable once, when a runtime starts.
+    // The policy has to be in place before the driver process exists: the
+    // engine reads the variable once, when a runtime starts, and the child
+    // inherits it from this process's environment.
     armPermissionPolicy()
-    const { CuaDriver } = await import('@trycua/cua-driver')
     lifetime.signal.throwIfAborted()
-    // The generated constructor returns its class with an owned binding handle,
-    // but declares only CuaDriverLike, which omits uniffiDestroy().
-    const activeDriver = driver = CuaDriver.create(undefined) as NativeDriver
+    const activeDriver = driver = openDriverHost()
     const catalog = ToolCatalog.parse(JSON.parse(await activeDriver.listToolsJson({ signal: lifetime.signal })))
     lifetime.signal.throwIfAborted()
     // A tool in neither list is a decision nobody has made. The dependency is
