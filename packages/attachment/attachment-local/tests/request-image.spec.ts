@@ -102,14 +102,14 @@ describe('local request-image cache', () => {
     const attachment = await attachments.saveImage({ data: await image(8, 4), mediaType: 'image/png' })
 
     await expect(attachments.readImageRequest(attachment, { width: 0, height: 4, maxBytes: 100 }))
-      .rejects.toThrow('Image request width must be a positive integer')
+      .rejects.toThrow('Image request target width must be a positive integer')
     await expect(attachments.readImageRequest(attachment, { width: 8, height: 1.5, maxBytes: 100 }))
-      .rejects.toThrow('Image request height must be a positive integer')
+      .rejects.toThrow('Image request target height must be a positive integer')
     await expect(attachments.readImageRequest(attachment, { width: 8, height: 4, maxBytes: 0 }))
       .rejects.toThrow('Image request maxBytes must be a positive integer')
   })
 
-  it('resizes by the long edge to the exact target and keys the cache by target', async () => {
+  it('fits the source inside the target box without changing aspect ratio, and keys the cache by target', async () => {
     const attachments = await store()
     const maxBytes = 2 * 1024 * 1024
     const square = await attachments.saveImage({ data: await image(2048, 2048), mediaType: 'image/png' })
@@ -129,7 +129,12 @@ describe('local request-image cache', () => {
     expect(squareRequest).toMatchObject({ width: 1302, height: 1302, mediaType: 'image/jpeg' })
     expect(smallRequest).toMatchObject({ width: 800, height: 800, mediaType: 'image/png' })
     expect(smallRequest.data).toEqual((await attachments.readImage(small)).data)
-    expect(thinRequest).toMatchObject({ width: 4096, height: 20 })
+    // 8000x40 into a 4096x20 box: the pipeline resizes `inside`, so the source's
+    // exact 200:1 aspect decides both edges and the long edge lands one rounding
+    // step short of the box — 4000, not 4096. The gap is the floored short edge
+    // (40 * 4096/8000 = 20.48 -> 20), so it is bounded by that rounding and stays
+    // negligible for every ordinary aspect ratio.
+    expect(thinRequest).toMatchObject({ width: 4000, height: 20 })
     expect(wideRequest).toMatchObject({ width: 1708, height: 961 })
     expect(tallRequest).toMatchObject({ width: 961, height: 1708 })
     expect(enlarged).toMatchObject({ width: 8000, height: 40 })
