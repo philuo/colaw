@@ -236,6 +236,25 @@ describe('normalizeImage', () => {
     await expect(detectImage(normalized.data)).resolves.toMatchObject({ carriesMetadata: false })
   })
 
+  it('strips the profile from the WebP result a transparent ICC-carrying source takes', async () => {
+    // Bun's encoders carry the source's ICC profile into their output, while
+    // sharp's did not — which is why every codec strips on the way out. A
+    // transparent source always lands on the WebP rung, so the pair below is
+    // the only shape that exercises WebP stripping: an opaque source leaves
+    // through JPEG, and a profile-free source never encodes at all.
+    const data = new Uint8Array(await sharp({
+      create: { width: 9, height: 5, channels: 4, background: { r: 1, g: 2, b: 3, alpha: 0.5 } },
+    }).png().withIccProfile('p3').toBuffer())
+    const detected = await detectImage(data)
+    expect(detected).toMatchObject({ carriesMetadata: true, hasAlpha: true })
+
+    const normalized = await normalizeImage(data, detected, POLICY)
+
+    expect(normalized.data).not.toBe(data)
+    expect(normalized).toMatchObject({ mediaType: 'image/webp', width: 9, height: 5 })
+    await expect(detectImage(normalized.data)).resolves.toMatchObject({ carriesMetadata: false })
+  })
+
   it('maps an encoder fault on undecodable bytes to a storage failure', async () => {
     const detected = {
       mediaType: 'image/png', width: 5000, height: 5000, animated: false, carriesMetadata: false,

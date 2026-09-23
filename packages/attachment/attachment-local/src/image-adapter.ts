@@ -176,10 +176,49 @@ function stripPngIcc(data: Uint8Array): Uint8Array {
   return concat(chunks)
 }
 
-/** 剥除内嵌 ICC（JPEG 的 APP2 ICC_PROFILE 段 / PNG 的 iCCP chunk）—— Bun 编码器会嵌入 ColorSync 默认 sRGB，而 sharp 的输出不带。 */
+/** WebP 的 `VP8X` 标志字节里声明「本文件带 ICC profile」的那一位。 */
+const WEBP_VP8X_ICC_FLAG = 0x20
+
+/**
+ * 剥除 WebP 内嵌 ICC：RIFF 容器里去掉 `ICCP` chunk、按新长度回写 RIFF 头，
+ * 并清掉 `VP8X` 的 ICC 标志位 —— 只删 chunk 会留下一个仍声明「带 profile」
+ * 的容器。每个 chunk 的 payload 按偶数长度对齐（奇数补 1 字节），新长度必须
+ * 把这些 padding 一起算进去。
+ */
+function stripWebpIcc(data: Uint8Array): Uint8Array {
+  const chunks: Uint8Array[] = [data.subarray(0, 12)]
+  let i = 12
+  while (i + 8 <= data.length) {
+    const type = String.fromCharCode(data[i] ?? 0, data[i + 1] ?? 0, data[i + 2] ?? 0, data[i + 3] ?? 0)
+    const view = new DataView(data.buffer, data.byteOffset + i)
+    const length = view.getUint32(4, true)
+    const chunkEnd = i + 8 + length + (length % 2)
+    // A chunk past the end means the tail is not structured as declared; keep
+    // it verbatim rather than dropping bytes the container still refers to.
+    if (chunkEnd > data.length) { chunks.push(data.subarray(i)); break }
+    if (type !== 'ICCP') {
+      const chunk = data.subarray(i, chunkEnd)
+      if (type === 'VP8X' && length >= 1) {
+        const cleared = chunk.slice()
+        cleared[8] = (cleared[8] ?? 0) & ~WEBP_VP8X_ICC_FLAG
+        chunks.push(cleared)
+      } else {
+        chunks.push(chunk)
+      }
+    }
+    i = chunkEnd
+  }
+  const out = concat(chunks)
+  // RIFF size counts everything after the 8-byte prefix.
+  new DataView(out.buffer, out.byteOffset).setUint32(4, out.length - 8, true)
+  return out
+}
+
+/** 剥除内嵌 ICC（JPEG 的 APP2 ICC_PROFILE 段 / PNG 的 iCCP chunk / WebP 的 ICCP chunk）—— Bun 编码器会嵌入 ColorSync 默认 sRGB，而 sharp 的输出不带。 */
 function stripIccProfile(data: Uint8Array, format: string): Uint8Array {
   if (format === 'jpeg') return stripJpegIcc(data)
   if (format === 'png') return stripPngIcc(data)
+  if (format === 'webp') return stripWebpIcc(data)
   return data
 }
 
