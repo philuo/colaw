@@ -110,7 +110,7 @@ final class GuideController: NSObject, NSApplicationDelegate {
             contentRect: NSRect(x: 0, y: 0, width: 372, height: 72),
             styleMask: [.nonactivatingPanel, .titled, .fullSizeContentView],
             backing: .buffered,
-            defer: false,
+            defer: false
         )
         panel.title = ""
         panel.titlebarAppearsTransparent = true
@@ -191,9 +191,9 @@ final class GuideController: NSObject, NSApplicationDelegate {
                 x: frame.midX - size.width / 2,
                 y: frame.maxY - size.height - 72,
                 width: size.width,
-                height: size.height,
+                height: size.height
             ),
-            display: false,
+            display: false
         )
     }
 
@@ -296,7 +296,7 @@ final class GuideController: NSObject, NSApplicationDelegate {
                 x: quartz.minX,
                 y: primaryHeight - quartz.maxY,
                 width: quartz.width,
-                height: quartz.height,
+                height: quartz.height
             )
         }
         return nil
