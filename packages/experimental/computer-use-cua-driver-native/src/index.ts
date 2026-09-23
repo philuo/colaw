@@ -11,7 +11,8 @@ import { z } from 'zod'
 import type { CuaDriver as NativeDriver } from '@trycua/cua-driver'
 import type {} from '@deepseek-ai/dsh-computer-use'
 import { execFile, spawn } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -269,11 +270,137 @@ const ToolCatalog = z.object({
 /** DeepSeek's function-name alphabet and maximum length are protocol constants. */
 const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/u
 
+/** A tool name this module is willing to spell into a YAML policy file. */
+const POLICY_TOOL_NAME = /^[a-z0-9_]+$/u
+
+/**
+ * The upstream tools this provider exposes, and the ones it withholds.
+ *
+ * The split exists because one upstream tool ends the host process.
+ * `invoke_menu` raises a window through AppKit's `-[NSWindow
+ * makeKeyAndOrderFront:]`, which macOS asserts to the main thread, and the
+ * driver calls it from its own tokio worker: the assertion reaches
+ * `__pthread_kill` and SIGTRAP-aborts everything. The crash report
+ * `bun-2026-09-23-132012.ips` names `platform_macos::tools::invoke_menu::
+ * focus_exact_window` on the `cua-driver-abi` thread, and no JS can intercept
+ * it — `try`/`catch` never runs and a `tools/execute` middleware never resumes.
+ *
+ * Withholding is therefore the control, applied twice: this list keeps a
+ * withheld tool off the model's tool surface, and the same split is written into
+ * a permission policy that the native runtime enforces at its own registry
+ * boundary, before any platform action runs. The native check is the load
+ * bearing one — a recorded trajectory replaying a tool name still crosses it —
+ * and it is deny-by-default, so a catalog that grows cannot widen the surface
+ * without an edit here.
+ */
+const EXPOSED_TOOLS: readonly string[] = Object.freeze([
+  'list_apps',
+  'list_windows',
+  'get_window_state',
+  'verify_state',
+  'launch_app',
+  'kill_app',
+  'bring_to_front',
+  'set_window_frame',
+  'click',
+  'double_click',
+  'right_click',
+  'drag',
+  'type_text',
+  'press_key',
+  'hotkey',
+  'set_value',
+  'scroll',
+  'clipboard_read',
+  'clipboard_write',
+  'get_screen_size',
+  'get_desktop_state',
+  'get_cursor_position',
+  'move_cursor',
+  'set_agent_cursor_enabled',
+  'set_agent_cursor_motion',
+  'set_agent_cursor_theme',
+  'get_agent_cursor_state',
+  'check_permissions',
+  'health_report',
+  'get_config',
+  'set_config',
+  'get_accessibility_tree',
+  'zoom',
+  'page',
+  'get_browser_state',
+  'browser_prepare',
+  'browser_navigate',
+  'browser_click',
+  'browser_type',
+  'browser_dialog',
+  'browser_set_input_files',
+  'browser_download',
+  'browser_pointer',
+  'start_recording',
+  'stop_recording',
+  'get_recording_state',
+  'install_ffmpeg',
+  'start_session',
+  'escalate_session',
+  'get_session',
+  'list_sessions',
+  'get_session_state',
+  'end_session',
+])
+
+/** Withheld tools: the name to the reason it is out. Also denied by the policy. */
+const WITHHELD_TOOLS: ReadonlyMap<string, string> = new Map([
+  ['invoke_menu', 'raises a window off the main thread and SIGTRAP-aborts the host process'],
+  ['replay_trajectory', 're-dispatches tool names read from a recorded directory, which would reach a withheld tool'],
+])
+
+/**
+ * The permission policy the native runtime enforces, generated from the split
+ * above. `deny` is evaluated before `allow` in the engine, so a withheld name
+ * stays withheld even if it were ever added to the allow list by mistake.
+ * @returns the policy as YAML.
+ */
+function policyYaml(): string {
+  const lines = ['allow:', '  tools:']
+  for (const tool of EXPOSED_TOOLS) lines.push(`    - ${tool}`)
+  lines.push('deny:', '  tools:')
+  for (const tool of WITHHELD_TOOLS.keys()) lines.push(`    - ${tool}`)
+  return `${lines.join('\n')}\n`
+}
+
+/**
+ * Write the policy and point the native runtime at it.
+ *
+ * The engine reads `CUA_DRIVER_POLICY_FILE` when a runtime starts, so setting
+ * the variable immediately before `create()` is what arms it — measured against
+ * 0.28.0, where a denied call comes back as `user policy: tool 'invoke_menu' is
+ * explicitly denied` while the process stays alive. The file is rewritten on
+ * every mount so the runtime can never load a stale or edited copy, and it lives
+ * in the per-user private temp directory with owner-only permissions.
+ *
+ * A failure here aborts the mount on purpose. Carrying on without the policy
+ * would behave exactly like the unguarded build while silently dropping the
+ * guarantee, which is the one outcome this mechanism exists to prevent.
+ * @returns the absolute policy path the runtime was pointed at.
+ */
+function armPermissionPolicy(): string {
+  for (const tool of [...EXPOSED_TOOLS, ...WITHHELD_TOOLS.keys()]) {
+    if (!POLICY_TOOL_NAME.test(tool)) throw new Error(`Cua Driver tool "${tool}" cannot be written into a policy file`)
+  }
+  const directory = join(tmpdir(), 'colaw-cua-policy')
+  const path = join(directory, 'policy.yaml')
+  mkdirSync(directory, { recursive: true, mode: 0o700 })
+  writeFileSync(path, policyYaml(), { mode: 0o600 })
+  process.env.CUA_DRIVER_POLICY_FILE = path
+  return path
+}
+
 const GUIDANCE = `Cua Driver native computer-use tools operate the host desktop. Discover the exact app and window, then get a fresh window snapshot before acting. Use element_token from that snapshot, or coordinates from its screenshot. A new snapshot of that window invalidates its earlier element tokens. Select either target or the legacy pid/window_id fields; do not combine them.
 
 Prefer background delivery. A refusal does not authorize a foreground retry — it names the way through, so pass delivery_mode:"foreground" rather than reaching for another tool. Verify the requested outcome from fresh state after an action; a delivered click alone does not prove the outcome. After cancellation, inspect current state before retrying because completed input is not rolled back. Other sessions and applications may change the same desktop.
 
-On macOS, cursor-overlay operations may return facility_unavailable even when screenshots and input work. invoke_menu is also off limits for raising a window: it drives AppKit from the driver's own worker thread, where raising a window asserts and aborts the whole host process. Bringing a window forward is what delivery_mode:"foreground" is for.`
+On macOS, cursor-overlay operations may return facility_unavailable even when screenshots and input work. Application-menu invocation is not part of this tool surface: resolving a menu path reaches AppKit's window-raise path from the driver's own worker thread, where macOS asserts and aborts the whole host process, so reach a window's menu commands through its own controls or a keyboard equivalent instead. delivery_mode:"foreground" is what briefly fronts a window, and it restores the previous frontmost afterwards.`
 
 /**
  * Own one native runtime and expose its catalog through the MCP result adapter.
@@ -333,6 +460,9 @@ export async function apply(ctx: Context): Promise<void> {
 
   /** The child owns tool registrations; the outer effect owns native teardown. */
   async function mountRuntime(inner: Context): Promise<void> {
+    // The policy has to be in place before the runtime exists: the engine reads
+    // the variable once, when a runtime starts.
+    armPermissionPolicy()
     const { CuaDriver } = await import('@trycua/cua-driver')
     lifetime.signal.throwIfAborted()
     // The generated constructor returns its class with an owned binding handle,
@@ -340,8 +470,18 @@ export async function apply(ctx: Context): Promise<void> {
     const activeDriver = driver = CuaDriver.create(undefined) as NativeDriver
     const catalog = ToolCatalog.parse(JSON.parse(await activeDriver.listToolsJson({ signal: lifetime.signal })))
     lifetime.signal.throwIfAborted()
+    // A tool in neither list is a decision nobody has made. The dependency is
+    // pinned, so this can only fire on a deliberate upgrade — and failing the
+    // mount is the fail-closed direction for a surface whose worst case is
+    // killing the host.
+    const exposed = new Set(EXPOSED_TOOLS)
+    const unclassified = catalog.tools.filter(tool => !exposed.has(tool.name) && !WITHHELD_TOOLS.has(tool.name))
+    if (unclassified.length > 0) {
+      throw new Error(`Cua Driver tools have no exposure decision: ${unclassified.map(tool => tool.name).join(', ')}`)
+    }
     const names = new Set<string>()
     for (const tool of catalog.tools) {
+      if (WITHHELD_TOOLS.has(tool.name)) continue
       const publicName = `cua_driver_native__${tool.name}`
       if (!TOOL_NAME.test(publicName)) {
         throw new Error(`Cua Driver tool "${tool.name}" exceeds the supported function-name format`)

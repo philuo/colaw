@@ -1,6 +1,7 @@
 /** Native SDK lifecycle and catalog behavior without desktop access. */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
 import { Context } from '@deepseek-ai/cordis'
 import ComputerUseRegistry from '@deepseek-ai/dsh-computer-use'
 import { ComputerUseProviderName } from '@deepseek-ai/dsh-computer-use/brand'
@@ -233,6 +234,37 @@ describe('Cua Driver native provider', () => {
     expect(ctx.tools.schemas()).toEqual([])
     expect(fixture.shutdowns).toBe(1)
     expect(fixture.destroys).toBe(1)
+  })
+
+  it('withholds the tools that can abort the host process', async () => {
+    fixture.list = async () => JSON.stringify({
+      tools: [
+        ...catalog.tools,
+        { name: 'invoke_menu', description: 'Resolve and invoke a menu path.', inputSchema: { type: 'object', properties: {} } },
+        { name: 'replay_trajectory', description: 'Replay a recorded directory.', inputSchema: { type: 'object', properties: {} } },
+      ],
+    })
+    await ctx.plugin(NativeProvider)
+    const registered = ctx.tools.schemas().map(tool => tool.name)
+    expect(registered).not.toContain('cua_driver_native__invoke_menu')
+    expect(registered).not.toContain('cua_driver_native__replay_trajectory')
+    expect(registered).toEqual(catalog.tools.map(tool => `cua_driver_native__${tool.name}`))
+    // The tool surface alone is not the guarantee: the native registry boundary
+    // enforces the same split, where deny is evaluated before allow.
+    const policy = readFileSync(process.env.CUA_DRIVER_POLICY_FILE!, 'utf8')
+    expect(policy).toContain('    - invoke_menu')
+    expect(policy).toContain('    - replay_trajectory')
+    expect(policy).toContain('    - get_window_state')
+    expect(policy).toContain('deny:')
+  })
+
+  it('refuses to mount when a catalog tool has no exposure decision', async () => {
+    fixture.list = async () => JSON.stringify({
+      tools: [...catalog.tools, { name: 'brand_new_tool', description: 'Added upstream.', inputSchema: { type: 'object', properties: {} } }],
+    })
+    await expect(ctx.plugin(NativeProvider)).rejects.toThrow('no exposure decision: brand_new_tool')
+    expect(ctx.computerUse.providerName).toBeUndefined()
+    expect(ctx.tools.schemas()).toEqual([])
   })
 
   it('keeps the reservation when native shutdown cannot prove completion', async () => {
