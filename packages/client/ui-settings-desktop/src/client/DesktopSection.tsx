@@ -124,6 +124,12 @@ export function DesktopSection(props: DesktopSectionComponentProps): ReactNode {
               </span>
             )}
         </div>
+        {/* Stateable in advance, so it never has to be diagnosed live: macOS 15
+            asks about screen recording on its own schedule — a dialog that
+            looks like a fresh request while this pane still reports Granted. */}
+        {permissions === undefined
+          ? null
+          : <p className={css.permissionHint}>{t('permissionMonthly')}</p>}
         {permissions === undefined || granted
           ? null
           : (

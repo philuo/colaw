@@ -157,6 +157,14 @@ describe('DesktopSection permission block', () => {
     expect(screen.queryByRole('alert', { name: en.revokedTitle })).toBeNull()
   })
 
+  it('warns about the monthly re-confirmation even while it reports a full grant', () => {
+    const { store } = mountSection()
+    act(() => { store.actions.setPermissions({ accessibility: true, screenRecording: true }) })
+    // macOS 15's own dialog looks like a fresh request; the pane has to say so
+    // in advance, and a full grant is exactly when the question comes up.
+    expect(screen.getByText(en.permissionMonthly)).toBeDefined()
+  })
+
   it('stands the in-page bar down while the native drag-guide is up', () => {
     const { store } = mountSection()
     act(() => { store.actions.setGuide('accessibility') })

@@ -19,6 +19,13 @@ export const en = {
   permissionOpenSettings: 'Open System Settings',
   permissionChecking: 'Checking…',
   permissionHint: 'Computer use needs these grants for Colaw itself.',
+  // macOS 15 re-confirms screen recording through a SEPARATE dialog — the
+  // "bypass the private window picker" one — roughly monthly, no matter what
+  // this pane reports and with no API for an app to suppress it. The toast
+  // reads like a fresh ask, so the pane has to say in advance that it is not
+  // one: a user who just saw "Granted" here and then gets asked again
+  // reasonably concludes the switch is broken.
+  permissionMonthly: 'macOS 15 asks again about screen recording roughly once a month — the "bypass the window picker" prompt. Choose Allow: the grant above is still in place.',
   guideTitle: 'Grant access',
   guideBarDrag: 'Drag Colaw into the {pane} list above',
   guideBarHint: 'Release to finish the grant — then switch the capability on yourself.',
@@ -60,6 +67,7 @@ export const zh: { [Key in keyof typeof en]: string } = {
   permissionOpenSettings: '打开系统设置',
   permissionChecking: '检测中…',
   permissionHint: '电脑操控需要 Colaw 本身获得这些授权。',
+  permissionMonthly: 'macOS 15 大约每月会再确认一次屏幕录制 —— 就是提示「绕过系统窗口选择器」的那个弹窗。点「允许」即可，上面的授权并没有失效。',
   guideTitle: '授权引导',
   guideBarDrag: '把 Colaw 拖进上方的「{pane}」列表',
   guideBarHint: '松手即完成授权 —— 之后请自行打开开关。',
