@@ -52,4 +52,7 @@ pre-merge-commit:
 pre-push:
   jobs:
     - name: typecheck
-      run: pnpm run typecheck
+      # Bun is this fork's runtime (AGENTS.md). The pnpm form also ran pnpm's
+      # dependency check first, which answers "stale" for a Bun-installed
+      # node_modules and then `pnpm install`s over it.
+      run: bun run typecheck
