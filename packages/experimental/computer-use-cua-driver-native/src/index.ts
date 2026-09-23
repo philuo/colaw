@@ -260,7 +260,7 @@ export const name = 'experimental-computer-use-cua-driver-native'
 /** Services required before the native runtime can publish tools. */
 export const inject = ['computerUse', 'tools', 'systemPrompt', 'settings']
 
-/** The native provider uses the installed SDK's same-process defaults. */
+/** No configuration fields: the driver runs in a child process with the SDK's own defaults. */
 export const Config = Schema.object({})
 
 const ToolCatalog = z.object({
