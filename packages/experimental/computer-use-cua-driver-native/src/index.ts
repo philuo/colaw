@@ -271,9 +271,9 @@ const TOOL_NAME = /^[A-Za-z0-9_-]{1,64}$/u
 
 const GUIDANCE = `Cua Driver native computer-use tools operate the host desktop. Discover the exact app and window, then get a fresh window snapshot before acting. Use element_token from that snapshot, or coordinates from its screenshot. A new snapshot of that window invalidates its earlier element tokens. Select either target or the legacy pid/window_id fields; do not combine them.
 
-Prefer background delivery. A refusal does not authorize a foreground retry. Verify the requested outcome from fresh state after an action; a delivered click alone does not prove the outcome. After cancellation, inspect current state before retrying because completed input is not rolled back. Other sessions and applications may change the same desktop.
+Prefer background delivery. A refusal does not authorize a foreground retry — it names the way through, so pass delivery_mode:"foreground" rather than reaching for another tool. Verify the requested outcome from fresh state after an action; a delivered click alone does not prove the outcome. After cancellation, inspect current state before retrying because completed input is not rolled back. Other sessions and applications may change the same desktop.
 
-On macOS, cursor-overlay operations may return facility_unavailable even when screenshots and input work.`
+On macOS, cursor-overlay operations may return facility_unavailable even when screenshots and input work. invoke_menu is also off limits for raising a window: it drives AppKit from the driver's own worker thread, where raising a window asserts and aborts the whole host process. Bringing a window forward is what delivery_mode:"foreground" is for.`
 
 /**
  * Own one native runtime and expose its catalog through the MCP result adapter.
