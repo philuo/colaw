@@ -12,7 +12,7 @@
  * FFI handle semantics (measured against Bun 1.4.2): a `'ptr'` return is a
  * `number` when the address fits a safe integer and a `bigint` otherwise, and
  * `'i64'` returns are always BigInt — so every handle flows through the code
- * as `CfHandle = number | bigint`. Handles are opaque; `ptr()` calls take the
+ * as `CfHandle = number | bigint`. Handles are opaque; `pointerOf` takes the
  * typed arrays directly. Property keys' value types are statically known, so
  * readers are per-type instead of runtime-dispatched.
  *
@@ -20,7 +20,9 @@
  * Uint8Array can be reused immediately.
  */
 
-import { dlopen, ptr } from 'bun:ffi'
+// `bun:ffi` is reached through its own boundary module so that loading this
+// file does not require a runtime that knows the specifier; see `./bun-ffi.ts`.
+import { dlopenFramework, pointerOf } from './bun-ffi.ts'
 
 /** An opaque CF/CG handle: Bun FFI hands back `number` or `bigint` per call. */
 type CfHandle = number | bigint
@@ -70,7 +72,7 @@ let cachedFfi: Ffi | undefined
 
 function ffi(): Ffi {
   if (cachedFfi !== undefined) return cachedFfi
-  const cfLibrary = dlopen(CF_PATH, {
+  const cfLibrary = dlopenFramework(CF_PATH, {
     CFDataCreate: { args: ['ptr', 'ptr', 'i64'], returns: 'ptr' },
     CFStringCreateWithCString: { args: ['ptr', 'cstring', 'u32'], returns: 'ptr' },
     CFStringGetCString: { args: ['ptr', 'ptr', 'i64', 'u32'], returns: 'u8' },
@@ -79,14 +81,14 @@ function ffi(): Ffi {
     CFBooleanGetValue: { args: ['ptr'], returns: 'u8' },
     CFRelease: { args: ['ptr'], returns: 'void' },
   })
-  const ioLibrary = dlopen(IMAGE_IO_PATH, {
+  const ioLibrary = dlopenFramework(IMAGE_IO_PATH, {
     CGImageSourceCreateWithData: { args: ['ptr', 'ptr'], returns: 'ptr' },
     CGImageSourceCreateImageAtIndex: { args: ['ptr', 'i64', 'ptr'], returns: 'ptr' },
     CGImageSourceGetType: { args: ['ptr'], returns: 'ptr' },
     CGImageSourceGetCount: { args: ['ptr'], returns: 'i64' },
     CGImageSourceCopyPropertiesAtIndex: { args: ['ptr', 'i64', 'ptr'], returns: 'ptr' },
   })
-  const cgLibrary = dlopen(CORE_GRAPHICS_PATH, {
+  const cgLibrary = dlopenFramework(CORE_GRAPHICS_PATH, {
     CGImageGetAlphaInfo: { args: ['ptr'], returns: 'i32' },
     CGImageGetBitsPerComponent: { args: ['ptr'], returns: 'i64' },
     CGImageGetColorSpace: { args: ['ptr'], returns: 'ptr' },
@@ -123,7 +125,8 @@ const NUMBER_OUT = new BigInt64Array(1)
 
 function readStringValue(cf: CfSymbols, value: CfHandle | null): string | undefined {
   if (!isHandle(value)) return undefined
-  if (!isHandle(value) || !cf.CFStringGetCString(value, ptr(VALUE_BUFFER), VALUE_BUFFER.byteLength, kCFStringEncodingUTF8)) return undefined
+  const copied = cf.CFStringGetCString(value, pointerOf(VALUE_BUFFER), VALUE_BUFFER.byteLength, kCFStringEncodingUTF8)
+  if (!copied) return undefined
   const end = VALUE_BUFFER.indexOf(0)
   return new TextDecoder().decode(VALUE_BUFFER.subarray(0, end === -1 ? VALUE_BUFFER.length : end))
 }
@@ -131,7 +134,7 @@ function readStringValue(cf: CfSymbols, value: CfHandle | null): string | undefi
 function numberValue(cf: CfSymbols, dictionary: CfHandle, key: string): number | undefined {
   const value = cf.CFDictionaryGetValue(dictionary, internedKey(cf, key))
   if (!isHandle(value)) return undefined
-  cf.CFNumberGetValue(value, kCFNumberSInt64Type, ptr(NUMBER_OUT))
+  cf.CFNumberGetValue(value, kCFNumberSInt64Type, pointerOf(NUMBER_OUT))
   return Number(NUMBER_OUT[0])
 }
 
@@ -168,7 +171,7 @@ export function imageSourceOf(data: Uint8Array): ImageSource {
   // Single copy: CFDataCreate duplicates the bytes into CF-owned memory, so
   // pass the caller's buffer directly — an extra JS-side copy would double
   // the transient peak for large images.
-  const cfData = cf.CFDataCreate(null, ptr(data), data.byteLength)
+  const cfData = cf.CFDataCreate(null, pointerOf(data), data.byteLength)
   if (!isHandle(cfData)) throw new Error('ImageIO: CFData creation failed')
   const source = io.CGImageSourceCreateWithData(cfData, null)
   cf.CFRelease(cfData)
