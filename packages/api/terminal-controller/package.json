@@ -60,7 +60,7 @@
     "@deepseek-ai/schemastery": "workspace:^",
     "@xterm/headless": "^6.0.0",
     "@xterm/addon-serialize": "^0.14.0",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh-subprocess": "workspace:^",
