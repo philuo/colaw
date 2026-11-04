@@ -68,7 +68,7 @@
     "picomatch": "^4.0.4",
     "clsx": "^2.0.0",
     "@deepseek-ai/dsh-util-crypto": "workspace:^",
-    "zod": "^4.4.3"
+    "zod": "^4.6.6"
   },
   "files": [
     "lib",
